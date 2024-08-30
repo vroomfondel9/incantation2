@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.Rendering;
 using static UnityEngine.Mathf;
 
 public class GPUSort
@@ -14,18 +15,18 @@ public class GPUSort
         sortCompute = ComputeHelper.LoadComputeShader("BitonicMergeSort");
     }
 
-    public void SetBuffers(ComputeBuffer indexBuffer, ComputeBuffer offsetBuffer)
+    public void SetBuffers(ComputeBuffer indexBuffer, ComputeBuffer offsetBuffer, CommandBuffer commandBuffer = null)
     {
         this.indexBuffer = indexBuffer;
 
-        sortCompute.SetBuffer(sortKernel, "Entries", indexBuffer);
-        ComputeHelper.SetBuffer(sortCompute, offsetBuffer, "Offsets", calculateOffsetsKernel);
-        ComputeHelper.SetBuffer(sortCompute, indexBuffer, "Entries", calculateOffsetsKernel);
+        ComputeHelper.SetBuffer(sortCompute, indexBuffer, "Entries", commandBuffer: commandBuffer, sortKernel);
+        ComputeHelper.SetBuffer(sortCompute, offsetBuffer, "Offsets", commandBuffer: commandBuffer, calculateOffsetsKernel);
+        ComputeHelper.SetBuffer(sortCompute, indexBuffer, "Entries", commandBuffer: commandBuffer, calculateOffsetsKernel);
     }
 
     // Sorts given buffer of integer values using bitonic merge sort
     // Note: buffer size is not restricted to powers of 2 in this implementation
-    public void Sort()
+    public void Sort(CommandBuffer commandBuffer = null)
     {
         sortCompute.SetInt("numEntries", indexBuffer.count);
 
@@ -45,17 +46,17 @@ public class GPUSort
                 sortCompute.SetInt("groupHeight", groupHeight);
                 sortCompute.SetInt("stepIndex", stepIndex);
                 // Run the sorting step on the GPU
-                ComputeHelper.Dispatch(sortCompute, NextPowerOfTwo(indexBuffer.count) / 2);
+                ComputeHelper.Dispatch(sortCompute, NextPowerOfTwo(indexBuffer.count) / 2, commandBuffer: commandBuffer);
             }
         }
     }
 
 
-    public void SortAndCalculateOffsets()
+    public void SortAndCalculateOffsets(CommandBuffer commandBuffer = null)
     {
-        Sort();
+        Sort(commandBuffer);
 
-        ComputeHelper.Dispatch(sortCompute, indexBuffer.count, kernelIndex: calculateOffsetsKernel);
+        ComputeHelper.Dispatch(sortCompute, indexBuffer.count, kernelIndex: calculateOffsetsKernel, commandBuffer: commandBuffer);
     }
 
 }

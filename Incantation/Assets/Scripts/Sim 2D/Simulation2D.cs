@@ -76,12 +76,12 @@ public class Simulation2D : MonoBehaviour
         SetInitialBufferData(spawnData);
 
         // Init compute
-        ComputeHelper.SetBuffer(compute, positionBuffer, "Positions", externalForcesKernel, updatePositionKernel);
-        ComputeHelper.SetBuffer(compute, predictedPositionBuffer, "PredictedPositions", externalForcesKernel, spatialHashKernel, densityKernel, pressureKernel, viscosityKernel);
-        ComputeHelper.SetBuffer(compute, spatialIndices, "SpatialIndices", spatialHashKernel, densityKernel, pressureKernel, viscosityKernel);
-        ComputeHelper.SetBuffer(compute, spatialOffsets, "SpatialOffsets", spatialHashKernel, densityKernel, pressureKernel, viscosityKernel);
-        ComputeHelper.SetBuffer(compute, densityBuffer, "Densities", densityKernel, pressureKernel, viscosityKernel);
-        ComputeHelper.SetBuffer(compute, velocityBuffer, "Velocities", externalForcesKernel, pressureKernel, viscosityKernel, updatePositionKernel);
+        ComputeHelper.SetBuffer(compute, positionBuffer, "Positions", kernels: new int[] { externalForcesKernel, updatePositionKernel });
+        ComputeHelper.SetBuffer(compute, predictedPositionBuffer, "PredictedPositions", kernels: new int[] { externalForcesKernel, spatialHashKernel, densityKernel, pressureKernel, viscosityKernel });
+        ComputeHelper.SetBuffer(compute, spatialIndices, "SpatialIndices", kernels: new int[] { spatialHashKernel, densityKernel, pressureKernel, viscosityKernel });
+        ComputeHelper.SetBuffer(compute, spatialOffsets, "SpatialOffsets", kernels: new int[] { spatialHashKernel, densityKernel, pressureKernel, viscosityKernel });
+        ComputeHelper.SetBuffer(compute, densityBuffer, "Densities", kernels: new int[] { densityKernel, pressureKernel, viscosityKernel });
+        ComputeHelper.SetBuffer(compute, velocityBuffer, "Velocities", kernels: new int[] { externalForcesKernel, pressureKernel, viscosityKernel, updatePositionKernel });
 
         compute.SetInt("numParticles", numParticles);
 

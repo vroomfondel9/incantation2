@@ -1,5 +1,6 @@
 using UnityEngine;
 using Unity.Mathematics;
+using UnityEngine.Rendering;
 
 public class Simulation3D : MonoBehaviour
 {
@@ -22,6 +23,9 @@ public class Simulation3D : MonoBehaviour
     public Spawner3D spawner;
     public ParticleDisplay3D display;
     public Transform floorDisplay;
+
+    // Command Buffer
+    CommandBuffer commandBuffer;
 
     // Buffers
     public ComputeBuffer positionBuffer { get; private set; }
@@ -56,6 +60,9 @@ public class Simulation3D : MonoBehaviour
 
         spawnData = spawner.GetSpawnData();
 
+        commandBuffer = new CommandBuffer();
+        commandBuffer.SetExecutionFlags(CommandBufferExecutionFlags.AsyncCompute);
+
         // Create buffers
         int numParticles = spawnData.points.Length;
         positionBuffer = ComputeHelper.CreateStructuredBuffer<float3>(numParticles);
@@ -69,18 +76,17 @@ public class Simulation3D : MonoBehaviour
         SetInitialBufferData(spawnData);
 
         // Init compute
-        ComputeHelper.SetBuffer(compute, positionBuffer, "Positions", externalForcesKernel, updatePositionsKernel);
-        ComputeHelper.SetBuffer(compute, predictedPositionsBuffer, "PredictedPositions", externalForcesKernel, spatialHashKernel, densityKernel, pressureKernel, viscosityKernel, updatePositionsKernel);
-        ComputeHelper.SetBuffer(compute, spatialIndices, "SpatialIndices", spatialHashKernel, densityKernel, pressureKernel, viscosityKernel);
-        ComputeHelper.SetBuffer(compute, spatialOffsets, "SpatialOffsets", spatialHashKernel, densityKernel, pressureKernel, viscosityKernel);
-        ComputeHelper.SetBuffer(compute, densityBuffer, "Densities", densityKernel, pressureKernel, viscosityKernel);
-        ComputeHelper.SetBuffer(compute, velocityBuffer, "Velocities", externalForcesKernel, pressureKernel, viscosityKernel, updatePositionsKernel);
+        ComputeHelper.SetBuffer(compute, positionBuffer, "Positions", commandBuffer: commandBuffer, kernels: new int[]{ externalForcesKernel, updatePositionsKernel});
+        ComputeHelper.SetBuffer(compute, predictedPositionsBuffer, "PredictedPositions", commandBuffer: commandBuffer, kernels: new int[] { externalForcesKernel, spatialHashKernel, densityKernel, pressureKernel, viscosityKernel, updatePositionsKernel });
+        ComputeHelper.SetBuffer(compute, spatialIndices, "SpatialIndices", commandBuffer: commandBuffer, kernels: new int[] { spatialHashKernel, densityKernel, pressureKernel, viscosityKernel });
+        ComputeHelper.SetBuffer(compute, spatialOffsets, "SpatialOffsets", commandBuffer: commandBuffer, kernels: new int[] { spatialHashKernel, densityKernel, pressureKernel, viscosityKernel });
+        ComputeHelper.SetBuffer(compute, densityBuffer, "Densities", commandBuffer: commandBuffer, kernels: new int[] { densityKernel, pressureKernel, viscosityKernel });
+        ComputeHelper.SetBuffer(compute, velocityBuffer, "Velocities", commandBuffer: commandBuffer, kernels: new int[] { externalForcesKernel, pressureKernel, viscosityKernel, updatePositionsKernel });
 
-        compute.SetInt("numParticles", positionBuffer.count);
+        commandBuffer.SetComputeIntParam(compute, "numParticles", positionBuffer.count);
 
         gpuSort = new();
-        gpuSort.SetBuffers(spatialIndices, spatialOffsets);
-
+        gpuSort.SetBuffers(spatialIndices, spatialOffsets, commandBuffer: commandBuffer);
 
         // Init display
         display.Init(this);
@@ -132,14 +138,15 @@ public class Simulation3D : MonoBehaviour
 
     void RunSimulationStep()
     {
-        ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: externalForcesKernel);
-        ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: spatialHashKernel);
-        gpuSort.SortAndCalculateOffsets();
-        ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: densityKernel);
-        ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: pressureKernel);
-        ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: viscosityKernel);
-        ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: updatePositionsKernel);
+        ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: externalForcesKernel, commandBuffer: commandBuffer);
+        ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: spatialHashKernel, commandBuffer: commandBuffer);
+        gpuSort.SortAndCalculateOffsets(commandBuffer: commandBuffer);
+        ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: densityKernel, commandBuffer: commandBuffer);
+        ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: pressureKernel, commandBuffer: commandBuffer);
+        ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: viscosityKernel, commandBuffer: commandBuffer);
+        ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: updatePositionsKernel, commandBuffer: commandBuffer);
 
+        Graphics.ExecuteCommandBuffer(commandBuffer);
     }
 
     void UpdateSettings(float deltaTime)
@@ -147,19 +154,19 @@ public class Simulation3D : MonoBehaviour
         Vector3 simBoundsSize = transform.localScale;
         Vector3 simBoundsCentre = transform.position;
 
-        compute.SetFloat("deltaTime", deltaTime);
-        compute.SetFloat("gravity", gravity);
-        compute.SetFloat("collisionDamping", collisionDamping);
-        compute.SetFloat("smoothingRadius", smoothingRadius);
-        compute.SetFloat("targetDensity", targetDensity);
-        compute.SetFloat("pressureMultiplier", pressureMultiplier);
-        compute.SetFloat("nearPressureMultiplier", nearPressureMultiplier);
-        compute.SetFloat("viscosityStrength", viscosityStrength);
-        compute.SetVector("boundsSize", simBoundsSize);
-        compute.SetVector("centre", simBoundsCentre);
+        commandBuffer.SetComputeFloatParam(compute, "deltaTime", deltaTime);
+        commandBuffer.SetComputeFloatParam(compute, "gravity", gravity);
+        commandBuffer.SetComputeFloatParam(compute, "collisionDamping", collisionDamping);
+        commandBuffer.SetComputeFloatParam(compute, "smoothingRadius", smoothingRadius);
+        commandBuffer.SetComputeFloatParam(compute, "targetDensity", targetDensity);
+        commandBuffer.SetComputeFloatParam(compute, "pressureMultiplier", pressureMultiplier);
+        commandBuffer.SetComputeFloatParam(compute, "nearPressureMultiplier", nearPressureMultiplier);
+        commandBuffer.SetComputeFloatParam(compute, "viscosityStrength", viscosityStrength);
+        commandBuffer.SetComputeVectorParam(compute, "boundsSize", simBoundsSize);
+        commandBuffer.SetComputeVectorParam(compute, "centre", simBoundsCentre);
 
-        compute.SetMatrix("localToWorld", transform.localToWorldMatrix);
-        compute.SetMatrix("worldToLocal", transform.worldToLocalMatrix);
+        commandBuffer.SetComputeMatrixParam(compute, "localToWorld", transform.localToWorldMatrix);
+        commandBuffer.SetComputeMatrixParam(compute, "worldToLocal", transform.worldToLocalMatrix);
     }
 
     void SetInitialBufferData(Spawner3D.SpawnData spawnData)
@@ -195,6 +202,7 @@ public class Simulation3D : MonoBehaviour
     void OnDestroy()
     {
         ComputeHelper.Release(positionBuffer, predictedPositionsBuffer, velocityBuffer, densityBuffer, spatialIndices, spatialOffsets);
+        commandBuffer.Release();
     }
 
     void OnDrawGizmos()
