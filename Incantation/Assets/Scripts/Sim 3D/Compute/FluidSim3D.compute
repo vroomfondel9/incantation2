@@ -4,6 +4,8 @@
 #pragma kernel CalculatePressureForce
 #pragma kernel CalculateViscosity
 #pragma kernel UpdatePositions
+#pragma kernel CopyBuffer
+#pragma kernel SyncSpacialIndices
 
 // Includes
 #include "./FluidMaths3D.hlsl"
@@ -18,6 +20,7 @@ RWStructuredBuffer<float3> Velocities;
 RWStructuredBuffer<float2> Densities; // Density, Near Density
 RWStructuredBuffer<uint3> SpatialIndices; // used for spatial hashing
 RWStructuredBuffer<uint> SpatialOffsets; // used for spatial hashing
+RWStructuredBuffer<float3> tempBuffer;	// Used to copy values for memory coalescing
 
 // Settings
 const uint numParticles;
@@ -33,6 +36,8 @@ const float edgeForce;
 const float edgeForceDst;
 const float3 boundsSize;
 const float3 centre;
+const int copyBufferId;		//Position = 0, PredictedPosition = 1, Velocity = 2, Density = 3
+const int copyDirection;		//0 = real buffer to temp buffer, 1 = temp buffer to real buffer
 
 const float4x4 localToWorld;
 const float4x4 worldToLocal;
@@ -276,4 +281,64 @@ void UpdatePositions(uint3 id : SV_DispatchThreadID)
 
 	Positions[id.x] += Velocities[id.x] * deltaTime;
 	ResolveCollisions(id.x);
+}
+
+// The branchiness of this kernel is okay because all threads will follow the same branches on a given Dispatch so there will be no divergence
+[numthreads(NumThreads, 1, 1)]
+void CopyBuffer(uint3 id : SV_DispatchThreadID)
+{
+	if (id.x >= numParticles) return;
+
+	if (copyDirection == 0)
+	{
+		// Copy to temp buffer
+		uint3 indexData = SpatialIndices[id.x];
+		uint uncoalescedIndex = indexData[0];
+		if (copyBufferId == 0)
+		{
+			tempBuffer[id.x] = Positions[uncoalescedIndex];
+		} 
+		else if (copyBufferId == 1)
+		{
+			tempBuffer[id.x] = PredictedPositions[uncoalescedIndex];
+		}
+		else if (copyBufferId == 2)
+		{
+			tempBuffer[id.x] = Velocities[uncoalescedIndex];
+		}
+		else if (copyBufferId == 3)
+		{
+			float2 density = Densities[uncoalescedIndex];
+			tempBuffer[id.x] = float3(density[0], density[1], 0.0);
+		}
+	}
+	else
+	{
+		// Copy from temp buffer
+		if (copyBufferId == 0)
+		{
+			Positions[id.x] = tempBuffer[id.x];
+		} 
+		else if (copyBufferId == 1)
+		{
+			PredictedPositions[id.x] = tempBuffer[id.x];
+		}
+		else if (copyBufferId == 2)
+		{
+			Velocities[id.x] = tempBuffer[id.x];
+		}
+		else if (copyBufferId == 3)
+		{
+			float3 density = tempBuffer[id.x];
+			Densities[id.x] = float2(density[0], density[1]);
+		}
+	}
+}
+
+[numthreads(NumThreads, 1, 1)]
+void SyncSpacialIndices(uint3 id : SV_DispatchThreadID)
+{
+	if (id.x >= numParticles) return;
+
+	SpatialIndices[id.x][0] = id.x;
 }

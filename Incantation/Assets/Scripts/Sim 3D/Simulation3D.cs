@@ -28,6 +28,7 @@ public class Simulation3D : MonoBehaviour
     public ComputeBuffer velocityBuffer { get; private set; }
     public ComputeBuffer densityBuffer { get; private set; }
     public ComputeBuffer predictedPositionsBuffer;
+    public ComputeBuffer tempBuffer;
     ComputeBuffer spatialIndices;
     ComputeBuffer spatialOffsets;
 
@@ -38,6 +39,12 @@ public class Simulation3D : MonoBehaviour
     const int pressureKernel = 3;
     const int viscosityKernel = 4;
     const int updatePositionsKernel = 5;
+    const int copyBufferKernel = 6;
+    const int syncSpacialIndicesKernel = 7;
+
+    // Constants for copying data
+    const int numCopyBuffers = 4;
+    const int numCopyDirections = 2;
 
     GPUSort gpuSort;
 
@@ -64,17 +71,20 @@ public class Simulation3D : MonoBehaviour
         densityBuffer = ComputeHelper.CreateStructuredBuffer<float2>(numParticles);
         spatialIndices = ComputeHelper.CreateStructuredBuffer<uint3>(numParticles);
         spatialOffsets = ComputeHelper.CreateStructuredBuffer<uint>(numParticles);
+        tempBuffer = ComputeHelper.CreateStructuredBuffer<float3>(numParticles);
 
         // Set buffer data
         SetInitialBufferData(spawnData);
 
         // Init compute
-        ComputeHelper.SetBuffer(compute, positionBuffer, "Positions", externalForcesKernel, updatePositionsKernel);
-        ComputeHelper.SetBuffer(compute, predictedPositionsBuffer, "PredictedPositions", externalForcesKernel, spatialHashKernel, densityKernel, pressureKernel, viscosityKernel, updatePositionsKernel);
-        ComputeHelper.SetBuffer(compute, spatialIndices, "SpatialIndices", spatialHashKernel, densityKernel, pressureKernel, viscosityKernel);
+        ComputeHelper.SetBuffer(compute, positionBuffer, "Positions", externalForcesKernel, updatePositionsKernel, copyBufferKernel);
+        ComputeHelper.SetBuffer(compute, predictedPositionsBuffer, "PredictedPositions", externalForcesKernel, spatialHashKernel, densityKernel, pressureKernel, viscosityKernel, updatePositionsKernel, copyBufferKernel);
+        ComputeHelper.SetBuffer(compute, spatialIndices, "SpatialIndices", spatialHashKernel, densityKernel, pressureKernel, viscosityKernel, copyBufferKernel, syncSpacialIndicesKernel);
         ComputeHelper.SetBuffer(compute, spatialOffsets, "SpatialOffsets", spatialHashKernel, densityKernel, pressureKernel, viscosityKernel);
-        ComputeHelper.SetBuffer(compute, densityBuffer, "Densities", densityKernel, pressureKernel, viscosityKernel);
-        ComputeHelper.SetBuffer(compute, velocityBuffer, "Velocities", externalForcesKernel, pressureKernel, viscosityKernel, updatePositionsKernel);
+        ComputeHelper.SetBuffer(compute, densityBuffer, "Densities", densityKernel, pressureKernel, viscosityKernel, copyBufferKernel);
+        ComputeHelper.SetBuffer(compute, velocityBuffer, "Velocities", externalForcesKernel, pressureKernel, viscosityKernel, updatePositionsKernel, copyBufferKernel);
+        ComputeHelper.SetBuffer(compute, tempBuffer, "tempBuffer", copyBufferKernel);
+
 
         compute.SetInt("numParticles", positionBuffer.count);
 
@@ -135,6 +145,7 @@ public class Simulation3D : MonoBehaviour
         ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: externalForcesKernel);
         ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: spatialHashKernel);
         gpuSort.SortAndCalculateOffsets();
+        coalesceMemory();
         ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: densityKernel);
         ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: pressureKernel);
         ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: viscosityKernel);
@@ -170,6 +181,22 @@ public class Simulation3D : MonoBehaviour
         positionBuffer.SetData(allPoints);
         predictedPositionsBuffer.SetData(allPoints);
         velocityBuffer.SetData(spawnData.velocities);
+    }
+
+    void coalesceMemory()
+    {
+        for (int curBuffer = 0; curBuffer < numCopyBuffers; curBuffer++)
+        {
+            compute.SetInt("copyBufferId", curBuffer);
+
+            for (int curCopyDirection = 0; curCopyDirection < numCopyDirections; curCopyDirection++)
+            {
+                compute.SetInt("copyDirection", curCopyDirection);
+                ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: copyBufferKernel);
+            }
+        }
+
+        ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: syncSpacialIndicesKernel);
     }
 
     void HandleInput()
