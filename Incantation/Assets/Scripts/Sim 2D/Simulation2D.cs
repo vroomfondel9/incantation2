@@ -36,7 +36,7 @@ public class Simulation2D : MonoBehaviour
     ComputeBuffer predictedPositionBuffer;
     ComputeBuffer spatialIndices;
     ComputeBuffer spatialOffsets;
-    GPUSort gpuSort;
+    BitonicSort gpuSort;
 
     // Kernel IDs
     const int externalForcesKernel = 0;
