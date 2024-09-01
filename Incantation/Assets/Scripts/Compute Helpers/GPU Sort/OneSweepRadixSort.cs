@@ -16,7 +16,7 @@ using UnityEngine;
 using UnityEngine.Rendering;
 using System.IO;
 
-public class OneSweep : MonoBehaviour
+public class OneSweepRadixSort : MonoBehaviour
 {
     [Range(k_minSize, k_maxSize)]
     public int m_sizeExponent;

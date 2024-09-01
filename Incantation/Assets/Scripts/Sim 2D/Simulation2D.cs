@@ -85,7 +85,7 @@ public class Simulation2D : MonoBehaviour
 
         compute.SetInt("numParticles", numParticles);
 
-        gpuSort = new();
+        gpuSort = new BitonicSort();
         gpuSort.SetBuffers(spatialIndices, spatialOffsets);
 
 
