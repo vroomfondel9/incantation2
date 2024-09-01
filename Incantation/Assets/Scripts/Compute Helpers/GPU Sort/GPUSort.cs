@@ -21,7 +21,7 @@ public abstract class GPUSort
         this.indexBuffer = indexBuffer;
         this.offsetBuffer = offsetBuffer;
 
-        createAlgorithmSpecificBuffers();
+        createAlgorithmSpecificBuffers(indexBuffer.count);
         setBuffersInKernels();
     }
 
@@ -32,7 +32,7 @@ public abstract class GPUSort
         ComputeHelper.Dispatch(this.sortCompute, indexBuffer.count, kernelIndex: calculateOffsetsKernel);
     }
 
-    protected abstract void createAlgorithmSpecificBuffers();
+    protected abstract void createAlgorithmSpecificBuffers(int elementCount);
     protected abstract void setBuffersInKernels();
     protected abstract void Sort();
 }

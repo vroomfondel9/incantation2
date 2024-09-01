@@ -47,6 +47,7 @@ public class Simulation3D : MonoBehaviour
     const int numCopyDirections = 2;
 
     GPUSort gpuSort;
+    GPUSort gpuSortTest;
 
     // State
     bool isPaused;
@@ -90,6 +91,9 @@ public class Simulation3D : MonoBehaviour
 
         gpuSort = new BitonicSort();
         gpuSort.SetBuffers(spatialIndices, spatialOffsets);
+
+        gpuSortTest = new RadixHillisSteeleSort();
+        gpuSortTest.SetBuffers(spatialIndices, spatialOffsets);
 
 
         // Init display
@@ -144,6 +148,7 @@ public class Simulation3D : MonoBehaviour
     {
         ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: externalForcesKernel);
         ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: spatialHashKernel);
+        gpuSortTest.SortAndCalculateOffsets();
         gpuSort.SortAndCalculateOffsets();
         coalesceMemory();
         ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: densityKernel);

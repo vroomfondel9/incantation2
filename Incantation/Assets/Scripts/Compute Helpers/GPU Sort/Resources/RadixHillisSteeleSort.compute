@@ -1,0 +1,84 @@
+#pragma kernel CalculateOffsets
+#pragma kernel InitializeBucketsWithPredicate
+#pragma kernel CalculateHillsSteeleScanStep
+#pragma kernel CalculateExclusiveScanFromInclusive
+#pragma kernel ScatterSpacialIndices
+#pragma kernel CopyEntriesFromScatter
+
+// Includes
+#include "./RadixCommon.hlsl"
+
+// How far away you should jump to find the left neighbor to add to this element
+// If you go out of bounds of the buffer, just add 0.
+const int curStride;
+
+[numthreads(128, 1, 1)]
+void CalculateOffsets(uint3 id : SV_DispatchThreadID)
+{
+	CalcOffsets(id);
+}
+
+[numthreads(64, 1, 1)]
+void InitializeBucketsWithPredicate (uint3 id : SV_DispatchThreadID)
+{
+	if (id.x >= numEntries) { return; }
+
+	BucketStruct buckStruct = CalculateInitBucketsWithPredicate(id);
+	DstBuckets[id.x] = buckStruct;
+}
+
+//TODO test if this benefits from reducing numthreads due to branch divergence at copy vs add
+[numthreads(64, 1, 1)]
+void CalculateHillsSteeleScanStep (uint3 id : SV_DispatchThreadID)
+{
+	if (id.x >= numEntries) { return; }
+	uint thisIndex = id.x;
+	uint leftIndex = thisIndex - curStride;
+	BucketStruct thisBucket = SrcBuckets[thisIndex];
+
+	if (leftIndex >= 0)
+	{
+		BucketStruct leftBucket = SrcBuckets[leftIndex];
+
+		for (int i = 0; i < BUCKET_NUM; i++)
+		{
+			thisBucket.buckets[i] +=  leftBucket.buckets[i];
+		}
+	}
+
+	DstBuckets[thisIndex] = thisBucket;
+}
+
+//Simply subtracts the original value to convert inclusive scan to exclusive
+[numthreads(64, 1, 1)]
+void CalculateExclusiveScanFromInclusive (uint3 id : SV_DispatchThreadID)
+{
+	if (id.x >= numEntries) { return; }
+	uint thisIndex = id.x;
+
+	BucketStruct originalValue = CalculateInitBucketsWithPredicate(id);
+	BucketStruct sum = SrcBuckets[thisIndex];
+
+	for (int i = 0; i < BUCKET_NUM; i++)
+	{
+		sum.buckets[i] = sum.buckets[i] - originalValue.buckets[i];
+	}
+
+	DstBuckets[thisIndex] = sum;
+}
+
+[numthreads(64, 1, 1)]
+void ScatterSpacialIndices (uint3 id : SV_DispatchThreadID)
+{
+	if (id.x >= numEntries) { return; }
+
+	CalculateIndexAndScatter(id);
+}
+
+[numthreads(64, 1, 1)]
+void CopyEntriesFromScatter (uint3 id : SV_DispatchThreadID)
+{
+	if (id.x >= numEntries) { return; }
+
+	CopyFromScatter(id);
+}

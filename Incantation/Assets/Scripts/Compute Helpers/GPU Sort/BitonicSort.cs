@@ -7,7 +7,7 @@ public class BitonicSort : GPUSort
 
     public BitonicSort() : base("BitonicMergeSort") { }
 
-    protected override void createAlgorithmSpecificBuffers() { }
+    protected override void createAlgorithmSpecificBuffers(int elementCount) { }
 
     protected override void setBuffersInKernels()
     {
