@@ -4,12 +4,12 @@ using Unity.Mathematics;
 
 public class OneSweepRadixSort : GPUSort
 {
-    private const int m_initOneSweepKernel = 1;
-    private const int m_globalHistKernel = 2;
-    private const int m_scanKernel = 3;
-    private const int m_digitBinPassKernel = 4;
-    private const int m_initRandomKernel = 5;
-    private const int m_validationKernel = 6;
+    private const int m_initOneSweepKernel = 0;
+    private const int m_globalHistKernel = 1;
+    private const int m_scanKernel = 2;
+    private const int m_digitBinPassKernel = 3;
+    private const int m_initRandomKernel = 4;
+    private const int m_validationKernel = 5;
 
     private const int k_radixPasses = 4;
     private const int k_radix = 256;
@@ -19,7 +19,6 @@ public class OneSweepRadixSort : GPUSort
     private int m_size = 0;
     private int m_threadBlocks = 0;
 
-    private ComputeBuffer altBuffer;
     private ComputeBuffer globalHistoryBuffer;
     private ComputeBuffer interIndexBuffer;
     private ComputeBuffer passHistoryBuffer;
@@ -42,13 +41,12 @@ public class OneSweepRadixSort : GPUSort
 
     protected override void setBuffersInKernels()
     {
-        ComputeHelper.SetBuffer(this.sortCompute, this.offsetBuffer, "Offsets", calculateOffsetsKernel);
-        ComputeHelper.SetBuffer(this.sortCompute, this.indexBuffer, "Entries", calculateOffsetsKernel);
+        
     }
 
     // Sorts given buffer of integer values using bitonic merge sort
     // Note: buffer size is not restricted to powers of 2 in this implementation
-    protected override void Sort()
+    public override void Sort()
     {
         DispatchKernels();
     }
@@ -64,13 +62,8 @@ public class OneSweepRadixSort : GPUSort
             Debug.LogError("Kernel(s) not found, most likely you do not have the correct compute shader attached to the game object");
             Debug.LogError("The correct compute shader is" + k_computeShaderString + ". Exit play mode and attatch to the gameobject, then retry.");
             Debug.LogError("Destroying this object.");
-            Destroy(this);
+            destroy();
         }
-    }
-
-    private void Destroy(OneSweepRadixSort toDestroy)
-    {
-        toDestroy.OnDestroy();
     }
 
     private void UpdateSize()
@@ -83,10 +76,10 @@ public class OneSweepRadixSort : GPUSort
 
     private void UpdateSortBuffers()
     {
-        if (altBuffer != null)
-            altBuffer.Dispose();
-
-        altBuffer = ComputeHelper.CreateStructuredBuffer<uint3>(m_size);
+        // Previously, this destroyed and recreated the main buffers for sorting.
+        // Obviously, I can't do that because these buffers are managed and reused by the calling class.
+        // But...
+        // TODO This class will need to be enhanced when I add functionality to create/destroy particles
     }
 
     private void UpdatePassHistBuffer()
@@ -120,7 +113,7 @@ public class OneSweepRadixSort : GPUSort
     private void SetStaticBuffers()
     {
         //Input
-        sortCompute.SetBuffer(m_initRandomKernel, "b_sort", indexBuffer);
+        sortCompute.SetBuffer(m_initRandomKernel, "b_sort", this.buffer1);
 
         //Init
         sortCompute.SetBuffer(m_initOneSweepKernel, "b_passHist", passHistoryBuffer);
@@ -128,7 +121,7 @@ public class OneSweepRadixSort : GPUSort
         sortCompute.SetBuffer(m_initOneSweepKernel, "b_index", interIndexBuffer);
 
         //GlobalHist
-        sortCompute.SetBuffer(m_globalHistKernel, "b_sort", indexBuffer);
+        sortCompute.SetBuffer(m_globalHistKernel, "b_sort", this.buffer1);
         sortCompute.SetBuffer(m_globalHistKernel, "b_globalHist", globalHistoryBuffer);
 
         //Scan
@@ -141,7 +134,7 @@ public class OneSweepRadixSort : GPUSort
         sortCompute.SetBuffer(m_digitBinPassKernel, "b_index", interIndexBuffer);
 
         //Validate
-        sortCompute.SetBuffer(m_validationKernel, "b_sort", indexBuffer);
+        sortCompute.SetBuffer(m_validationKernel, "b_sort", this.buffer1);
         sortCompute.SetBuffer(m_validationKernel, "b_errorCount", errorCountBuffer);
     }
 
@@ -157,23 +150,31 @@ public class OneSweepRadixSort : GPUSort
         sortCompute.Dispatch(m_scanKernel, k_radixPasses, 1, 1);
 
         sortCompute.SetInt("e_radixShift", 0);
-        sortCompute.SetBuffer(m_digitBinPassKernel, "b_sort", indexBuffer);
-        sortCompute.SetBuffer(m_digitBinPassKernel, "b_alt", altBuffer);
+        sortCompute.SetBuffer(m_digitBinPassKernel, "b_sort", this.buffer1);
+        sortCompute.SetBuffer(m_digitBinPassKernel, "b_alt", this.buffer3);
+        sortCompute.SetBuffer(m_digitBinPassKernel, "b_rider", this.buffer2);
+        sortCompute.SetBuffer(m_digitBinPassKernel, "b_altrider", this.buffer4);
         sortCompute.Dispatch(m_digitBinPassKernel, m_threadBlocks, 1, 1);
 
         sortCompute.SetInt("e_radixShift", 8);
-        sortCompute.SetBuffer(m_digitBinPassKernel, "b_sort", altBuffer);
-        sortCompute.SetBuffer(m_digitBinPassKernel, "b_alt", indexBuffer);
+        sortCompute.SetBuffer(m_digitBinPassKernel, "b_sort", this.buffer3);
+        sortCompute.SetBuffer(m_digitBinPassKernel, "b_alt", this.buffer1);
+        sortCompute.SetBuffer(m_digitBinPassKernel, "b_rider", this.buffer4);
+        sortCompute.SetBuffer(m_digitBinPassKernel, "b_altrider", this.buffer2);
         sortCompute.Dispatch(m_digitBinPassKernel, m_threadBlocks, 1, 1);
 
         sortCompute.SetInt("e_radixShift", 16);
-        sortCompute.SetBuffer(m_digitBinPassKernel, "b_sort", indexBuffer);
-        sortCompute.SetBuffer(m_digitBinPassKernel, "b_alt", altBuffer);
+        sortCompute.SetBuffer(m_digitBinPassKernel, "b_sort", this.buffer1);
+        sortCompute.SetBuffer(m_digitBinPassKernel, "b_alt", this.buffer3);
+        sortCompute.SetBuffer(m_digitBinPassKernel, "b_rider", this.buffer2);
+        sortCompute.SetBuffer(m_digitBinPassKernel, "b_altrider", this.buffer4);
         sortCompute.Dispatch(m_digitBinPassKernel, m_threadBlocks, 1, 1);
 
         sortCompute.SetInt("e_radixShift", 24);
-        sortCompute.SetBuffer(m_digitBinPassKernel, "b_sort", altBuffer);
-        sortCompute.SetBuffer(m_digitBinPassKernel, "b_alt", indexBuffer);
+        sortCompute.SetBuffer(m_digitBinPassKernel, "b_sort", this.buffer3);
+        sortCompute.SetBuffer(m_digitBinPassKernel, "b_alt", this.buffer1);
+        sortCompute.SetBuffer(m_digitBinPassKernel, "b_rider", this.buffer4);
+        sortCompute.SetBuffer(m_digitBinPassKernel, "b_altrider", this.buffer2);
         sortCompute.Dispatch(m_digitBinPassKernel, m_threadBlocks, 1, 1);
     }
 
@@ -196,10 +197,8 @@ public class OneSweepRadixSort : GPUSort
         return (x + y - 1) / y;
     }
 
-    private void OnDestroy()
+    public override void destroy()
     {
-        if (altBuffer != null)
-            altBuffer.Dispose();
         if (globalHistoryBuffer != null)
             globalHistoryBuffer.Dispose();
         if (interIndexBuffer != null)
@@ -208,5 +207,10 @@ public class OneSweepRadixSort : GPUSort
             passHistoryBuffer.Dispose();
         if (errorCountBuffer != null)
             errorCountBuffer.Dispose();
+    }
+
+    protected override bool isSortInPlace()
+    {
+        return false;
     }
 }

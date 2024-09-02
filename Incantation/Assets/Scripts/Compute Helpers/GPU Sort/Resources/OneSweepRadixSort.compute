@@ -14,7 +14,6 @@
 //#pragma require wavebasic
 //#pragma require waveballot
 
-#pragma kernel CalculateOffsets
 #pragma kernel InitOneSweep
 #pragma kernel GlobalHistogram
 #pragma kernel Scan
@@ -59,6 +58,8 @@ cbuffer cbParallelSort : register(b0)
 
 RWStructuredBuffer<uint> b_sort;                        //Buffer to sort
 RWStructuredBuffer<uint> b_alt;                         //Double buffer
+RWStructuredBuffer<uint> b_rider;                       //Data to follow data being sorted. Should be reindexed the same way.
+RWStructuredBuffer<uint> b_altrider;                    //Double buffer
 RWStructuredBuffer<uint> b_globalHist;                  //Buffer to hold global digit counts for each pass
 globallycoherent RWStructuredBuffer<uint> b_passHist;   //Buffer containing the interthreadblock prefix sum for each pass
 globallycoherent RWStructuredBuffer<uint> b_index;      //Buffer used to atomically assign partition tiles
@@ -586,19 +587,28 @@ void DigitBinningPass(uint3 gtid : SV_GroupThreadID)
         }
     }
     GroupMemoryBarrierWithGroupSync();
+    uint newIndex;
     
     if (partitionIndex < e_threadBlocks - 1)
     {
         [unroll(KEYS_PER_THREAD)]
         for (uint i = gtid.x; i < PART_SIZE; i += PASS_DIM)
-            b_alt[g_pass[ExtractDigit(g_pass[i]) + PART_SIZE] + i] = g_pass[i];
+        {
+            newIndex = g_pass[ExtractDigit(g_pass[i]) + PART_SIZE] + i;
+            b_alt[newIndex] = g_pass[i];
+            b_altrider[newIndex] = b_rider[i];
+        }
     }
     
     if (partitionIndex == e_threadBlocks - 1)
     {
         const uint lastPartSize = e_numKeys - partitionIndex * PART_SIZE;
         for (uint i = gtid.x; i < lastPartSize; i += PASS_DIM)
-            b_alt[g_pass[ExtractDigit(g_pass[i]) + PART_SIZE] + i] = g_pass[i];
+        {
+            newIndex = g_pass[ExtractDigit(g_pass[i]) + PART_SIZE] + i;
+            b_alt[newIndex] = g_pass[i];
+            b_altrider[newIndex] = b_rider[i];
+        }
     }
 }
 

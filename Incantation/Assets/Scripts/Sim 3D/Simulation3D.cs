@@ -23,24 +23,33 @@ public class Simulation3D : MonoBehaviour
     public ParticleDisplay3D display;
     public Transform floorDisplay;
 
-    // Buffers
+    // Buffers that hold the principle SPH values
     public ComputeBuffer positionBuffer { get; private set; }
     public ComputeBuffer velocityBuffer { get; private set; }
     public ComputeBuffer densityBuffer { get; private set; }
     public ComputeBuffer predictedPositionsBuffer;
+
+    // These are reused, depending on the kernel to hold things like keys vs indices
+    // After indices have been reordered, this is repurposed to hold keys and offsets
+    // Once offsets are computed, keys are no longer needed as they're computed based on position
+    // Buffers 3 & 4 may not be needed but is used by sort algorithms that can't sort in place and need to double buffer
+    ComputeBuffer spacialPart1;
+    ComputeBuffer spacialPart2;
+    ComputeBuffer spacialPart3;
+    ComputeBuffer spacialPart4;
+
+    //Used as a double buffer to re-order density, velocity, position, predicated position values after sort
     public ComputeBuffer tempBuffer;
-    ComputeBuffer spatialIndices;
-    ComputeBuffer spatialOffsets;
 
     // Kernel IDs
     const int externalForcesKernel = 0;
-    const int spatialHashKernel = 1;
+    const int initializeSpacialPartitionBuffers = 1;
     const int densityKernel = 2;
     const int pressureKernel = 3;
     const int viscosityKernel = 4;
     const int updatePositionsKernel = 5;
     const int copyBufferKernel = 6;
-    const int syncSpacialIndicesKernel = 7;
+    const int calculateOffsetsKernel = 6;
 
     // Constants for copying data
     const int numCopyBuffers = 4;
@@ -69,8 +78,10 @@ public class Simulation3D : MonoBehaviour
         predictedPositionsBuffer = ComputeHelper.CreateStructuredBuffer<float3>(numParticles);
         velocityBuffer = ComputeHelper.CreateStructuredBuffer<float3>(numParticles);
         densityBuffer = ComputeHelper.CreateStructuredBuffer<float2>(numParticles);
-        spatialIndices = ComputeHelper.CreateStructuredBuffer<uint3>(numParticles);
-        spatialOffsets = ComputeHelper.CreateStructuredBuffer<uint>(numParticles);
+        spacialPart1 = ComputeHelper.CreateStructuredBuffer<uint>(numParticles);
+        spacialPart2 = ComputeHelper.CreateStructuredBuffer<uint>(numParticles);
+        spacialPart3 = ComputeHelper.CreateStructuredBuffer<uint>(numParticles);
+        spacialPart4 = ComputeHelper.CreateStructuredBuffer<uint>(numParticles);
         tempBuffer = ComputeHelper.CreateStructuredBuffer<float3>(numParticles);
 
         // Set buffer data
@@ -78,18 +89,18 @@ public class Simulation3D : MonoBehaviour
 
         // Init compute
         ComputeHelper.SetBuffer(compute, positionBuffer, "Positions", externalForcesKernel, updatePositionsKernel, copyBufferKernel);
-        ComputeHelper.SetBuffer(compute, predictedPositionsBuffer, "PredictedPositions", externalForcesKernel, spatialHashKernel, densityKernel, pressureKernel, viscosityKernel, updatePositionsKernel, copyBufferKernel);
-        ComputeHelper.SetBuffer(compute, spatialIndices, "SpatialIndices", spatialHashKernel, densityKernel, pressureKernel, viscosityKernel, copyBufferKernel, syncSpacialIndicesKernel);
-        ComputeHelper.SetBuffer(compute, spatialOffsets, "SpatialOffsets", spatialHashKernel, densityKernel, pressureKernel, viscosityKernel);
+        ComputeHelper.SetBuffer(compute, predictedPositionsBuffer, "PredictedPositions", externalForcesKernel, initializeSpacialPartitionBuffers, densityKernel, pressureKernel, viscosityKernel, updatePositionsKernel, copyBufferKernel);
         ComputeHelper.SetBuffer(compute, densityBuffer, "Densities", densityKernel, pressureKernel, viscosityKernel, copyBufferKernel);
         ComputeHelper.SetBuffer(compute, velocityBuffer, "Velocities", externalForcesKernel, pressureKernel, viscosityKernel, updatePositionsKernel, copyBufferKernel);
+        ComputeHelper.SetBuffer(compute, spacialPart1, "spacialPart1", initializeSpacialPartitionBuffers, calculateOffsetsKernel);
+        ComputeHelper.SetBuffer(compute, spacialPart2, "spacialPart2", initializeSpacialPartitionBuffers, calculateOffsetsKernel, densityKernel, pressureKernel, viscosityKernel);
         ComputeHelper.SetBuffer(compute, tempBuffer, "tempBuffer", copyBufferKernel);
 
 
         compute.SetInt("numParticles", positionBuffer.count);
 
         gpuSort = new BitonicSort();
-        gpuSort.SetBuffers(spatialIndices, spatialOffsets);
+        gpuSort.SetBuffers(predictedPositionsBuffer, spacialPart1, spacialPart2, spacialPart3, spacialPart4);
 
 
         // Init display
@@ -142,13 +153,21 @@ public class Simulation3D : MonoBehaviour
 
     void RunSimulationStep()
     {
+        // External forces (not neighbor-dependent)
         ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: externalForcesKernel);
-        ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: spatialHashKernel);
-        gpuSort.SortAndCalculateOffsets();
+        
+        // Spacial partitioning for upcoming neighbor searches
+        ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: initializeSpacialPartitionBuffers);
+        gpuSort.Sort();
         coalesceMemory();
+        ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: calculateOffsetsKernel);
+        
+        // SPH core functions
         ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: densityKernel);
         ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: pressureKernel);
         ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: viscosityKernel);
+
+        // Copying predicted position back into position buffer for next iteration
         ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: updatePositionsKernel);
 
     }
@@ -195,8 +214,6 @@ public class Simulation3D : MonoBehaviour
                 ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: copyBufferKernel);
             }
         }
-
-        ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: syncSpacialIndicesKernel);
     }
 
     void HandleInput()
@@ -221,7 +238,8 @@ public class Simulation3D : MonoBehaviour
 
     void OnDestroy()
     {
-        ComputeHelper.Release(positionBuffer, predictedPositionsBuffer, velocityBuffer, densityBuffer, spatialIndices, spatialOffsets);
+        ComputeHelper.Release(positionBuffer, predictedPositionsBuffer, velocityBuffer, densityBuffer, spacialPart1, spacialPart2, spacialPart3, spacialPart4, tempBuffer);
+        this.gpuSort.destroy();
     }
 
     void OnDrawGizmos()

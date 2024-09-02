@@ -1,4 +1,3 @@
-#pragma kernel CalculateOffsets
 #pragma kernel Sort
 
 // Includes
@@ -7,12 +6,6 @@
 const uint groupWidth;
 const uint groupHeight;
 const uint stepIndex;
-
-[numthreads(128, 1, 1)]
-void CalculateOffsets(uint3 id : SV_DispatchThreadID)
-{
-	CalcOffsets(id);
-}
 
 // Sort the given entries by their keys (smallest to largest)
 // This is done using bitonic merge sort, and takes multiple iterations
@@ -29,14 +22,21 @@ void Sort (uint3 id : SV_DispatchThreadID)
 	// Exit if out of bounds (for non-power of 2 input sizes)
 	if (indexRight >= numEntries) return;
 
-	uint valueLeft = Entries[indexLeft].key;
-	uint valueRight = Entries[indexRight].key;
+	uint valueLeft = spacialPart1[indexLeft];
+	uint valueRight = spacialPart1[indexRight];
 
 	// Swap entries if value is descending
+	uint tmpKey;
+	uint tmpRider;
 	if (valueLeft > valueRight)
 	{
-		Entry temp = Entries[indexLeft];
-		Entries[indexLeft] = Entries[indexRight];
-		Entries[indexRight] = temp;
+		tmpKey = spacialPart1[indexLeft];
+		tmpRider = spacialPart2[indexLeft];
+
+		spacialPart1[indexLeft] = spacialPart1[indexRight];
+		spacialPart2[indexLeft] = spacialPart2[indexRight];
+
+		spacialPart1[indexRight] = tmpKey;
+		spacialPart2[indexRight] = tmpRider;
 	}
 }
