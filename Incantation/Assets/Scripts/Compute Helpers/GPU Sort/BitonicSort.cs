@@ -3,7 +3,7 @@ using static UnityEngine.Mathf;
 
 public class BitonicSort : GPUSort
 {
-    const int sortKernel = 1;
+    const int sortKernel = 0;
 
     public BitonicSort() : base("BitonicMergeSort") { }
 

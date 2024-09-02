@@ -5,6 +5,8 @@
 #pragma kernel CalculateViscosity
 #pragma kernel UpdatePositions
 #pragma kernel CopyBuffer
+#pragma kernel CalcOffsets
+#pragma kernel Debug
 
 // Includes
 #include "./FluidMaths3D.hlsl"
@@ -138,6 +140,8 @@ void CalculateDensities (uint3 id : SV_DispatchThreadID)
 		uint neighborHash;
 		uint neighborKey;
 		uint currIndex = spacialPart2[key];
+		currIndex = 0;
+		uint testIndex = numParticles * (0.0);
 
 		while (currIndex < numParticles)
 		{
@@ -363,16 +367,57 @@ void CopyBuffer(uint3 id : SV_DispatchThreadID)
 // 
 // NOTE: offsets buffer must filled with values equal to (or greater than) its length to ensure that this works correctly
 [numthreads(NumThreads, 1, 1)]
-void CalcOffsets(uint3 id)
+void CalcOffsets(uint3 id : SV_DispatchThreadID)
 {
 	if (id.x >= numParticles) { return; }
 
 	uint i = id.x;
-	uint null = numParticles;
 
 	uint key = spacialPart1[i];
-	uint keyPrev = i == 0 ? null : spacialPart1[i - 1];
+	uint keyPrev = i == 0 ? numParticles : spacialPart1[i - 1];
 	uint offsetValue = (key != keyPrev) ? i : numParticles;
 
-	spacialPart2[key] = offsetValue;
+	spacialPart2[i] = offsetValue;
+}
+
+[numthreads(NumThreads, 1, 1)]
+void Debug(uint3 id : SV_DispatchThreadID)
+{
+	if (id.x >= numParticles) { return; }
+
+	// Sort tests. Seems to work.
+
+	// Sorted Keys = passed
+	/*uint left = id.x == 0 ? 0 : id.x - 1;
+	bool thisPartSorted = spacialPart1[left] <= spacialPart1[id.x];
+	if (!thisPartSorted)
+	{
+		Velocities[id.x] = 0;
+	}*/
+	
+	// Sorted indices match keys = 
+	/*uint originalIndex = spacialPart2[id.x];
+	float3 originalPos = PredictedPositions[originalIndex];
+	int3 originCell = GetCell3D(originalPos, smoothingRadius);
+	uint hash = HashCell3D(originCell);
+	uint key = KeyFromHash(hash, numParticles);
+	uint originalIndexParticleMatchesKey = key == spacialPart1[id.x];
+	if (!originalIndexParticleMatchesKey)
+	{
+		Velocities[id.x] = 0;
+	}*/
+
+	// Coalesce Memory = passed
+	/*uint reorderedIndex = id.x;
+	float3 reorderedPos = PredictedPositions[reorderedIndex];
+	int3 cell = GetCell3D(reorderedPos, smoothingRadius);
+	uint hash = HashCell3D(cell);
+	uint key = KeyFromHash(hash, numParticles);
+	uint reorderedParticleMatchesKey = key == spacialPart1[id.x];
+	if (!reorderedParticleMatchesKey)
+	{
+		Velocities[id.x] = 0;
+	}*/
+
+
 }
