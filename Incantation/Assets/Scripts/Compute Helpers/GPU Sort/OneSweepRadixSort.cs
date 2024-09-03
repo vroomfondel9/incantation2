@@ -151,30 +151,22 @@ public class OneSweepRadixSort : GPUSort
 
         sortCompute.SetInt("e_radixShift", 0);
         sortCompute.SetBuffer(m_digitBinPassKernel, "b_sort", this.buffer1);
-        sortCompute.SetBuffer(m_digitBinPassKernel, "b_alt", this.buffer3);
-        sortCompute.SetBuffer(m_digitBinPassKernel, "b_rider", this.buffer2);
-        sortCompute.SetBuffer(m_digitBinPassKernel, "b_altrider", this.buffer4);
+        sortCompute.SetBuffer(m_digitBinPassKernel, "b_alt", this.buffer2);
         sortCompute.Dispatch(m_digitBinPassKernel, m_threadBlocks, 1, 1);
 
         sortCompute.SetInt("e_radixShift", 8);
-        sortCompute.SetBuffer(m_digitBinPassKernel, "b_sort", this.buffer3);
+        sortCompute.SetBuffer(m_digitBinPassKernel, "b_sort", this.buffer2);
         sortCompute.SetBuffer(m_digitBinPassKernel, "b_alt", this.buffer1);
-        sortCompute.SetBuffer(m_digitBinPassKernel, "b_rider", this.buffer4);
-        sortCompute.SetBuffer(m_digitBinPassKernel, "b_altrider", this.buffer2);
         sortCompute.Dispatch(m_digitBinPassKernel, m_threadBlocks, 1, 1);
 
         sortCompute.SetInt("e_radixShift", 16);
         sortCompute.SetBuffer(m_digitBinPassKernel, "b_sort", this.buffer1);
-        sortCompute.SetBuffer(m_digitBinPassKernel, "b_alt", this.buffer3);
-        sortCompute.SetBuffer(m_digitBinPassKernel, "b_rider", this.buffer2);
-        sortCompute.SetBuffer(m_digitBinPassKernel, "b_altrider", this.buffer4);
+        sortCompute.SetBuffer(m_digitBinPassKernel, "b_alt", this.buffer2);
         sortCompute.Dispatch(m_digitBinPassKernel, m_threadBlocks, 1, 1);
 
         sortCompute.SetInt("e_radixShift", 24);
-        sortCompute.SetBuffer(m_digitBinPassKernel, "b_sort", this.buffer3);
+        sortCompute.SetBuffer(m_digitBinPassKernel, "b_sort", this.buffer2);
         sortCompute.SetBuffer(m_digitBinPassKernel, "b_alt", this.buffer1);
-        sortCompute.SetBuffer(m_digitBinPassKernel, "b_rider", this.buffer4);
-        sortCompute.SetBuffer(m_digitBinPassKernel, "b_altrider", this.buffer2);
         sortCompute.Dispatch(m_digitBinPassKernel, m_threadBlocks, 1, 1);
     }
 

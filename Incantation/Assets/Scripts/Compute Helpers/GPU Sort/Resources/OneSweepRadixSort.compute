@@ -14,6 +14,8 @@
 //#pragma require wavebasic
 //#pragma require waveballot
 
+//TODO undo rider changes and assume float2 for b_sort and b_alt
+
 #pragma kernel InitOneSweep
 #pragma kernel GlobalHistogram
 #pragma kernel Scan

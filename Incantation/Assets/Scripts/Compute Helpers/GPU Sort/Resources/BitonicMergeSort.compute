@@ -22,21 +22,17 @@ void Sort (uint3 id : SV_DispatchThreadID)
 	// Exit if out of bounds (for non-power of 2 input sizes)
 	if (indexRight >= numEntries) return;
 
-	uint valueLeft = spacialPart1[indexLeft];
-	uint valueRight = spacialPart1[indexRight];
+	uint valueLeft = spacialPart1[indexLeft].x;
+	uint valueRight = spacialPart1[indexRight].x;
 
 	// Swap entries if value is descending
-	uint tmpKey;
-	uint tmpRider;
+	uint2 tmp;
 	if (valueLeft > valueRight)
 	{
-		tmpKey = spacialPart1[indexLeft];
-		tmpRider = spacialPart2[indexLeft];
+		tmp = spacialPart1[indexLeft];
 
 		spacialPart1[indexLeft] = spacialPart1[indexRight];
-		spacialPart2[indexLeft] = spacialPart2[indexRight];
 
-		spacialPart1[indexRight] = tmpKey;
-		spacialPart2[indexRight] = tmpRider;
+		spacialPart1[indexRight] = tmp;
 	}
 }

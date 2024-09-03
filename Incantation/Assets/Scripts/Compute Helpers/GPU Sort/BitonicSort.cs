@@ -19,7 +19,6 @@ public class BitonicSort : GPUSort
     protected override void setBuffersInKernels()
     {
         ComputeHelper.SetBuffer(this.sortCompute, this.buffer1, "spacialPart1", sortKernel);
-        ComputeHelper.SetBuffer(this.sortCompute, this.buffer2, "spacialPart2", sortKernel);
     }
 
     // Sorts given buffer of integer values using bitonic merge sort

@@ -21,8 +21,7 @@ RWStructuredBuffer<float3> Velocities;
 RWStructuredBuffer<float2> Densities; // Density, Near Density
 
 //Multipurpose spacial partitioning array, to be initialized here but used by sort
-RWStructuredBuffer<uint> spacialPart1;	//Initialized to keys. Remains keys for reindexing.
-RWStructuredBuffer<uint> spacialPart2;	//Initialized to indices. Used as indices for reindexing, but afterwards set to offsets.
+RWStructuredBuffer<uint2> spacialPart;	//Initialized to keys. Remains keys for reindexing.
 RWStructuredBuffer<float3> tempBuffer;	// Used to copy values for memory coalescing
 
 // Settings
@@ -116,8 +115,8 @@ void InitializeSpacialPartitionBuffers (uint3 id : SV_DispatchThreadID)
 	uint hash = HashCell3D(cell);
 	uint key = KeyFromHash(hash, numParticles);
 
-	spacialPart1[index] = key;
-	spacialPart2[index] = index;
+	float2 toWrite = float2(key, index);
+	spacialPart[index] = toWrite;
 }
 
 [numthreads(NumThreads,1,1)]
@@ -139,7 +138,7 @@ void CalculateDensities (uint3 id : SV_DispatchThreadID)
 		int3 neighborCell;
 		uint neighborHash;
 		uint neighborKey;
-		uint currIndex = spacialPart2[key];
+		uint currIndex = spacialPart[key].y;
 		uint unincIndex;
 
 		while (currIndex < numParticles)
@@ -147,7 +146,7 @@ void CalculateDensities (uint3 id : SV_DispatchThreadID)
 			unincIndex = currIndex;
 			currIndex ++;
 
-			neighborKey = spacialPart1[unincIndex];
+			neighborKey = spacialPart[unincIndex].x;
 			// Exit if no longer looking at correct bin
 			if (neighborKey != key) break;
 			
@@ -198,7 +197,7 @@ void CalculatePressureForce (uint3 id : SV_DispatchThreadID)
 		int3 neighborCell;
 		uint neighborHash;
 		uint neighborKey;
-		uint currIndex = spacialPart2[key];
+		uint currIndex = spacialPart[key].y;
 		uint unincIndex;
 
 		while (currIndex < numParticles)
@@ -206,7 +205,7 @@ void CalculatePressureForce (uint3 id : SV_DispatchThreadID)
 			unincIndex = currIndex;
 			currIndex ++;
 
-			neighborKey = spacialPart1[unincIndex];
+			neighborKey = spacialPart[unincIndex].x;
 			// Exit if no longer looking at correct bin
 			if (neighborKey != key) break;
 
@@ -267,7 +266,7 @@ void CalculateViscosity (uint3 id : SV_DispatchThreadID)
 		int3 neighborCell;
 		uint neighborHash;
 		uint neighborKey;
-		uint currIndex = spacialPart2[key];
+		uint currIndex = spacialPart[key].y;
 		uint unincIndex;
 
 		while (currIndex < numParticles)
@@ -275,7 +274,7 @@ void CalculateViscosity (uint3 id : SV_DispatchThreadID)
 			unincIndex = currIndex;			
 			currIndex ++;
 
-			neighborKey = spacialPart1[unincIndex];
+			neighborKey = spacialPart[unincIndex].x;
 			// Exit if no longer looking at correct bin
 			if (neighborKey != key) break;
 
@@ -321,7 +320,7 @@ void CopyBuffer(uint3 id : SV_DispatchThreadID)
 	if (copyDirection == 0)
 	{
 		// Copy to temp buffer
-		uint uncoalescedIndex = spacialPart2[id.x];
+		uint uncoalescedIndex = spacialPart[id.x].y;
 		if (copyBufferId == 0)
 		{
 			tempBuffer[id.x] = Positions[uncoalescedIndex];
@@ -371,7 +370,7 @@ void InitOffsets(uint3 id : SV_DispatchThreadID)
 {
 	if (id.x >= numParticles) { return; }
 
-	spacialPart2[id.x] = numParticles;
+	spacialPart[id.x].y = numParticles;
 }
 
 // Calculate offsets into the sorted spacialPart1 buffer (used for spatial hashing).
@@ -395,12 +394,12 @@ void CalcOffsets(uint3 id : SV_DispatchThreadID)
 
 	uint i = id.x;
 
-	uint key = spacialPart1[i];
-	uint keyPrev = i == 0 ? numParticles : spacialPart1[i - 1];
+	uint key = spacialPart[i].x;
+	uint keyPrev = i == 0 ? numParticles : spacialPart[i - 1].x;
 
 	if (key != keyPrev)
 	{
-		spacialPart2[key] = i;
+		spacialPart[key].y = i;
 	}
 	
 }
