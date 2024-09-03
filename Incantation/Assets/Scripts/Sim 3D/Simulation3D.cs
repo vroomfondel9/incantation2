@@ -93,7 +93,7 @@ public class Simulation3D : MonoBehaviour
         ComputeHelper.SetBuffer(compute, predictedPositionsBuffer, "PredictedPositions", externalForcesKernel, initializeSpacialPartitionBuffers, densityKernel, pressureKernel, viscosityKernel, updatePositionsKernel, copyBufferKernel);
         ComputeHelper.SetBuffer(compute, densityBuffer, "Densities", densityKernel, pressureKernel, viscosityKernel, copyBufferKernel);
         ComputeHelper.SetBuffer(compute, velocityBuffer, "Velocities", externalForcesKernel, pressureKernel, viscosityKernel, updatePositionsKernel, copyBufferKernel);
-        ComputeHelper.SetBuffer(compute, spacialPart1, "spacialPart1", initializeSpacialPartitionBuffers, calculateOffsetsKernel, densityKernel);
+        ComputeHelper.SetBuffer(compute, spacialPart1, "spacialPart1", initializeSpacialPartitionBuffers, calculateOffsetsKernel, densityKernel, pressureKernel, viscosityKernel);
         ComputeHelper.SetBuffer(compute, spacialPart2, "spacialPart2", initializeSpacialPartitionBuffers, initalizeOffsetsKernel, calculateOffsetsKernel, copyBufferKernel, densityKernel, pressureKernel, viscosityKernel);
         ComputeHelper.SetBuffer(compute, tempBuffer, "tempBuffer", copyBufferKernel);
 

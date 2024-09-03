@@ -146,6 +146,7 @@ void CalculateDensities (uint3 id : SV_DispatchThreadID)
 		{
 			unincIndex = currIndex;
 			currIndex ++;
+
 			neighborKey = spacialPart1[unincIndex];
 			// Exit if no longer looking at correct bin
 			if (neighborKey != key) break;
@@ -203,13 +204,16 @@ void CalculatePressureForce (uint3 id : SV_DispatchThreadID)
 		while (currIndex < numParticles)
 		{
 			unincIndex = currIndex;
+			currIndex ++;
+
+			neighborKey = spacialPart1[unincIndex];
+			// Exit if no longer looking at correct bin
+			if (neighborKey != key) break;
+
 			float3 neighbourPos = PredictedPositions[unincIndex];
 			neighborCell = GetCell3D(neighbourPos, smoothingRadius);
 			neighborHash = HashCell3D(neighborCell);
-			neighborKey = KeyFromHash(neighborHash, numParticles);
-			currIndex ++;
-			// Exit if no longer looking at correct bin
-			if (neighborKey != key) break;
+
 			// Skip if hash does not match
 			if (neighborHash != hash) continue;
 			// Skip if looking at self
@@ -268,14 +272,17 @@ void CalculateViscosity (uint3 id : SV_DispatchThreadID)
 
 		while (currIndex < numParticles)
 		{
-			unincIndex = currIndex;
+			unincIndex = currIndex;			
+			currIndex ++;
+
+			neighborKey = spacialPart1[unincIndex];
+			// Exit if no longer looking at correct bin
+			if (neighborKey != key) break;
+
 			float3 neighbourPos = PredictedPositions[unincIndex];
 			neighborCell = GetCell3D(neighbourPos, smoothingRadius);
 			neighborHash = HashCell3D(neighborCell);
-			neighborKey = KeyFromHash(neighborHash, numParticles);			
-			currIndex ++;
-			// Exit if no longer looking at correct bin
-			if (neighborKey != key) break;
+
 			// Skip if hash does not match
 			if (neighborHash != hash) continue;
 			// Skip if looking at self
