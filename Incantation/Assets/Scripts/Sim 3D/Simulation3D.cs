@@ -49,7 +49,8 @@ public class Simulation3D : MonoBehaviour
     const int viscosityKernel = 4;
     const int updatePositionsKernel = 5;
     const int copyBufferKernel = 6;
-    const int calculateOffsetsKernel = 7;
+    const int initalizeOffsetsKernel = 7;
+    const int calculateOffsetsKernel = 8;
 
     // Constants for copying data
     const int numCopyBuffers = 4;
@@ -93,18 +94,8 @@ public class Simulation3D : MonoBehaviour
         ComputeHelper.SetBuffer(compute, densityBuffer, "Densities", densityKernel, pressureKernel, viscosityKernel, copyBufferKernel);
         ComputeHelper.SetBuffer(compute, velocityBuffer, "Velocities", externalForcesKernel, pressureKernel, viscosityKernel, updatePositionsKernel, copyBufferKernel);
         ComputeHelper.SetBuffer(compute, spacialPart1, "spacialPart1", initializeSpacialPartitionBuffers, calculateOffsetsKernel);
-        ComputeHelper.SetBuffer(compute, spacialPart2, "spacialPart2", initializeSpacialPartitionBuffers, calculateOffsetsKernel, copyBufferKernel, densityKernel, pressureKernel, viscosityKernel);
+        ComputeHelper.SetBuffer(compute, spacialPart2, "spacialPart2", initializeSpacialPartitionBuffers, initalizeOffsetsKernel, calculateOffsetsKernel, copyBufferKernel, densityKernel, pressureKernel, viscosityKernel);
         ComputeHelper.SetBuffer(compute, tempBuffer, "tempBuffer", copyBufferKernel);
-
-        // TODO delete when done debugging
-        int debugKernelId = 8;
-        ComputeHelper.SetBuffer(compute, positionBuffer, "Positions", debugKernelId);
-        ComputeHelper.SetBuffer(compute, predictedPositionsBuffer, "PredictedPositions", debugKernelId);
-        ComputeHelper.SetBuffer(compute, densityBuffer, "Densities", debugKernelId);
-        ComputeHelper.SetBuffer(compute, velocityBuffer, "Velocities", debugKernelId);
-        ComputeHelper.SetBuffer(compute, spacialPart1, "spacialPart1", debugKernelId);
-        ComputeHelper.SetBuffer(compute, spacialPart2, "spacialPart2", debugKernelId);
-        ComputeHelper.SetBuffer(compute, tempBuffer, "tempBuffer", debugKernelId);
 
         compute.SetInt("numParticles", positionBuffer.count);
 
@@ -169,16 +160,16 @@ public class Simulation3D : MonoBehaviour
         ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: initializeSpacialPartitionBuffers);
         gpuSort.Sort();
         coalesceMemory();
+        ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: initalizeOffsetsKernel);
         ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: calculateOffsetsKernel);
-        ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: 8);
 
         // SPH core functions
-        //ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: densityKernel);
-        //ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: pressureKernel);
-        //ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: viscosityKernel);
+        ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: densityKernel);
+        ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: pressureKernel);
+        ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: viscosityKernel);
 
         // Copying predicted position back into position buffer for next iteration
-        //ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: updatePositionsKernel);
+        ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: updatePositionsKernel);
 
     }
 

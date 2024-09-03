@@ -5,8 +5,8 @@
 #pragma kernel CalculateViscosity
 #pragma kernel UpdatePositions
 #pragma kernel CopyBuffer
+#pragma kernel InitOffsets
 #pragma kernel CalcOffsets
-#pragma kernel Debug
 
 // Includes
 #include "./FluidMaths3D.hlsl"
@@ -140,15 +140,16 @@ void CalculateDensities (uint3 id : SV_DispatchThreadID)
 		uint neighborHash;
 		uint neighborKey;
 		uint currIndex = spacialPart2[key];
-		currIndex = 0;
-		uint testIndex = numParticles * (0.0);
+		uint unincIndex;
 
 		while (currIndex < numParticles)
 		{
-			float3 neighbourPos = PredictedPositions[currIndex];
+			unincIndex = currIndex;
+			float3 neighbourPos = PredictedPositions[unincIndex];
 			neighborCell = GetCell3D(neighbourPos, smoothingRadius);
 			neighborHash = HashCell3D(neighborCell);
 			neighborKey = KeyFromHash(neighborHash, numParticles);
+			currIndex ++;
 			// Exit if no longer looking at correct bin
 			if (neighborKey != key) break;
 			// Skip if hash does not match
@@ -164,8 +165,6 @@ void CalculateDensities (uint3 id : SV_DispatchThreadID)
 			float dst = sqrt(sqrDstToNeighbour);
 			density += DensityKernel(dst, smoothingRadius);
 			nearDensity += NearDensityKernel(dst, smoothingRadius);
-
-			currIndex ++;
 		}
 	}
 	
@@ -197,19 +196,22 @@ void CalculatePressureForce (uint3 id : SV_DispatchThreadID)
 		uint neighborHash;
 		uint neighborKey;
 		uint currIndex = spacialPart2[key];
+		uint unincIndex;
 
 		while (currIndex < numParticles)
 		{
-			float3 neighbourPos = PredictedPositions[currIndex];
+			unincIndex = currIndex;
+			float3 neighbourPos = PredictedPositions[unincIndex];
 			neighborCell = GetCell3D(neighbourPos, smoothingRadius);
 			neighborHash = HashCell3D(neighborCell);
 			neighborKey = KeyFromHash(neighborHash, numParticles);
+			currIndex ++;
 			// Exit if no longer looking at correct bin
 			if (neighborKey != key) break;
 			// Skip if hash does not match
 			if (neighborHash != hash) continue;
 			// Skip if looking at self
-			if (currIndex == id.x) continue;
+			if (unincIndex == id.x) continue;
 
 			float3 offsetToNeighbour = neighbourPos - pos;
 			float sqrDstToNeighbour = dot(offsetToNeighbour, offsetToNeighbour);
@@ -218,8 +220,8 @@ void CalculatePressureForce (uint3 id : SV_DispatchThreadID)
 			if (sqrDstToNeighbour > sqrRadius) continue;
 
 			// Calculate pressure force
-			float densityNeighbour = Densities[currIndex][0];
-			float nearDensityNeighbour = Densities[currIndex][1];
+			float densityNeighbour = Densities[unincIndex][0];
+			float nearDensityNeighbour = Densities[unincIndex][1];
 			float neighbourPressure = PressureFromDensity(densityNeighbour);
 			float neighbourPressureNear = NearPressureFromDensity(nearDensityNeighbour);
 
@@ -231,8 +233,6 @@ void CalculatePressureForce (uint3 id : SV_DispatchThreadID)
 
 			pressureForce += dir * DensityDerivative(dst, smoothingRadius) * sharedPressure / densityNeighbour;
 			pressureForce += dir * NearDensityDerivative(dst, smoothingRadius) * sharedNearPressure / nearDensityNeighbour;
-
-			currIndex ++;
 		}
 	}
 
@@ -262,19 +262,22 @@ void CalculateViscosity (uint3 id : SV_DispatchThreadID)
 		uint neighborHash;
 		uint neighborKey;
 		uint currIndex = spacialPart2[key];
+		uint unincIndex;
 
 		while (currIndex < numParticles)
 		{
-			float3 neighbourPos = PredictedPositions[currIndex];
+			unincIndex = currIndex;
+			float3 neighbourPos = PredictedPositions[unincIndex];
 			neighborCell = GetCell3D(neighbourPos, smoothingRadius);
 			neighborHash = HashCell3D(neighborCell);
-			neighborKey = KeyFromHash(neighborHash, numParticles);
+			neighborKey = KeyFromHash(neighborHash, numParticles);			
+			currIndex ++;
 			// Exit if no longer looking at correct bin
 			if (neighborKey != key) break;
 			// Skip if hash does not match
 			if (neighborHash != hash) continue;
 			// Skip if looking at self
-			if (currIndex == id.x) continue;
+			if (unincIndex == id.x) continue;
 
 			float3 offsetToNeighbour = neighbourPos - pos;
 			float sqrDstToNeighbour = dot(offsetToNeighbour, offsetToNeighbour);
@@ -284,10 +287,8 @@ void CalculateViscosity (uint3 id : SV_DispatchThreadID)
 
 			// Calculate viscosity
 			float dst = sqrt(sqrDstToNeighbour);
-			float3 neighbourVelocity = Velocities[currIndex];
+			float3 neighbourVelocity = Velocities[unincIndex];
 			viscosityForce += (neighbourVelocity - velocity) * SmoothingKernelPoly6(dst, smoothingRadius);
-			
-			currIndex ++;
 		}
 	}
 	Velocities[id.x] += viscosityForce * viscosityStrength * deltaTime;
@@ -353,6 +354,17 @@ void CopyBuffer(uint3 id : SV_DispatchThreadID)
 	}
 }
 
+// Reinitialized the array formerly used to store scatter indices for sorting to be the key offset array.
+// The values are all numParticles (which is 1 more than the maximum possible key) in order to ensure that
+// any possible key is less than this value. This is important for determing the end of the key bucket
+[numthreads(NumThreads, 1, 1)]
+void InitOffsets(uint3 id : SV_DispatchThreadID)
+{
+	if (id.x >= numParticles) { return; }
+
+	spacialPart2[id.x] = numParticles;
+}
+
 // Calculate offsets into the sorted spacialPart1 buffer (used for spatial hashing).
 // For example, given an spacialPart1 buffer sorted by key like so: {2, 2, 2, 3, 6, 6, 9, 9, 9, 9}
 // The resulting Offsets (spacialPart2) calculated here should be:  {-, -, 0, 3, -, -, 4, -, -, 6}
@@ -366,6 +378,7 @@ void CopyBuffer(uint3 id : SV_DispatchThreadID)
 // We can then loop until we reach a particle with a different cell key in order to iterate over all the particles in the cell.
 // 
 // NOTE: offsets buffer must filled with values equal to (or greater than) its length to ensure that this works correctly
+// So this depends on InitOffsets being run.
 [numthreads(NumThreads, 1, 1)]
 void CalcOffsets(uint3 id : SV_DispatchThreadID)
 {
@@ -375,49 +388,10 @@ void CalcOffsets(uint3 id : SV_DispatchThreadID)
 
 	uint key = spacialPart1[i];
 	uint keyPrev = i == 0 ? numParticles : spacialPart1[i - 1];
-	uint offsetValue = (key != keyPrev) ? i : numParticles;
 
-	spacialPart2[i] = offsetValue;
-}
-
-[numthreads(NumThreads, 1, 1)]
-void Debug(uint3 id : SV_DispatchThreadID)
-{
-	if (id.x >= numParticles) { return; }
-
-	// Sort tests. Seems to work.
-
-	// Sorted Keys = passed
-	/*uint left = id.x == 0 ? 0 : id.x - 1;
-	bool thisPartSorted = spacialPart1[left] <= spacialPart1[id.x];
-	if (!thisPartSorted)
+	if (key != keyPrev)
 	{
-		Velocities[id.x] = 0;
-	}*/
+		spacialPart2[key] = i;
+	}
 	
-	// Sorted indices match keys = 
-	/*uint originalIndex = spacialPart2[id.x];
-	float3 originalPos = PredictedPositions[originalIndex];
-	int3 originCell = GetCell3D(originalPos, smoothingRadius);
-	uint hash = HashCell3D(originCell);
-	uint key = KeyFromHash(hash, numParticles);
-	uint originalIndexParticleMatchesKey = key == spacialPart1[id.x];
-	if (!originalIndexParticleMatchesKey)
-	{
-		Velocities[id.x] = 0;
-	}*/
-
-	// Coalesce Memory = passed
-	/*uint reorderedIndex = id.x;
-	float3 reorderedPos = PredictedPositions[reorderedIndex];
-	int3 cell = GetCell3D(reorderedPos, smoothingRadius);
-	uint hash = HashCell3D(cell);
-	uint key = KeyFromHash(hash, numParticles);
-	uint reorderedParticleMatchesKey = key == spacialPart1[id.x];
-	if (!reorderedParticleMatchesKey)
-	{
-		Velocities[id.x] = 0;
-	}*/
-
-
 }
