@@ -414,14 +414,28 @@ void Debug(uint3 id : SV_DispatchThreadID)
 
 	if (id.x >= numParticles) { return; }
 
-	//Seems like index values aren't being relocated properly...
+	// This particle's key is present somewhere in the list (so keys weren't modified by sort) = passed
+	float3 pos = PredictedPositions[id.x];
+	int3 cell = GetCell3D(pos, smoothingRadius);
+	uint hash = HashCell3D(cell);
+	uint key = KeyFromHash(hash, numParticles);
+
+	failedTest = 1;
+	for (uint i = 0; i < numParticles; i++)
+	{
+		if (spacialPart1[i] == key)
+		{
+			failedTest = 0;
+			break;
+		}
+	}
 
 	// Keys are sorted = passed
-	/*uint left = id.x == 0 ? 0 : id.x - 1;
+	uint left = id.x == 0 ? 0 : id.x - 1;
 	uint self = id.x;
 
 	uint unsorted = spacialPart1[left] > spacialPart1[self];
-	failedTest = unsorted;*/
+	failedTest = failedTest + unsorted;
 
 	//This key matches the calculated key from the index's scatter address's position = failed
 	uint selfKey = spacialPart1[id.x];
@@ -431,40 +445,9 @@ void Debug(uint3 id : SV_DispatchThreadID)
 	int3 cell = GetCell3D(pos, smoothingRadius);
 	uint hash = HashCell3D(cell);
 	uint scatterKey = KeyFromHash(hash, numParticles);
+	uint selfKeyDoesntMatchToRemoteKey = selfKey != scatterKey;
 
-	failedTest = selfKey != scatterKey;
-
-	// This particle's key is present somewhere in the list (so keys weren't modified by sort) = passed
-	/*float3 pos = PredictedPositions[id.x];
-	int3 cell = GetCell3D(pos, smoothingRadius);
-	uint hash = HashCell3D(cell);
-	uint key = KeyFromHash(hash, numParticles);
-
-	failedTest = 1;
-	for (uint i = 0; i < numParticles; i++)
-	{
-		if (spacialPart1[i] == key)
-		{
-			failedTest = 0;
-			break;
-		}
-	}*/
-
-	// This particle's key is present somewhere in the list (so keys weren't modified by sort) = passed
-	/*float3 pos = PredictedPositions[id.x];
-	int3 cell = GetCell3D(pos, smoothingRadius);
-	uint hash = HashCell3D(cell);
-	uint key = KeyFromHash(hash, numParticles);
-
-	failedTest = 1;
-	for (uint i = 0; i < numParticles; i++)
-	{
-		if (spacialPart1[i] == key)
-		{
-			failedTest = 0;
-			break;
-		}
-	}*/
+	failedTest = failedTest + selfKeyDoesntMatchToRemoteKey;
 
 	float velComp = MAX_VELOCITY * (float)failedTest;
 	float3 displayVelocity = float3(velComp, velComp, velComp);
