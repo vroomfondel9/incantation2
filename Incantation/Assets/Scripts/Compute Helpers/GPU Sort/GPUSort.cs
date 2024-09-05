@@ -6,14 +6,14 @@ public abstract class GPUSort
 {
     readonly protected ComputeShader sortCompute;
 
-    protected int numParticles;
+    protected int keySize;
 
     protected ComputeBuffer predictedPositions;
 
-    protected ComputeBuffer buffer1;
-    protected ComputeBuffer buffer2;
-    protected ComputeBuffer buffer3;
-    protected ComputeBuffer buffer4;
+    protected ComputeBuffer keys;
+    protected ComputeBuffer values;
+    protected ComputeBuffer keysDB;
+    protected ComputeBuffer valuesDB;
 
     public GPUSort(string shaderResourceName)
     {
@@ -21,19 +21,16 @@ public abstract class GPUSort
     }
 
     // Assume buffer management (ie release) is managed by caller, as buffers may be reused for other steps
-    // Assume buffer1 is keys to sort and buffer 2 is indices
-    // Assume buffers 3 and 4 are arbitrary uninitialized values since these are used (optionally) to double buffer
-    public void SetBuffers(ComputeBuffer predictedPositions, ComputeBuffer buffer1, ComputeBuffer buffer2, ComputeBuffer buffer3, ComputeBuffer buffer4)
+    public void SetBuffers(int keySize, ComputeBuffer keys, ComputeBuffer values, ComputeBuffer keysDB, ComputeBuffer valuesDB)
     {
-        this.numParticles = predictedPositions.count;
+        this.keySize = keySize;
 
-        this.predictedPositions = predictedPositions;
-        this.buffer1 = buffer1;
-        this.buffer2 = buffer2;
-        this.buffer3 = buffer3;
-        this.buffer4 = buffer4;
+        this.keys = keys;
+        this.values = values;
+        this.keysDB = keysDB;
+        this.valuesDB = valuesDB;
 
-        createAlgorithmSpecificBuffers(numParticles);
+        createAlgorithmSpecificBuffers(keySize);
         setBuffersInKernels();
     }
 
@@ -43,7 +40,7 @@ public abstract class GPUSort
     public abstract void Sort();
 
     public abstract void destroy();
-    protected abstract void createAlgorithmSpecificBuffers(int elementCount);
+    protected abstract void createAlgorithmSpecificBuffers(int keysCount);
     protected abstract void setBuffersInKernels();
     protected abstract bool isSortInPlace();
 }

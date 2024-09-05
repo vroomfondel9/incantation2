@@ -18,20 +18,20 @@ public class BitonicSort : GPUSort
 
     protected override void setBuffersInKernels()
     {
-        ComputeHelper.SetBuffer(this.sortCompute, this.buffer1, "spacialPart1", sortKernel);
-        ComputeHelper.SetBuffer(this.sortCompute, this.buffer2, "spacialPart2", sortKernel);
+        ComputeHelper.SetBuffer(this.sortCompute, this.keys, "keys", sortKernel);
+        ComputeHelper.SetBuffer(this.sortCompute, this.values, "values", sortKernel);
     }
 
     // Sorts given buffer of integer values using bitonic merge sort
     // Note: buffer size is not restricted to powers of 2 in this implementation
     public override void Sort()
     {
-        sortCompute.SetInt("numEntries", this.numParticles);
+        sortCompute.SetInt("numEntries", this.keySize);
 
         // Launch each step of the sorting algorithm (once the previous step is complete)
         // Number of steps = [log2(n) * (log2(n) + 1)] / 2
         // where n = nearest power of 2 that is greater or equal to the number of inputs
-        int numStages = (int)Log(NextPowerOfTwo(this.numParticles), 2);
+        int numStages = (int)Log(NextPowerOfTwo(this.keySize), 2);
 
         for (int stageIndex = 0; stageIndex < numStages; stageIndex++)
         {
@@ -44,7 +44,7 @@ public class BitonicSort : GPUSort
                 sortCompute.SetInt("groupHeight", groupHeight);
                 sortCompute.SetInt("stepIndex", stepIndex);
                 // Run the sorting step on the GPU
-                ComputeHelper.Dispatch(sortCompute, NextPowerOfTwo(this.numParticles) / 2, kernelIndex: sortKernel);
+                ComputeHelper.Dispatch(sortCompute, NextPowerOfTwo(this.keySize) / 2, kernelIndex: sortKernel);
             }
         }
     }

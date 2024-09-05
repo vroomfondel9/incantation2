@@ -51,14 +51,12 @@ public class Simulation3D : MonoBehaviour
     const int copyBufferKernel = 6;
     const int initalizeOffsetsKernel = 7;
     const int calculateOffsetsKernel = 8;
-    const int debugKernel = 9;
 
     // Constants for copying data
     const int numCopyBuffers = 4;
     const int numCopyDirections = 2;
 
     GPUSort gpuSort;
-    GPUSort gpuSortRadix;
 
     // State
     bool isPaused;
@@ -99,21 +97,10 @@ public class Simulation3D : MonoBehaviour
         ComputeHelper.SetBuffer(compute, spacialPart2, "spacialPart2", initializeSpacialPartitionBuffers, initalizeOffsetsKernel, calculateOffsetsKernel, copyBufferKernel, densityKernel, pressureKernel, viscosityKernel);
         ComputeHelper.SetBuffer(compute, tempBuffer, "tempBuffer", copyBufferKernel);
 
-        ComputeHelper.SetBuffer(compute, positionBuffer, "Positions", debugKernel);
-        ComputeHelper.SetBuffer(compute, predictedPositionsBuffer, "PredictedPositions", debugKernel);
-        ComputeHelper.SetBuffer(compute, densityBuffer, "Densities", debugKernel);
-        ComputeHelper.SetBuffer(compute, velocityBuffer, "Velocities", debugKernel);
-        ComputeHelper.SetBuffer(compute, spacialPart1, "spacialPart1", debugKernel);
-        ComputeHelper.SetBuffer(compute, spacialPart2, "spacialPart2", debugKernel);
-        ComputeHelper.SetBuffer(compute, tempBuffer, "tempBuffer", debugKernel);
-
         compute.SetInt("numParticles", positionBuffer.count);
 
         gpuSort = new BitonicSort();
-        gpuSort.SetBuffers(predictedPositionsBuffer, spacialPart1, spacialPart2, spacialPart3, spacialPart4);
-
-        gpuSortRadix = new OneSweepRadixSort();
-        gpuSortRadix.SetBuffers(predictedPositionsBuffer, spacialPart1, spacialPart2, spacialPart3, spacialPart4);
+        gpuSort.SetBuffers(predictedPositionsBuffer.count, spacialPart1, spacialPart2, spacialPart3, spacialPart4);
 
         // Init display
         display.Init(this);
@@ -170,22 +157,18 @@ public class Simulation3D : MonoBehaviour
         
         // Spacial partitioning for upcoming neighbor searches
         ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: initializeSpacialPartitionBuffers);
-        gpuSortRadix.Sort();
-        ComputeHelper.SetBuffer(compute, spacialPart3, "spacialPart1", debugKernel);
-        ComputeHelper.SetBuffer(compute, spacialPart4, "spacialPart2", debugKernel);
-        ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: debugKernel);
-        //gpuSort.Sort();
-        //coalesceMemory();
-        //ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: initalizeOffsetsKernel);
-        //ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: calculateOffsetsKernel);
+        gpuSort.Sort();
+        coalesceMemory();
+        ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: initalizeOffsetsKernel);
+        ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: calculateOffsetsKernel);
 
         // SPH core functions
-        //ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: densityKernel);
-        //ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: pressureKernel);
-        //ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: viscosityKernel);
+        ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: densityKernel);
+        ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: pressureKernel);
+        ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: viscosityKernel);
 
         // Copying predicted position back into position buffer for next iteration
-        //ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: updatePositionsKernel);
+        ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: updatePositionsKernel);
 
     }
 
@@ -257,7 +240,6 @@ public class Simulation3D : MonoBehaviour
     {
         ComputeHelper.Release(positionBuffer, predictedPositionsBuffer, velocityBuffer, densityBuffer, spacialPart1, spacialPart2, spacialPart3, spacialPart4, tempBuffer);
         this.gpuSort.destroy();
-        this.gpuSortRadix.destroy();
     }
 
     void OnDrawGizmos()
