@@ -65,16 +65,13 @@ public class OneSweep : MonoBehaviour
 
     private void Update()
     {
-        if (Input.GetKeyDown(KeyCode.Space))
+        if (m_size != (1 << m_sizeExponent))
         {
-            if (m_size != (1 << m_sizeExponent))
-            {
-                m_size = 1 << m_sizeExponent;
-                m_threadBlocks = divRoundUp(m_size, k_partitionSize);
-                UpdateSize();
-            }
-            ValidateSort();
+            m_size = 1 << m_sizeExponent;
+            m_threadBlocks = divRoundUp(m_size, k_partitionSize);
+            UpdateSize();
         }
+        ValidateSort();
     }
 
     private void CheckShader()
@@ -137,7 +134,7 @@ public class OneSweep : MonoBehaviour
     {
         if (errorCountBuffer != null)
             errorCountBuffer.Dispose();
-        errorCountBuffer = new ComputeBuffer(1, sizeof(uint));
+        errorCountBuffer = new ComputeBuffer(2, sizeof(uint));
     }
     private void SetStaticBuffers()
     {
@@ -202,12 +199,16 @@ public class OneSweep : MonoBehaviour
     private void ValidateSort()
     {
         DispatchKernels();
-        uint[] errCount = new uint[1] { 0 };
+        uint[] errCount = new uint[2] { 0, 0 };
         errorCountBuffer.SetData(errCount);
         sortCompute.Dispatch(m_validationKernel, 256, 1, 1);
         errorCountBuffer.GetData(errCount);
 
-        if (errCount[0] == 0)
+        if (errCount[1] == 0)
+        {
+            Debug.LogError("OneSweep didn't run.");
+        }
+        else if (errCount[0] == 0)
             Debug.Log("OneSweep passed test at size " + m_size + ".");
         else
             Debug.LogError("OneSweep failed test at size " + m_size + " with " + errCount[0] + " errors.");

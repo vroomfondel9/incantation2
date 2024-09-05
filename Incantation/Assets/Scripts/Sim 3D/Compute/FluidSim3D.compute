@@ -7,6 +7,7 @@
 #pragma kernel CopyBuffer
 #pragma kernel InitOffsets
 #pragma kernel CalcOffsets
+#pragma kernel Debug
 
 // Includes
 #include "./FluidMaths3D.hlsl"
@@ -403,4 +404,69 @@ void CalcOffsets(uint3 id : SV_DispatchThreadID)
 		spacialPart2[key] = i;
 	}
 	
+}
+
+[numthreads(NumThreads, 1, 1)]
+void Debug(uint3 id : SV_DispatchThreadID)
+{
+	const float MAX_VELOCITY = 6.0;
+	uint failedTest;
+
+	if (id.x >= numParticles) { return; }
+
+	//Seems like index values aren't being relocated properly...
+
+	// Keys are sorted = passed
+	/*uint left = id.x == 0 ? 0 : id.x - 1;
+	uint self = id.x;
+
+	uint unsorted = spacialPart1[left] > spacialPart1[self];
+	failedTest = unsorted;*/
+
+	//This key matches the calculated key from the index's scatter address's position = failed
+	uint selfKey = spacialPart1[id.x];
+	uint index = spacialPart2[id.x];
+
+	float3 pos = PredictedPositions[index];
+	int3 cell = GetCell3D(pos, smoothingRadius);
+	uint hash = HashCell3D(cell);
+	uint scatterKey = KeyFromHash(hash, numParticles);
+
+	failedTest = selfKey != scatterKey;
+
+	// This particle's key is present somewhere in the list (so keys weren't modified by sort) = passed
+	/*float3 pos = PredictedPositions[id.x];
+	int3 cell = GetCell3D(pos, smoothingRadius);
+	uint hash = HashCell3D(cell);
+	uint key = KeyFromHash(hash, numParticles);
+
+	failedTest = 1;
+	for (uint i = 0; i < numParticles; i++)
+	{
+		if (spacialPart1[i] == key)
+		{
+			failedTest = 0;
+			break;
+		}
+	}*/
+
+	// This particle's key is present somewhere in the list (so keys weren't modified by sort) = passed
+	/*float3 pos = PredictedPositions[id.x];
+	int3 cell = GetCell3D(pos, smoothingRadius);
+	uint hash = HashCell3D(cell);
+	uint key = KeyFromHash(hash, numParticles);
+
+	failedTest = 1;
+	for (uint i = 0; i < numParticles; i++)
+	{
+		if (spacialPart1[i] == key)
+		{
+			failedTest = 0;
+			break;
+		}
+	}*/
+
+	float velComp = MAX_VELOCITY * (float)failedTest;
+	float3 displayVelocity = float3(velComp, velComp, velComp);
+	Velocities[id.x] = displayVelocity;
 }

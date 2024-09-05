@@ -37,6 +37,9 @@ public abstract class GPUSort
         setBuffersInKernels();
     }
 
+    /*
+     * After sort, sorted keys should be in buffer1 and indices should be in buffer2.
+     */
     public abstract void Sort();
 
     public abstract void destroy();

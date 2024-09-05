@@ -291,23 +291,25 @@ void Scan(uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID)
 void DigitBinningPass(uint3 gtid : SV_GroupThreadID)
 {
     const uint serialIterations = (PASS_DIM / WaveGetLaneCount() + 31) / 32;
-    
+
     uint partitionIndex;
     uint keys[KEYS_PER_THREAD];
     uint offsets[KEYS_PER_THREAD];
-    
+    uint riders[KEYS_PER_THREAD];
+    uint riders2[KEYS_PER_THREAD];
+
     if (WaveGetLaneCount() > 16)
     {
         const uint histsEnd = WaveHistsSizeWGE16();
         for (uint i = gtid.x; i < histsEnd; i += PASS_DIM)
             g_pass[i] = 0;
-        
+
         if (gtid.x == 0)
             InterlockedAdd(b_index[CurrentPass()], 1, g_pass[PART_SIZE - 1]);
         GroupMemoryBarrierWithGroupSync();
         partitionIndex = g_pass[PART_SIZE - 1];
     }
-    
+
     if (WaveGetLaneCount() <= 16)
     {
         if (gtid.x == 0)
@@ -315,12 +317,12 @@ void DigitBinningPass(uint3 gtid : SV_GroupThreadID)
         GroupMemoryBarrierWithGroupSync();
         partitionIndex = g_pass[0];
         GroupMemoryBarrierWithGroupSync();
-        
+
         for (uint i = gtid.x; i < MAX_PASS_SMEM; i += PASS_DIM)
             g_pass[i] = 0;
         GroupMemoryBarrierWithGroupSync();
     }
-    
+
     if (partitionIndex < e_threadBlocks - 1)
     {
         [unroll]
@@ -329,9 +331,10 @@ void DigitBinningPass(uint3 gtid : SV_GroupThreadID)
             ++i, t += WaveGetLaneCount() * serialIterations)
         {
             keys[i] = b_sort[t];
+            riders[i] = b_rider[t];
         }
     }
-    
+
     if (partitionIndex == e_threadBlocks - 1)
     {
         [unroll]
@@ -340,9 +343,10 @@ void DigitBinningPass(uint3 gtid : SV_GroupThreadID)
             ++i, t += WaveGetLaneCount() * serialIterations)
         {
             keys[i] = t < e_numKeys ? b_sort[t] : 0xffffffff;
+            riders[i] = t < e_numKeys ? b_rider[t] : 0xffffffff;
         }
     }
-    
+
     uint exclusiveHistReduction;
     if (WaveGetLaneCount() >= 16)
     {
@@ -351,7 +355,7 @@ void DigitBinningPass(uint3 gtid : SV_GroupThreadID)
         for (uint i = 0; i < KEYS_PER_THREAD; ++i)
         {
             uint4 waveFlags = (WaveGetLaneCount() & 31) ?
-                    (1U << WaveGetLaneCount()) - 1 : 0xffffffff;
+                (1U << WaveGetLaneCount()) - 1 : 0xffffffff;
 
             [unroll]
             for (uint k = 0; k < RADIX_LOG; ++k)
@@ -361,21 +365,21 @@ void DigitBinningPass(uint3 gtid : SV_GroupThreadID)
                 for (uint wavePart = 0; wavePart < waveParts; ++wavePart)
                     waveFlags[wavePart] &= (t ? 0 : 0xffffffff) ^ ballot[wavePart];
             }
-                    
+
             uint bits = 0;
             for (uint wavePart = 0; wavePart < waveParts; ++wavePart)
             {
                 if (WaveGetLaneIndex() >= wavePart * 32)
                 {
                     const uint ltMask = WaveGetLaneIndex() >= (wavePart + 1) * 32 ?
-                            0xffffffff : (1U << (WaveGetLaneIndex() & 31)) - 1;
+                        0xffffffff : (1U << (WaveGetLaneIndex() & 31)) - 1;
                     bits += countbits(waveFlags[wavePart] & ltMask);
                 }
             }
-                    
+
             const uint index = ExtractDigit(keys[i]) + (getWaveIndex(gtid.x) * RADIX);
             offsets[i] = g_pass[index] + bits;
-                    
+
             GroupMemoryBarrierWithGroupSync();
             if (bits == 0)
             {
@@ -384,7 +388,7 @@ void DigitBinningPass(uint3 gtid : SV_GroupThreadID)
             }
             GroupMemoryBarrierWithGroupSync();
         }
-            
+
         uint histReduction;
         if (gtid.x < RADIX)
         {
@@ -394,7 +398,7 @@ void DigitBinningPass(uint3 gtid : SV_GroupThreadID)
                 histReduction += g_pass[i];
                 g_pass[i] = histReduction - g_pass[i];
             }
-            
+
             if (partitionIndex < e_threadBlocks - 1)
             {
                 InterlockedAdd(b_passHist[gtid.x + PassHistOffset(partitionIndex + 1)],
@@ -410,18 +414,18 @@ void DigitBinningPass(uint3 gtid : SV_GroupThreadID)
             g_pass[((WaveGetLaneIndex() + 1) & laneMask) + (gtid.x & ~laneMask)] = histReduction;
         }
         GroupMemoryBarrierWithGroupSync();
-                
+
         if (gtid.x < RADIX / WaveGetLaneCount())
         {
             g_pass[gtid.x * WaveGetLaneCount()] =
-                    WavePrefixSum(g_pass[gtid.x * WaveGetLaneCount()]);
+                WavePrefixSum(g_pass[gtid.x * WaveGetLaneCount()]);
         }
         GroupMemoryBarrierWithGroupSync();
-                
+
         if (gtid.x < RADIX && WaveGetLaneIndex())
             g_pass[gtid.x] += WaveReadLaneAt(g_pass[gtid.x - 1], 1);
         GroupMemoryBarrierWithGroupSync();
-            
+
         if (gtid.x >= WaveGetLaneCount())
         {
             const uint t = getWaveIndex(gtid.x) * RADIX;
@@ -438,12 +442,12 @@ void DigitBinningPass(uint3 gtid : SV_GroupThreadID)
             for (uint i = 0; i < KEYS_PER_THREAD; ++i)
                 offsets[i] += g_pass[ExtractDigit(keys[i])];
         }
-            
+
         if (gtid.x < RADIX)
             exclusiveHistReduction = g_pass[gtid.x];
         GroupMemoryBarrierWithGroupSync();
     }
-    
+
     if (WaveGetLaneCount() < 16)
     {
         const uint ltMask = (1U << WaveGetLaneIndex()) - 1;
@@ -451,33 +455,33 @@ void DigitBinningPass(uint3 gtid : SV_GroupThreadID)
         for (uint i = 0; i < KEYS_PER_THREAD; ++i)
         {
             uint waveFlag = (1U << WaveGetLaneCount()) - 1;
-                
+
             [unroll]
             for (uint k = 0; k < RADIX_LOG; ++k)
             {
                 const bool t = keys[i] >> (k + e_radixShift) & 1;
                 waveFlag &= (t ? 0 : 0xffffffff) ^ (uint) WaveActiveBallot(t);
             }
-                
+
             uint bits = countbits(waveFlag & ltMask);
             const uint index = ExtractPackedIndex(keys[i]) +
-                    (getWaveIndex(gtid.x) / serialIterations * HALF_RADIX);
-                    
+                (getWaveIndex(gtid.x) / serialIterations * HALF_RADIX);
+
             for (uint k = 0; k < serialIterations; ++k)
             {
                 if (getWaveIndex(gtid.x) % serialIterations == k)
                     offsets[i] = ExtractPackedValue(g_pass[index], keys[i]) + bits;
-                    
+
                 GroupMemoryBarrierWithGroupSync();
                 if (getWaveIndex(gtid.x) % serialIterations == k && bits == 0)
                 {
                     InterlockedAdd(g_pass[index],
-                            countbits(waveFlag) << ExtractPackedShift(keys[i]));
+                        countbits(waveFlag) << ExtractPackedShift(keys[i]));
                 }
                 GroupMemoryBarrierWithGroupSync();
             }
         }
-            
+
         if (gtid.x < HALF_RADIX)
         {
             uint histReduction = g_pass[gtid.x];
@@ -487,17 +491,17 @@ void DigitBinningPass(uint3 gtid : SV_GroupThreadID)
                 g_pass[i] = histReduction - g_pass[i];
             }
             g_pass[gtid.x] = histReduction + (histReduction << 16);
-                
+
             if (partitionIndex < e_threadBlocks - 1)
             {
                 InterlockedAdd(b_passHist[(gtid.x << 1) + PassHistOffset(partitionIndex + 1)],
                     FLAG_REDUCTION | (histReduction & 0xffff) << 2);
-                
+
                 InterlockedAdd(b_passHist[(gtid.x << 1) + 1 + PassHistOffset(partitionIndex + 1)],
                     FLAG_REDUCTION | (histReduction >> 16 & 0xffff) << 2);
             }
         }
-            
+
         uint shift = 1;
         for (uint j = RADIX >> 2; j > 0; j >>= 1)
         {
@@ -505,15 +509,15 @@ void DigitBinningPass(uint3 gtid : SV_GroupThreadID)
             if (gtid.x < j)
             {
                 g_pass[((((gtid.x << 1) + 2) << shift) - 1) >> 1] +=
-                        g_pass[((((gtid.x << 1) + 1) << shift) - 1) >> 1] & 0xffff0000;
+                    g_pass[((((gtid.x << 1) + 1) << shift) - 1) >> 1] & 0xffff0000;
             }
             shift++;
         }
         GroupMemoryBarrierWithGroupSync();
-                
+
         if (gtid.x == 0)
             g_pass[HALF_RADIX - 1] &= 0xffff;
-                
+
         for (uint j = 1; j < RADIX >> 1; j <<= 1)
         {
             --shift;
@@ -535,7 +539,7 @@ void DigitBinningPass(uint3 gtid : SV_GroupThreadID)
             g_pass[gtid.x] = (t >> 16) + (t << 16) + (t & 0xffff0000);
         }
         GroupMemoryBarrierWithGroupSync();
-            
+
         if (gtid.x >= WaveGetLaneCount() * serialIterations)
         {
             const uint t = getWaveIndex(gtid.x) / serialIterations * HALF_RADIX;
@@ -552,16 +556,19 @@ void DigitBinningPass(uint3 gtid : SV_GroupThreadID)
             for (uint i = 0; i < KEYS_PER_THREAD; ++i)
                 offsets[i] += ExtractPackedValue(g_pass[ExtractPackedIndex(keys[i])], keys[i]);
         }
-            
+
         if (gtid.x < RADIX)
             exclusiveHistReduction = g_pass[gtid.x >> 1] >> ((gtid.x & 1) ? 16 : 0) & 0xffff;
         GroupMemoryBarrierWithGroupSync();
     }
-    
-    for (uint i = 0; i < KEYS_PER_THREAD; ++i)
-        g_pass[offsets[i]] = keys[i];
 
-    if (gtid.x < RADIX)
+    for (uint i = 0; i < KEYS_PER_THREAD; ++i)
+    {
+        g_pass[offsets[i]] = keys[i];
+        riders2[offsets[i]] = riders[i];
+    }
+
+    /*if (gtid.x < RADIX)
     {
         uint lookbackReduction = 0;
         for (uint k = partitionIndex; k >= 0;)
@@ -573,41 +580,50 @@ void DigitBinningPass(uint3 gtid : SV_GroupThreadID)
                 if (partitionIndex < e_threadBlocks - 1)
                 {
                     InterlockedAdd(b_passHist[gtid.x + PassHistOffset(partitionIndex + 1)],
-                            1 | lookbackReduction << 2);
+                        1 | lookbackReduction << 2);
                 }
                 g_pass[gtid.x + PART_SIZE] = lookbackReduction - exclusiveHistReduction;
                 break;
             }
-                    
+
             if ((flagPayload & FLAG_MASK) == FLAG_REDUCTION)
             {
                 lookbackReduction += flagPayload >> 2;
                 k--;
             }
         }
-    }
+    }*/
     GroupMemoryBarrierWithGroupSync();
-    uint newIndex;
-    
+
+    // assignment to b_sort[i] and b_rider[i] = pass
+    // assignment to keys[i] and riders[i] = fail (keys and riders must be getting out of alignment)
+
+    uint scatterIndex;
     if (partitionIndex < e_threadBlocks - 1)
     {
         [unroll(KEYS_PER_THREAD)]
         for (uint i = gtid.x; i < PART_SIZE; i += PASS_DIM)
         {
-            newIndex = g_pass[ExtractDigit(g_pass[i]) + PART_SIZE] + i;
-            b_alt[newIndex] = g_pass[i];
-            b_altrider[newIndex] = b_rider[i];
+            scatterIndex = g_pass[ExtractDigit(g_pass[i]) + PART_SIZE] + i;
+            //b_alt[scatterIndex] = g_pass[i];
+            //b_altrider[scatterIndex] = riders2[i];
+            //scatterIndex = (i + 1) % e_numKeys;
+            b_alt[scatterIndex] = keys[i];
+            b_altrider[scatterIndex] = riders[i];
         }
     }
-    
+
     if (partitionIndex == e_threadBlocks - 1)
     {
         const uint lastPartSize = e_numKeys - partitionIndex * PART_SIZE;
         for (uint i = gtid.x; i < lastPartSize; i += PASS_DIM)
         {
-            newIndex = g_pass[ExtractDigit(g_pass[i]) + PART_SIZE] + i;
-            b_alt[newIndex] = g_pass[i];
-            b_altrider[newIndex] = b_rider[i];
+            scatterIndex = g_pass[ExtractDigit(g_pass[i]) + PART_SIZE] + i;
+            //b_alt[scatterIndex] = g_pass[i];
+            //b_altrider[scatterIndex] = riders2[i];
+            //scatterIndex = (i + 1) % e_numKeys;
+            b_alt[scatterIndex] = keys[i];
+            b_altrider[scatterIndex] = riders[i];
         }
     }
 }

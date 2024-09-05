@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "asdf.b0nes.gpu_sorting": "https://github.com/b0nes164/GPUSorting.git?path=/GPUSortingUnity",
     "com.unity.ide.rider": "3.0.28",
     "com.unity.ide.visualstudio": "2.0.22",
     "com.unity.ide.vscode": "1.2.5",

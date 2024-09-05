@@ -644,6 +644,7 @@ void Validate(uint3 id : SV_DispatchThreadID)
     
     for (uint i = id.x + 1; i < numKeys; i += inc)
     {
+        InterlockedAdd(b_errorCount[1], 1);
         if (b_sort[i - 1] > b_sort[i])
             InterlockedAdd(b_errorCount[0], 1);
     }
