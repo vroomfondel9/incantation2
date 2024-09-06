@@ -26,6 +26,10 @@ public class ParticleDisplay3D : MonoBehaviour
         mat = new Material(shader);
         mat.SetBuffer("Positions", sim.positionBuffer);
         mat.SetBuffer("Velocities", sim.velocityBuffer);
+        if (Simulation3D.DEBUG_MODE)
+        {
+            mat.SetBuffer("DebugValues", sim.debugBuffer);
+        }
 
         mesh = SebStuff.SphereGenerator.GenerateSphereMesh(meshResolution);
         debug_MeshTriCount = mesh.triangles.Length / 3;
@@ -51,6 +55,7 @@ public class ParticleDisplay3D : MonoBehaviour
         mat.SetFloat("scale", scale);
         mat.SetColor("colour", col);
         mat.SetFloat("velocityMax", velocityDisplayMax);
+        mat.SetInt("debugMode", (Simulation3D.DEBUG_MODE) ? 1 : 0);
 
         Vector3 s = transform.localScale;
         transform.localScale = Vector3.one;

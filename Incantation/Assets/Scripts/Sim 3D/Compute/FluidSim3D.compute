@@ -9,17 +9,23 @@
 #pragma kernel CalcOffsets
 #pragma kernel Debug
 
+#define NUM_THREADS							64
+#define NEIGHBOR_SEARCH_NUM_THREADS			32
+
+//Neighbor search defines
+#define SHARED_MEM_BANKS					32
+
 // Includes
 #include "./FluidMaths3D.hlsl"
 #include "./SpatialHash3D.hlsl"
-
-static const int NumThreads = 64;
 
 // Buffers
 RWStructuredBuffer<float3> Positions;
 RWStructuredBuffer<float3> PredictedPositions;
 RWStructuredBuffer<float3> Velocities;
 RWStructuredBuffer<float2> Densities; // Density, Near Density
+
+RWStructuredBuffer<float3> DebugValues;
 
 //Multipurpose spacial partitioning array, to be initialized here but used by sort
 RWStructuredBuffer<uint> spacialPart1;	//Initialized to keys. Remains keys for reindexing.
@@ -93,7 +99,7 @@ void ResolveCollisions(uint particleIndex)
 
 }
 
-[numthreads(NumThreads,1,1)]
+[numthreads(NUM_THREADS,1,1)]
 void ExternalForces (uint3 id : SV_DispatchThreadID)
 {
 	if (id.x >= numParticles) return;
@@ -105,7 +111,7 @@ void ExternalForces (uint3 id : SV_DispatchThreadID)
 	PredictedPositions[id.x] = Positions[id.x] + Velocities[id.x] * 1 / 120.0;
 }
 
-[numthreads(NumThreads,1,1)]
+[numthreads(NUM_THREADS,1,1)]
 void InitializeSpacialPartitionBuffers (uint3 id : SV_DispatchThreadID)
 {
 	if (id.x >= numParticles) return;
@@ -121,7 +127,7 @@ void InitializeSpacialPartitionBuffers (uint3 id : SV_DispatchThreadID)
 	spacialPart2[index] = index;
 }
 
-[numthreads(NumThreads,1,1)]
+[numthreads(NUM_THREADS,1,1)]
 void CalculateDensities (uint3 id : SV_DispatchThreadID)
 {
 	if (id.x >= numParticles) return;
@@ -175,7 +181,7 @@ void CalculateDensities (uint3 id : SV_DispatchThreadID)
 	Densities[id.x] = float2(density, nearDensity);
 }
 
-[numthreads(NumThreads,1,1)]
+[numthreads(NUM_THREADS,1,1)]
 void CalculatePressureForce (uint3 id : SV_DispatchThreadID)
 {
 	if (id.x >= numParticles) return;
@@ -248,7 +254,7 @@ void CalculatePressureForce (uint3 id : SV_DispatchThreadID)
 }
 
 
-[numthreads(NumThreads,1,1)]
+[numthreads(NUM_THREADS,1,1)]
 void CalculateViscosity (uint3 id : SV_DispatchThreadID)
 {
 	if (id.x >= numParticles) return;
@@ -304,7 +310,7 @@ void CalculateViscosity (uint3 id : SV_DispatchThreadID)
 	Velocities[id.x] += viscosityForce * viscosityStrength * deltaTime;
 }
 
-[numthreads(NumThreads, 1, 1)]
+[numthreads(NUM_THREADS, 1, 1)]
 void UpdatePositions(uint3 id : SV_DispatchThreadID)
 {
 	if (id.x >= numParticles) return;
@@ -314,7 +320,7 @@ void UpdatePositions(uint3 id : SV_DispatchThreadID)
 }
 
 // The branchiness of this kernel is okay because all threads will follow the same branches on a given Dispatch so there will be no divergence
-[numthreads(NumThreads, 1, 1)]
+[numthreads(NUM_THREADS, 1, 1)]
 void CopyBuffer(uint3 id : SV_DispatchThreadID)
 {
 	if (id.x >= numParticles) return;
@@ -367,7 +373,7 @@ void CopyBuffer(uint3 id : SV_DispatchThreadID)
 // Reinitialized the array formerly used to store scatter indices for sorting to be the key offset array.
 // The values are all numParticles (which is 1 more than the maximum possible key) in order to ensure that
 // any possible key is less than this value. This is important for determing the end of the key bucket
-[numthreads(NumThreads, 1, 1)]
+[numthreads(NUM_THREADS, 1, 1)]
 void InitOffsets(uint3 id : SV_DispatchThreadID)
 {
 	if (id.x >= numParticles) { return; }
@@ -389,7 +395,7 @@ void InitOffsets(uint3 id : SV_DispatchThreadID)
 // 
 // NOTE: offsets buffer must filled with values equal to (or greater than) its length to ensure that this works correctly
 // So this depends on InitOffsets being run.
-[numthreads(NumThreads, 1, 1)]
+[numthreads(NUM_THREADS, 1, 1)]
 void CalcOffsets(uint3 id : SV_DispatchThreadID)
 {
 	if (id.x >= numParticles) { return; }
@@ -406,10 +412,94 @@ void CalcOffsets(uint3 id : SV_DispatchThreadID)
 	
 }
 
-[numthreads(NumThreads, 1, 1)]
-void Debug(uint3 id : SV_DispatchThreadID)
-{
-	if (id.x >= numParticles) { return; }
 
-	
+
+struct NeighborSearchIterationID
+{
+	uint key;				//Key of the neighbor cell
+	uint particleTurn;		//warp-relative index of particle whose neighbors are being checked. [0-(NUM_THREADS-1)]
+	uint neighborTurn;		//index into offsets3D of neighbor to be checked for particle. [0-26]
+};
+
+groupshared float3 sh_thisParticlePositions[NUM_THREADS];
+
+//Initializes shared memory with this particle's position, then finds common neighbor cells among all threads in this warp
+void initNeighborSearch(uint globalOffset, uint threadsPerWarp, uint thisParticleIndex, out NeighborSearchIterationID nsIterations[27])
+{
+	float3 thisParticlePosition = PredictedPositions[globalOffset + thisParticleIndex];
+	sh_thisParticlePositions[thisParticleIndex] = thisParticlePosition;
+	int3 thisParticleOriginCell = GetCell3D(thisParticlePosition, smoothingRadius);
+
+	//Init NeighborSearchIterationIDs to all this thread's iterations. This assumes no commonality found by default.
+	uint curNeighborHash;
+	uint curNeighborKey;
+	for (int curNeighborIndex = 0; curNeighborIndex < 27; curNeighborIndex++)
+	{
+		curNeighborHash = HashCell3D(thisParticleOriginCell + offsets3D[curNeighborIndex]);
+		curNeighborKey = KeyFromHash(curNeighborHash, numParticles);
+
+		nsIterations[curNeighborIndex].key = curNeighborKey;
+		nsIterations[curNeighborIndex].particleTurn = thisParticleIndex;
+		nsIterations[curNeighborIndex].neighborTurn = curNeighborIndex;
+	}
+
+	//Loop through all particles in warp and compute neighbor keys of each particle. If an earlier particle is searching the same
+	//neighbor as this particle, then use that instead.
+	uint neighborsCheckedByThisParticle = 27;
+
+	float3 curParticlePosition;
+	int3 curParticleOriginCell;
+	bool curParticleEarlierThanThisParticle;
+	uint shouldReplace;
+	uint shouldNotReplace;
+	for (uint curParticleIndex = 0; curParticleIndex < threadsPerWarp; curParticleIndex++)
+	{
+		curParticleEarlierThanThisParticle = curParticleIndex < thisParticleIndex;
+		curParticlePosition = sh_thisParticlePositions[curParticleIndex];
+		curParticleOriginCell = GetCell3D(curParticlePosition, smoothingRadius);
+
+		for (uint curOtherParticleNeighborIndex = 0; curOtherParticleNeighborIndex < 27; curOtherParticleNeighborIndex++)
+		{
+			curNeighborHash = HashCell3D(curParticleOriginCell + offsets3D[curOtherParticleNeighborIndex]);
+			curNeighborKey = KeyFromHash(curNeighborHash, numParticles);
+
+			for (uint curThisParticleNeighborIndex = 0; curThisParticleNeighborIndex < 27; curThisParticleNeighborIndex++)
+			{
+				shouldReplace = (curNeighborKey == nsIterations[curThisParticleNeighborIndex].key)
+					&& curParticleEarlierThanThisParticle;
+				shouldNotReplace = (1 - shouldReplace);
+
+				nsIterations[curThisParticleNeighborIndex].particleTurn *= shouldNotReplace;
+				nsIterations[curThisParticleNeighborIndex].neighborTurn *= shouldNotReplace;
+				nsIterations[curThisParticleNeighborIndex].particleTurn += shouldReplace * curParticleIndex;
+				nsIterations[curThisParticleNeighborIndex].neighborTurn += shouldReplace * curOtherParticleNeighborIndex;
+
+				neighborsCheckedByThisParticle -= shouldReplace;
+			}
+		}
+	}
+
+	//TODO calculate iterations per particle based on neighborsCheckedByThisParticle
+}
+
+
+[numthreads(NEIGHBOR_SEARCH_NUM_THREADS, 1, 1)]
+void Debug(uint3 globalId : SV_DispatchThreadID, uint3 warpId : SV_GroupThreadID)
+{
+	if (globalId.x >= numParticles) { return; }
+	bool conditionMet;
+
+	NeighborSearchIterationID results[27];
+	initNeighborSearch(globalId.x - warpId.x, NEIGHBOR_SEARCH_NUM_THREADS, warpId.x, results);
+
+	bool atLeastOneShared = false;
+	for (int i = 0; i < 27; i++)
+	{
+		atLeastOneShared = atLeastOneShared || (results[i].particleTurn != warpId.x);
+	}
+
+	conditionMet = atLeastOneShared;
+
+	float testResultFloat = conditionMet * 6.0;
+	DebugValues[globalId.x] = float3(testResultFloat, testResultFloat, testResultFloat);
 }
