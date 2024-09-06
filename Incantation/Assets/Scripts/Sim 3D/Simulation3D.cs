@@ -99,7 +99,7 @@ public class Simulation3D : MonoBehaviour
 
         compute.SetInt("numParticles", positionBuffer.count);
 
-        gpuSort = new BitonicSort();
+        gpuSort = new DeviceRdxSort();
         gpuSort.SetBuffers(predictedPositionsBuffer.count, spacialPart1, spacialPart2, spacialPart3, spacialPart4);
 
         // Init display
