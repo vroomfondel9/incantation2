@@ -53,9 +53,10 @@ public class Simulation3D : MonoBehaviour
     private const string pressureKernel = "CalculatePressureForce";
     private const string viscosityKernel = "CalculateViscosity";
     private const string updatePositionsKernel = "UpdatePositions";
+    private const string debugKernel = "Debug";
     private string[] kernelNames = { externalForcesKernel, initializeSpacialPartitionBuffers,
         copyBufferKernel, initalizeOffsetsKernel, calculateOffsetsKernel, densityKernel, pressureKernel,
-            viscosityKernel, updatePositionsKernel };
+            viscosityKernel, updatePositionsKernel, debugKernel };
     private Dictionary<string, int> kernelNameToId = new();
 
     // Constants for copying data
@@ -101,13 +102,13 @@ public class Simulation3D : MonoBehaviour
         SetInitialBufferData(spawnData);
 
         // Init compute
-        ComputeHelper.SetBuffer(compute, positionBuffer, "Positions", kernelNameToId[externalForcesKernel], kernelNameToId[copyBufferKernel], kernelNameToId[updatePositionsKernel]);
-        ComputeHelper.SetBuffer(compute, predictedPositionsBuffer, "PredictedPositions", kernelNameToId[externalForcesKernel], kernelNameToId[initializeSpacialPartitionBuffers], kernelNameToId[copyBufferKernel], kernelNameToId[densityKernel], kernelNameToId[pressureKernel], kernelNameToId[viscosityKernel], kernelNameToId[updatePositionsKernel]);
-        ComputeHelper.SetBuffer(compute, densityBuffer, "Densities", kernelNameToId[densityKernel], kernelNameToId[pressureKernel], kernelNameToId[viscosityKernel], kernelNameToId[copyBufferKernel]);
-        ComputeHelper.SetBuffer(compute, velocityBuffer, "Velocities", kernelNameToId[externalForcesKernel], kernelNameToId[pressureKernel], kernelNameToId[viscosityKernel], kernelNameToId[updatePositionsKernel], kernelNameToId[copyBufferKernel]);
-        ComputeHelper.SetBuffer(compute, spacialPart1, "spacialPart1", kernelNameToId[initializeSpacialPartitionBuffers], kernelNameToId[calculateOffsetsKernel], kernelNameToId[densityKernel], kernelNameToId[pressureKernel], kernelNameToId[viscosityKernel]);
-        ComputeHelper.SetBuffer(compute, spacialPart2, "spacialPart2", kernelNameToId[initializeSpacialPartitionBuffers], kernelNameToId[initalizeOffsetsKernel], kernelNameToId[calculateOffsetsKernel], kernelNameToId[copyBufferKernel], kernelNameToId[densityKernel], kernelNameToId[pressureKernel], kernelNameToId[viscosityKernel]);
-        ComputeHelper.SetBuffer(compute, tempBuffer, "tempBuffer", kernelNameToId[copyBufferKernel]);
+        ComputeHelper.SetBuffer(compute, positionBuffer, "Positions", kernelNameToId[externalForcesKernel], kernelNameToId[copyBufferKernel], kernelNameToId[updatePositionsKernel], kernelNameToId[debugKernel]);
+        ComputeHelper.SetBuffer(compute, predictedPositionsBuffer, "PredictedPositions", kernelNameToId[externalForcesKernel], kernelNameToId[initializeSpacialPartitionBuffers], kernelNameToId[copyBufferKernel], kernelNameToId[densityKernel], kernelNameToId[pressureKernel], kernelNameToId[viscosityKernel], kernelNameToId[updatePositionsKernel], kernelNameToId[debugKernel]);
+        ComputeHelper.SetBuffer(compute, densityBuffer, "Densities", kernelNameToId[densityKernel], kernelNameToId[pressureKernel], kernelNameToId[viscosityKernel], kernelNameToId[copyBufferKernel], kernelNameToId[debugKernel]);
+        ComputeHelper.SetBuffer(compute, velocityBuffer, "Velocities", kernelNameToId[externalForcesKernel], kernelNameToId[pressureKernel], kernelNameToId[viscosityKernel], kernelNameToId[updatePositionsKernel], kernelNameToId[copyBufferKernel], kernelNameToId[debugKernel]);
+        ComputeHelper.SetBuffer(compute, spacialPart1, "spacialPart1", kernelNameToId[initializeSpacialPartitionBuffers], kernelNameToId[calculateOffsetsKernel], kernelNameToId[densityKernel], kernelNameToId[pressureKernel], kernelNameToId[viscosityKernel], kernelNameToId[debugKernel]);
+        ComputeHelper.SetBuffer(compute, spacialPart2, "spacialPart2", kernelNameToId[initializeSpacialPartitionBuffers], kernelNameToId[initalizeOffsetsKernel], kernelNameToId[calculateOffsetsKernel], kernelNameToId[copyBufferKernel], kernelNameToId[densityKernel], kernelNameToId[pressureKernel], kernelNameToId[viscosityKernel], kernelNameToId[debugKernel]);
+        ComputeHelper.SetBuffer(compute, tempBuffer, "tempBuffer", kernelNameToId[copyBufferKernel], kernelNameToId[debugKernel]);
 
         compute.SetInt("numParticles", positionBuffer.count);
 
@@ -131,13 +132,11 @@ public class Simulation3D : MonoBehaviour
             {
                 curValid = false;
                 curKey = kernelNames[i];
+
+                // Throws Argument Exception if not found
                 curValue = compute.FindKernel(kernelNames[i]);
 
-                if (curValue < 0)
-                {
-                    Debug.LogError("Could not find kernel " + curKey + ".");
-                }
-                else if (!compute.IsSupported(curValue))
+                if (!compute.IsSupported(curValue))
                 {
                     Debug.LogError("Kernel " + curKey + " contains features not supported by end-user device.");
                 }

@@ -7,6 +7,7 @@
 #pragma kernel CopyBuffer
 #pragma kernel InitOffsets
 #pragma kernel CalcOffsets
+#pragma kernel Debug
 
 // Includes
 #include "./FluidMaths3D.hlsl"
@@ -402,5 +403,13 @@ void CalcOffsets(uint3 id : SV_DispatchThreadID)
 	{
 		spacialPart2[key] = i;
 	}
+	
+}
+
+[numthreads(NumThreads, 1, 1)]
+void Debug(uint3 id : SV_DispatchThreadID)
+{
+	if (id.x >= numParticles) { return; }
+
 	
 }
