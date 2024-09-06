@@ -1,5 +1,7 @@
 using UnityEngine;
+using UnityEngine.Assertions;
 using Unity.Mathematics;
+using System.Collections.Generic;
 
 public class Simulation3D : MonoBehaviour
 {
@@ -41,16 +43,20 @@ public class Simulation3D : MonoBehaviour
     //Used as a double buffer to re-order density, velocity, position, predicated position values after sort
     public ComputeBuffer tempBuffer;
 
-    // Kernel IDs
-    const int externalForcesKernel = 0;
-    const int initializeSpacialPartitionBuffers = 1;
-    const int densityKernel = 2;
-    const int pressureKernel = 3;
-    const int viscosityKernel = 4;
-    const int updatePositionsKernel = 5;
-    const int copyBufferKernel = 6;
-    const int initalizeOffsetsKernel = 7;
-    const int calculateOffsetsKernel = 8;
+    // Kernel Names and IDs
+    private const string externalForcesKernel = "ExternalForces";
+    private const string initializeSpacialPartitionBuffers = "InitializeSpacialPartitionBuffers";
+    private const string copyBufferKernel = "CopyBuffer";
+    private const string initalizeOffsetsKernel = "InitOffsets";
+    private const string calculateOffsetsKernel = "CalcOffsets";
+    private const string densityKernel = "CalculateDensities";
+    private const string pressureKernel = "CalculatePressureForce";
+    private const string viscosityKernel = "CalculateViscosity";
+    private const string updatePositionsKernel = "UpdatePositions";
+    private string[] kernelNames = { externalForcesKernel, initializeSpacialPartitionBuffers,
+        copyBufferKernel, initalizeOffsetsKernel, calculateOffsetsKernel, densityKernel, pressureKernel,
+            viscosityKernel, updatePositionsKernel };
+    private Dictionary<string, int> kernelNameToId = new();
 
     // Constants for copying data
     const int numCopyBuffers = 4;
@@ -65,6 +71,12 @@ public class Simulation3D : MonoBehaviour
 
     void Start()
     {
+        Initialize();
+    }
+
+    protected void Initialize()
+    {
+        ValidateKernels();
         Debug.Log("Controls: Space = Play/Pause, R = Reset");
         Debug.Log("Use transform tool in scene to scale/rotate simulation bounding box.");
 
@@ -89,13 +101,13 @@ public class Simulation3D : MonoBehaviour
         SetInitialBufferData(spawnData);
 
         // Init compute
-        ComputeHelper.SetBuffer(compute, positionBuffer, "Positions", externalForcesKernel, updatePositionsKernel, copyBufferKernel);
-        ComputeHelper.SetBuffer(compute, predictedPositionsBuffer, "PredictedPositions", externalForcesKernel, initializeSpacialPartitionBuffers, densityKernel, pressureKernel, viscosityKernel, updatePositionsKernel, copyBufferKernel);
-        ComputeHelper.SetBuffer(compute, densityBuffer, "Densities", densityKernel, pressureKernel, viscosityKernel, copyBufferKernel);
-        ComputeHelper.SetBuffer(compute, velocityBuffer, "Velocities", externalForcesKernel, pressureKernel, viscosityKernel, updatePositionsKernel, copyBufferKernel);
-        ComputeHelper.SetBuffer(compute, spacialPart1, "spacialPart1", initializeSpacialPartitionBuffers, calculateOffsetsKernel, densityKernel, pressureKernel, viscosityKernel);
-        ComputeHelper.SetBuffer(compute, spacialPart2, "spacialPart2", initializeSpacialPartitionBuffers, initalizeOffsetsKernel, calculateOffsetsKernel, copyBufferKernel, densityKernel, pressureKernel, viscosityKernel);
-        ComputeHelper.SetBuffer(compute, tempBuffer, "tempBuffer", copyBufferKernel);
+        ComputeHelper.SetBuffer(compute, positionBuffer, "Positions", kernelNameToId[externalForcesKernel], kernelNameToId[copyBufferKernel], kernelNameToId[updatePositionsKernel]);
+        ComputeHelper.SetBuffer(compute, predictedPositionsBuffer, "PredictedPositions", kernelNameToId[externalForcesKernel], kernelNameToId[initializeSpacialPartitionBuffers], kernelNameToId[copyBufferKernel], kernelNameToId[densityKernel], kernelNameToId[pressureKernel], kernelNameToId[viscosityKernel], kernelNameToId[updatePositionsKernel]);
+        ComputeHelper.SetBuffer(compute, densityBuffer, "Densities", kernelNameToId[densityKernel], kernelNameToId[pressureKernel], kernelNameToId[viscosityKernel], kernelNameToId[copyBufferKernel]);
+        ComputeHelper.SetBuffer(compute, velocityBuffer, "Velocities", kernelNameToId[externalForcesKernel], kernelNameToId[pressureKernel], kernelNameToId[viscosityKernel], kernelNameToId[updatePositionsKernel], kernelNameToId[copyBufferKernel]);
+        ComputeHelper.SetBuffer(compute, spacialPart1, "spacialPart1", kernelNameToId[initializeSpacialPartitionBuffers], kernelNameToId[calculateOffsetsKernel], kernelNameToId[densityKernel], kernelNameToId[pressureKernel], kernelNameToId[viscosityKernel]);
+        ComputeHelper.SetBuffer(compute, spacialPart2, "spacialPart2", kernelNameToId[initializeSpacialPartitionBuffers], kernelNameToId[initalizeOffsetsKernel], kernelNameToId[calculateOffsetsKernel], kernelNameToId[copyBufferKernel], kernelNameToId[densityKernel], kernelNameToId[pressureKernel], kernelNameToId[viscosityKernel]);
+        ComputeHelper.SetBuffer(compute, tempBuffer, "tempBuffer", kernelNameToId[copyBufferKernel]);
 
         compute.SetInt("numParticles", positionBuffer.count);
 
@@ -104,6 +116,42 @@ public class Simulation3D : MonoBehaviour
 
         // Init display
         display.Init(this);
+    }
+
+    protected void ValidateKernels()
+    {
+        bool valid = true;
+
+        if (compute)
+        {
+            string curKey;
+            int curValue;
+            bool curValid;
+            for (int i = 0; i < kernelNames.Length; i++)
+            {
+                curValid = false;
+                curKey = kernelNames[i];
+                curValue = compute.FindKernel(kernelNames[i]);
+
+                if (curValue < 0)
+                {
+                    Debug.LogError("Could not find kernel " + curKey + ".");
+                }
+                else if (!compute.IsSupported(curValue))
+                {
+                    Debug.LogError("Kernel " + curKey + " contains features not supported by end-user device.");
+                }
+                else
+                {
+                    kernelNameToId.Add(curKey, curValue);
+                    curValid = true;
+                }
+
+                valid &= curValid;
+            }
+        }
+
+        Assert.IsTrue(valid);
     }
 
     void FixedUpdate()
@@ -153,22 +201,22 @@ public class Simulation3D : MonoBehaviour
     void RunSimulationStep()
     {
         // External forces (not neighbor-dependent)
-        ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: externalForcesKernel);
+        ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: kernelNameToId[externalForcesKernel]);
         
         // Spacial partitioning for upcoming neighbor searches
-        ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: initializeSpacialPartitionBuffers);
+        ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: kernelNameToId[initializeSpacialPartitionBuffers]);
         gpuSort.Sort();
         coalesceMemory();
-        ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: initalizeOffsetsKernel);
-        ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: calculateOffsetsKernel);
+        ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: kernelNameToId[initalizeOffsetsKernel]);
+        ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: kernelNameToId[calculateOffsetsKernel]);
 
         // SPH core functions
-        ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: densityKernel);
-        ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: pressureKernel);
-        ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: viscosityKernel);
+        ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: kernelNameToId[densityKernel]);
+        ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: kernelNameToId[pressureKernel]);
+        ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: kernelNameToId[viscosityKernel]);
 
         // Copying predicted position back into position buffer for next iteration
-        ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: updatePositionsKernel);
+        ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: kernelNameToId[updatePositionsKernel]);
 
     }
 
@@ -211,7 +259,7 @@ public class Simulation3D : MonoBehaviour
             for (int curCopyDirection = 0; curCopyDirection < numCopyDirections; curCopyDirection++)
             {
                 compute.SetInt("copyDirection", curCopyDirection);
-                ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: copyBufferKernel);
+                ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: kernelNameToId[copyBufferKernel]);
             }
         }
     }
