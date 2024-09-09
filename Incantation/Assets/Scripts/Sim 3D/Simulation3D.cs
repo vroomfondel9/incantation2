@@ -20,6 +20,7 @@ public class Simulation3D : MonoBehaviour
     public float pressureMultiplier;
     public float nearPressureMultiplier;
     public float viscosityStrength;
+    public bool showSpacialPartitions;
 
     [Header("References")]
     public ComputeShader compute;
@@ -322,5 +323,29 @@ public class Simulation3D : MonoBehaviour
         Gizmos.DrawWireCube(Vector3.zero, Vector3.one);
         Gizmos.matrix = m;
 
+        if (showSpacialPartitions)
+        {
+            Gizmos.color = new Color(1, 0, 0, 0.5f);
+            Vector3 scale = transform.localScale;
+            Vector3 halfScale = new Vector3(transform.localScale.x / 2.0f, transform.localScale.y / 2.0f, transform.localScale.z / 2.0f);
+            Vector3 halfSmoothingRadius = new Vector3(smoothingRadius / 2.0f, smoothingRadius / 2.0f, smoothingRadius / 2.0f);
+            Vector3 startPos = -1 * halfScale + halfSmoothingRadius;
+            Vector3 maxPartitions = new Vector3(Mathf.Ceil(scale.x / smoothingRadius), 
+                Mathf.Ceil(scale.y / smoothingRadius), Mathf.Ceil(scale.z / smoothingRadius));
+            Vector3 partitionScale = Vector3.one * smoothingRadius;
+
+            Vector3 curStartPos;
+            for (int x = 0; x < maxPartitions.x; x++)
+            {
+                for (int y = 0; y < maxPartitions.y; y++)
+                {
+                    for (int z = 0; z < maxPartitions.z; z++)
+                    {
+                        curStartPos = new Vector3(startPos.x + x * smoothingRadius, startPos.y + y * smoothingRadius, startPos.z + z * smoothingRadius);
+                        Gizmos.DrawWireCube(curStartPos, partitionScale);
+                    }
+                }
+            }
+        }
     }
 }
