@@ -47,11 +47,11 @@ Shader "Instanced/Particle3DSurf" {
 
 	#ifdef UNITY_PROCEDURAL_INSTANCING_ENABLED
 				float speed = length(Velocities[unity_InstanceID]);
+				float speedT = saturate(speed / velocityMax);
 				if (debugMode == 1)
 				{
-					speed = length(DebugValues[unity_InstanceID]);
+					speedT = saturate(DebugValues[unity_InstanceID]);
 				}
-				float speedT = saturate(speed / velocityMax);
 				float colT = speedT;
 				o.colour = tex2Dlod(ColourMap, float4(colT, 0.5,0,0));
 	#endif

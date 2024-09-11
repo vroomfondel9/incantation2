@@ -235,8 +235,8 @@ public class Simulation3D : MonoBehaviour
         ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: kernelNameToId[calculateOffsetsKernel]);
 
         // SPH core functions
-        ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: kernelNameToId[debugKernel]);
         ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: kernelNameToId[densityKernel]);
+        ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: kernelNameToId[debugKernel]);
         ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: kernelNameToId[pressureKernel]);
         ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: kernelNameToId[viscosityKernel]);
 

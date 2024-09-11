@@ -1,3 +1,5 @@
+#pragma use_dxc
+
 #pragma kernel ExternalForces
 #pragma kernel InitializeSpacialPartitionBuffers
 #pragma kernel CalculateDensities
@@ -10,16 +12,19 @@
 #pragma kernel Debug
 
 #define NUM_THREADS							64
-#define NEIGHBOR_SEARCH_NUM_THREADS			32
+#define NEIGHBOR_SEARCH_NUM_THREADS			64
 
 //Neighbor search defines
-#define NS_MAX_COORD_BLOCK_SIZE				2
+//The max number of threads that will coordinate to calculate values for a given origin cell
+//A value of 1 should yield identical behavior to the naiive implementation, since there's no coordination
+//Any value over 27 would be meaningless because you'd be computing more neighbors than exist simultanously
+#define NS_MAX_COORD_BLOCK_SIZE				3		
 #define NS_USE_REGISTER_CACHE_POS			1
 #define NS_USE_REGISTER_CACHE_SUMS			1
 
 //All of these diagnostic or debug should be commented out in prod
 #define NS_DEBUG_ASSISTANCE							//Generally makes debugging easier by doing things like strictly unnecessary cleanup of values
-#define NS_ADDITIONAL_COORDINATOR_CONTEXT			//Adds more data that rides with NeighborSearchCoordinatorData which can help with debugging, but increases register pressure
+//#define NS_ADDITIONAL_COORDINATOR_CONTEXT			//Adds more data that rides with NSCoordBlock which can help with debugging, but increases register pressure
 
 // Includes
 #include "./FluidMaths3D.hlsl"
@@ -419,31 +424,202 @@ void CalcOffsets(uint3 id : SV_DispatchThreadID)
 }
 
 
-
-struct NeighborSearchCoordinatorData
+//TODO Test Failures: NS_MAX_COORD_BLOCK_SIZE = 8 yields inconsistent (not every frame) small clusters of failures.
+//I suspect hash conflicts related based on location they occur in.
+struct NSCoordBlock
 {
-#ifdef NS_ADDITIONAL_COORDINATOR_CONTEXT
-	//Identifies this thread with respect to its position in global memory, the local thread block, and the local coord block.
-	uint hash;
-	uint startIndex;
-	uint coordBlock;
-#endif
-
 	uint globalId;
 	uint threadBlockId;
-	uint coordBlockId;						//Note: coordBlockStartIndex = threadBlockId - coordBlockId;
-	
+	uint id;								//id within the coord block
+	uint coordBlock;						//Index of coord block working on this hash
+	uint size;
+};
+
+struct NSSearchTargetBlock
+{
+	uint startIndex;						//Thread block id of start index of coordinator block to search
+	uint size;					//Coordinator block size
+	int3 originCell;
+};
+
+struct NSSearchIteration
+{
+	uint count;								//Global number of iterations computed across all neighbors across all blocks. 
+	uint neighborIndex;						//The neighbor index in Offsets3D to search this iteration
+};
+
+struct NSSharedMemCache
+{
 	//Data present in shared memory but being cached in registers for fast and frequent access
 	float3 positions[NS_MAX_COORD_BLOCK_SIZE];
 	float3 partialSums[NS_MAX_COORD_BLOCK_SIZE];
-	uint coordBlockSize;
 };
 
+struct NeighborSearchData
+{
+	NSCoordBlock coordBlock;
+	NSSearchTargetBlock searchTarget;
+	NSSearchIteration iteration;
+	NSSharedMemCache cache;
+};
+
+//Fundamental values used for neighbor calculations
 groupshared float3 sh_positions[NEIGHBOR_SEARCH_NUM_THREADS];
 groupshared float3 sh_dependentValues[NEIGHBOR_SEARCH_NUM_THREADS];
 groupshared float3 sh_partialSums[NEIGHBOR_SEARCH_NUM_THREADS];
 
-NeighborSearchCoordinatorData initNeighborSearch(uint globalId, uint threadBlockId)
+//Used for inter-block coordination
+groupshared uint sh_blockSizes[NEIGHBOR_SEARCH_NUM_THREADS];
+groupshared int sh_neighborIndex[NEIGHBOR_SEARCH_NUM_THREADS];
+
+NeighborSearchData performNeighborSearch(NeighborSearchData ns)
+{
+	float3 pos;
+	int3 originCell = ns.searchTarget.originCell;
+	float sqrRadius = smoothingRadius * smoothingRadius;
+	float density = 0;
+	float nearDensity = 0;
+
+	uint thisCoordBlockStartIndex = ns.coordBlock.threadBlockId - ns.coordBlock.id;
+	uint completionIteration = ceil(27.0 / ns.coordBlock.size);
+	bool completed = false;
+
+	// Neighbour search
+	for (int globalIteration = 0; globalIteration < 27; globalIteration++)
+	{
+		uint hash = HashCell3D(originCell + offsets3D[ns.iteration.neighborIndex]);
+		uint key = KeyFromHash(hash, numParticles);
+		int3 neighborCell;
+		uint neighborHash;
+		uint neighborKey;
+		uint currIndex = spacialPart2[key];
+		uint unincIndex;
+
+		//TODO testing purposes only. Remove second condition
+		if ((ns.iteration.neighborIndex < 27) && (ns.searchTarget.startIndex == thisCoordBlockStartIndex))
+		{
+			while (currIndex < numParticles)
+			{
+				unincIndex = currIndex;
+				currIndex++;
+
+				neighborKey = spacialPart1[unincIndex];
+				// Exit if no longer looking at correct bin
+				if (neighborKey != key) break;
+
+				float3 neighbourPos = PredictedPositions[unincIndex];
+				neighborCell = GetCell3D(neighbourPos, smoothingRadius);
+				neighborHash = HashCell3D(neighborCell);
+
+				// Skip if hash does not match
+				if (neighborHash != hash) continue;
+
+				for (int curCoordBlockIndex = 0; curCoordBlockIndex < NS_MAX_COORD_BLOCK_SIZE; curCoordBlockIndex++)
+				{
+					if (curCoordBlockIndex >= ns.coordBlock.size) break;
+
+					pos = ns.cache.positions[curCoordBlockIndex];
+					float3 offsetToNeighbour = neighbourPos - pos;
+					float sqrDstToNeighbour = dot(offsetToNeighbour, offsetToNeighbour);
+
+					// Skip if not within radius
+					float insideRadius = (sqrDstToNeighbour <= sqrRadius);
+
+					if (insideRadius)
+					{
+						// Calculate density and near density
+						float dst = sqrt(sqrDstToNeighbour);
+						//Don't question the multiplication by 1...It appears to be a bug with compiler optimization
+						ns.cache.partialSums[curCoordBlockIndex][0] += insideRadius * DensityKernel(dst, smoothingRadius);
+						ns.cache.partialSums[curCoordBlockIndex][1] += insideRadius * NearDensityKernel(dst, smoothingRadius);
+					}
+				}
+			}
+		}
+
+		ns.iteration.count++;
+		uint sharedNeighborIndex = sh_neighborIndex[ns.coordBlock.threadBlockId];
+
+		for (int i = 0; i < NS_MAX_COORD_BLOCK_SIZE; i++)
+		{
+			if (completionIteration == ns.iteration.count)
+			{
+				uint nonConflictIndex = (ns.coordBlock.id + i) % NS_MAX_COORD_BLOCK_SIZE;
+				uint sharedMemIndex = ns.searchTarget.startIndex + nonConflictIndex;
+				float3 value = ns.cache.partialSums[nonConflictIndex];
+				if (nonConflictIndex < ns.coordBlock.size)
+				{
+					value += sh_partialSums[sharedMemIndex];
+				}
+				GroupMemoryBarrierWithGroupSync();
+
+				if (nonConflictIndex < ns.coordBlock.size)
+				{
+					sh_partialSums[sharedMemIndex] = value;
+					if (ns.coordBlock.id == 0)
+					{
+						sh_neighborIndex[sharedMemIndex] = -1;
+					}
+				}
+				GroupMemoryBarrierWithGroupSync();
+			}
+			else
+			{
+				GroupMemoryBarrierWithGroupSync();
+				GroupMemoryBarrierWithGroupSync();
+			}
+		}
+
+		if (completionIteration == ns.iteration.count)
+		{
+			uint neighboringCoordBlockEndIndex = (ns.searchTarget.startIndex - 1) % NEIGHBOR_SEARCH_NUM_THREADS;
+			uint neighboringCoordBlockSize = sh_blockSizes[neighboringCoordBlockEndIndex];
+			uint neighboringCoordBlockStartIndex = neighboringCoordBlockEndIndex - neighboringCoordBlockSize - 1;
+			uint neighboringCoordBlockLatestNeighborIndex = sh_neighborIndex[neighboringCoordBlockEndIndex];
+			uint neighboringCoordBlockHasFinished = (neighboringCoordBlockLatestNeighborIndex == -1) || (neighboringCoordBlockLatestNeighborIndex >= 27 - 1);
+
+			completed = neighboringCoordBlockHasFinished;
+			if (!neighboringCoordBlockHasFinished)
+			{
+				NSSearchTargetBlock newSearchTarget;
+				newSearchTarget.startIndex = neighboringCoordBlockStartIndex;
+				newSearchTarget.size = neighboringCoordBlockSize;
+				float3 firstParticlePosition = sh_positions[neighboringCoordBlockStartIndex];
+				newSearchTarget.originCell = GetCell3D(firstParticlePosition, smoothingRadius);
+
+				ns.searchTarget = newSearchTarget;
+
+				uint iterationsLeft = ceil((27.0 - neighboringCoordBlockLatestNeighborIndex) / (ns.searchTarget.size + ns.coordBlock.size));
+				completionIteration = ns.iteration.count + iterationsLeft;
+			}
+		}
+
+		if (ns.searchTarget.startIndex != thisCoordBlockStartIndex)
+		{
+			if (ns.coordBlock.id < ns.searchTarget.size)
+			{
+				uint allThreadsHelped = floor(ns.searchTarget.size / ns.coordBlock.size);
+				uint remainder = ns.coordBlock.size - allThreadsHelped * ns.searchTarget.size;
+
+				sh_neighborIndex[ns.searchTarget.startIndex + ns.coordBlock.id] += allThreadsHelped + (ns.coordBlock.id < remainder);
+			}
+		}
+		GroupMemoryBarrierWithGroupSync();
+
+		if (!completed)
+		{
+			uint indicesToSkipDueToHelpFromOtherBlocks = sharedNeighborIndex - ns.iteration.neighborIndex;
+			ns.iteration.neighborIndex += ns.coordBlock.size + indicesToSkipDueToHelpFromOtherBlocks;
+			sh_neighborIndex[ns.coordBlock.threadBlockId] = ns.iteration.neighborIndex;
+		}
+	}
+
+	ns.cache.partialSums[ns.coordBlock.id] = sh_partialSums[ns.coordBlock.threadBlockId];
+
+	return ns;
+}
+
+NeighborSearchData initNeighborSearch(uint globalId, uint threadBlockId)
 {
 	//Global end of data init (assume numParticles check at end that prevents write, so fake values here are fine)
 	float3 pos = float3(-9999, -9999, -9999);
@@ -464,17 +640,15 @@ NeighborSearchCoordinatorData initNeighborSearch(uint globalId, uint threadBlock
 	GroupMemoryBarrierWithGroupSync();										//Sync 1
 
 	//Initialize Coordinator Data
-	NeighborSearchCoordinatorData coordData;
-	coordData.globalId = globalId;
-	coordData.threadBlockId = threadBlockId;
-
-	for (int partialSumIndex = 0; partialSumIndex < NS_MAX_COORD_BLOCK_SIZE; partialSumIndex++)
-	{
-		coordData.partialSums[partialSumIndex] = float3(0, 0, 0);
-	}
+	NSCoordBlock coordBlock;
+	NSSearchTargetBlock searchTarget;
 
 	int3 originCell = GetCell3D(pos, smoothingRadius);
 	uint originHash = HashCell3D(originCell);
+
+	coordBlock.globalId = globalId;
+	coordBlock.threadBlockId = threadBlockId;
+	searchTarget.originCell = originCell;
 
 	//Crawl to the left in shared memory to find the beginning of the hash (not key, coordinators operate at hash-level)
 	//Also fills positions array with up to first NS_MAX_COORD_BLOCK_SIZE elements to the left of current thread
@@ -508,25 +682,22 @@ NeighborSearchCoordinatorData initNeighborSearch(uint globalId, uint threadBlock
 	uint hashStartIndex = threadBlockId - numHashMatchesFound;
 	uint coordBlocksBeforeThis = floor((float)numHashMatchesFound / NS_MAX_COORD_BLOCK_SIZE);
 	uint coordBlockStartIndex = hashStartIndex + coordBlocksBeforeThis * NS_MAX_COORD_BLOCK_SIZE;
-	uint coordBlockId = threadBlockId - coordBlockStartIndex;
+	uint id = threadBlockId - coordBlockStartIndex;
 
-#ifdef NS_ADDITIONAL_COORDINATOR_CONTEXT
-	coordData.startIndex = coordBlockStartIndex;
-	coordData.hash = originHash;
-	coordData.coordBlock = coordBlocksBeforeThis;
-#endif
+	searchTarget.startIndex = coordBlockStartIndex;
 
-	coordData.coordBlockId = coordBlockId;
+	coordBlock.coordBlock = coordBlocksBeforeThis;
+	coordBlock.id = id;
 
 	//We could have added values to positions array that are outside coord block bounds. We need to trim this down.
-	//So we will consider coordData.coordBlockId + 1 as the current size of the positions array.
-	uint coordBlockSize = (coordData.coordBlockId + 1);
+	//So we will consider coordBlock.id + 1 as the current size of the positions array.
+	uint size = (coordBlock.id + 1);
 
 	//Reverse the array to ensure it aligns with the order in shared memory
-	for (int swapIndex = 0; swapIndex < floor(coordBlockSize / 2.0); swapIndex++)
+	for (int swapIndex = 0; swapIndex < floor(size / 2.0); swapIndex++)
 	{
 		uint leftIndex = swapIndex;
-		uint rightIndex = (coordBlockSize - 1) - swapIndex;
+		uint rightIndex = (size - 1) - swapIndex;
 
 		float3 tmp = positions[leftIndex];
 		positions[leftIndex] = positions[rightIndex];
@@ -539,7 +710,7 @@ NeighborSearchCoordinatorData initNeighborSearch(uint globalId, uint threadBlock
 	hashEndFound = false;
 
 	for (int forwardSearchIndex = threadBlockId + 1;
-		(forwardSearchIndex < NEIGHBOR_SEARCH_NUM_THREADS) && !hashEndFound && (coordBlockSize < NS_MAX_COORD_BLOCK_SIZE); 
+		(forwardSearchIndex < NEIGHBOR_SEARCH_NUM_THREADS) && !hashEndFound && (size < NS_MAX_COORD_BLOCK_SIZE); 
 			forwardSearchIndex++)
 	{
 		curPosition = sh_positions[forwardSearchIndex];
@@ -550,25 +721,46 @@ NeighborSearchCoordinatorData initNeighborSearch(uint globalId, uint threadBlock
 
 		if (!hashEndFound)
 		{
-			positions[coordBlockSize] = curPosition;
-			coordBlockSize++;
+			positions[size] = curPosition;
+			size++;
 		}
 	}
 
+	coordBlock.size = size;
+	searchTarget.size = size;
+	sh_blockSizes[threadBlockId] = size;
+
 	//This isn't strictly necessary, but it's possible that there are values in positions array that don't belong in the block
-	//If consumers use coordBlockSize correctly, these fake values will never be used. But I want to reset them anyway because it bothers me
-	//So for the sake of perf, I surround in a compiler directive
+//If consumers use size correctly, these fake values will never be used. But I want to reset them anyway because it bothers me
+//So for the sake of perf, I surround in a compiler directive
 #ifdef NS_DEBUG_ASSISTANCE
-	for (int clearIndex = coordBlockSize; clearIndex < NS_MAX_COORD_BLOCK_SIZE; clearIndex++)
+	for (int clearIndex = size; clearIndex < NS_MAX_COORD_BLOCK_SIZE; clearIndex++)
 	{
 		positions[clearIndex] = float3(0, 0, 0);
 	}
 #endif
 
-	coordData.coordBlockSize = coordBlockSize;
-	coordData.positions = positions;
 
-	return coordData;
+	NSSharedMemCache cache;
+	[unroll]
+	for (int cacheIndex = 0; cacheIndex < NS_MAX_COORD_BLOCK_SIZE; cacheIndex++)
+	{
+		cache.positions[cacheIndex] = positions[cacheIndex];
+		cache.partialSums[cacheIndex] = float3(0, 0, 0);
+	}
+
+	NSSearchIteration iteration;
+	iteration.count = 0;
+	iteration.neighborIndex = coordBlock.id;
+	sh_neighborIndex[threadBlockId] = coordBlock.id;
+
+	NeighborSearchData searchData;
+	searchData.coordBlock = coordBlock;
+	searchData.searchTarget = searchTarget;
+	searchData.iteration = iteration;
+	searchData.cache = cache;
+
+	return searchData;
 }
 
 void TestInitNeighborSearch(uint3 globalId, uint3 warpId)
@@ -584,9 +776,9 @@ void TestInitNeighborSearch(uint3 globalId, uint3 warpId)
 	uint globalWarpOffset = (warpId.x == 0) ? -1 * (NEIGHBOR_SEARCH_NUM_THREADS - 1) : 1;
 	uint prevGlobalIndex = globalIndex - globalOffset - globalWarpOffset;
 
-	NeighborSearchCoordinatorData prevData = initNeighborSearch(prevGlobalIndex, prevIndex);
+	NeighborSearchData prevData = initNeighborSearch(prevGlobalIndex, prevIndex);
 	GroupMemoryBarrierWithGroupSync();
-	NeighborSearchCoordinatorData xData = initNeighborSearch(globalIndex, index);
+	NeighborSearchData xData = initNeighborSearch(globalIndex, index);
 	GroupMemoryBarrierWithGroupSync();
 
 	float3 xPos = sh_positions[index];
@@ -613,18 +805,18 @@ void TestInitNeighborSearch(uint3 globalId, uint3 warpId)
 	bool startsMismatch = false;
 	bool hashMismatch = false;
 	bool intraCoordBlockMismatch = false;
-	bool coordBlockSizeMismatch = false;
-	bool coordBlockIdsNonsequential = false;
+	bool sizeMismatch = false;
+	bool idsNonsequential = false;
 
 	bool interCoordBlockNonsequential = false;
-	bool invalidCoordBlockIdEnd = false;
-	bool invalidCoordBlockIdStart = false;
+	bool invalididEnd = false;
+	bool invalididStart = false;
 	bool blockEndNotFullSize = false;
 	bool blockStartsNonStridedBySize = false;
 
 	bool newHashStartIndexNonSelf = false;
 	bool newHashCoordBlockNonZero = false;
-	bool newHashCoordBlockIdNonZero = false;
+	bool newHashidNonZero = false;
 
 	if (sameOriginHash)
 	{
@@ -633,45 +825,34 @@ void TestInitNeighborSearch(uint3 globalId, uint3 warpId)
 		{
 			isInterBlock = true;
 
-			invalidCoordBlockIdStart = xData.coordBlockId != 0;
-
-#ifdef NS_ADDITIONAL_COORDINATOR_CONTEXT
-			blockStartsNonStridedBySize = xData.startIndex != 0;
-			interCoordBlockNonsequential = xData.coordBlock != 0;
-#endif
+			invalididStart = xData.coordBlock.id != 0;
+			interCoordBlockNonsequential = xData.coordBlock.coordBlock != 0;
+			blockStartsNonStridedBySize = xData.searchTarget.startIndex != 0;
 		}
 		else
 		{
-#ifdef NS_ADDITIONAL_COORDINATOR_CONTEXT
-			hashMismatch = prevData.hash != xData.hash;
-#endif
+			hashMismatch = HashCell3D(prevData.searchTarget.originCell) != HashCell3D(xData.searchTarget.originCell);
 
-			coordBlockBoundary = (prevData.coordBlockId == NS_MAX_COORD_BLOCK_SIZE - 1) && (xData.coordBlockId == 0);
+			coordBlockBoundary = (prevData.coordBlock.id == NS_MAX_COORD_BLOCK_SIZE - 1) && (xData.coordBlock.id == 0);
 			if (!coordBlockBoundary)
 			{
 				isIntraBlock = true;
 
 				//cur and previous should coordinate with each other
-				coordBlockSizeMismatch = (prevData.coordBlockSize != xData.coordBlockSize);
-				coordBlockIdsNonsequential = prevData.coordBlockId != xData.coordBlockId - 1;
-
-#ifdef NS_ADDITIONAL_COORDINATOR_CONTEXT
-				startsMismatch = prevData.startIndex != xData.startIndex;
-				intraCoordBlockMismatch = prevData.coordBlock != xData.coordBlock;
-#endif
+				sizeMismatch = (prevData.coordBlock.size != xData.coordBlock.size);
+				idsNonsequential = prevData.coordBlock.id != xData.coordBlock.id - 1;
+				intraCoordBlockMismatch = prevData.coordBlock.coordBlock != xData.coordBlock.coordBlock;
+				startsMismatch = prevData.searchTarget.startIndex != xData.searchTarget.startIndex;
 			}
 			else
 			{
 				isInterBlock = true;
 
-				invalidCoordBlockIdEnd = prevData.coordBlockId != NS_MAX_COORD_BLOCK_SIZE - 1;
-				invalidCoordBlockIdStart = xData.coordBlockId != 0;
-				blockEndNotFullSize = prevData.coordBlockSize != NS_MAX_COORD_BLOCK_SIZE;
-
-#ifdef NS_ADDITIONAL_COORDINATOR_CONTEXT
-				interCoordBlockNonsequential = prevData.coordBlock != xData.coordBlock - 1;
-				blockStartsNonStridedBySize = prevData.startIndex + NS_MAX_COORD_BLOCK_SIZE != xData.startIndex;
-#endif
+				invalididEnd = prevData.coordBlock.id != NS_MAX_COORD_BLOCK_SIZE - 1;
+				invalididStart = xData.coordBlock.id != 0;
+				blockEndNotFullSize = prevData.coordBlock.size != NS_MAX_COORD_BLOCK_SIZE;
+				interCoordBlockNonsequential = prevData.coordBlock.coordBlock != xData.coordBlock.coordBlock - 1;
+				blockStartsNonStridedBySize = prevData.searchTarget.startIndex + NS_MAX_COORD_BLOCK_SIZE != xData.searchTarget.startIndex;
 			}
 		}
 	}
@@ -682,21 +863,21 @@ void TestInitNeighborSearch(uint3 globalId, uint3 warpId)
 		//set of coordinator blocks
 		bool isDifferentHash = true;
 
-		newHashCoordBlockIdNonZero = xData.coordBlockId != 0;
-
-#ifdef NS_ADDITIONAL_COORDINATOR_CONTEXT
-		newHashStartIndexNonSelf = xData.startIndex != index;
-		newHashCoordBlockNonZero = xData.coordBlock != 0;
-#endif
+		newHashidNonZero = xData.coordBlock.id != 0;
+		newHashCoordBlockNonZero = xData.coordBlock.coordBlock != 0;
+		newHashStartIndexNonSelf = xData.searchTarget.startIndex != index;
 	}
 
-	bool globalIdsNonsequential = (prevData.globalId != xData.globalId - 1) && (xData.threadBlockId != 0) && (xData.globalId != 0);
-	bool threadBlockIdsNonsequential = (prevData.threadBlockId != xData.threadBlockId - 1) && (xData.threadBlockId != 0);
+	bool globalIdsNonsequential = (prevData.coordBlock.globalId != xData.coordBlock.globalId - 1) && (xData.coordBlock.threadBlockId != 0) && (xData.coordBlock.globalId != 0);
+	bool threadBlockIdsNonsequential = (prevData.coordBlock.threadBlockId != xData.coordBlock.threadBlockId - 1) && (xData.coordBlock.threadBlockId != 0);
+	bool searchTargetBlockSizeMismatch = (xData.searchTarget.size != xData.coordBlock.size);
+	bool iterationCountNonZero = xData.iteration.count != 0;
+	bool iterationNeighborIndexIncorrect = xData.iteration.neighborIndex != xData.coordBlock.id;
 
-	bool unconditionalTestsFailed = globalIdsNonsequential || threadBlockIdsNonsequential;
-	bool intraCoordBlockTestsFailed = startsMismatch || hashMismatch || intraCoordBlockMismatch || coordBlockSizeMismatch || coordBlockIdsNonsequential;
-	bool interCoordBlockTestsFailed = interCoordBlockNonsequential || hashMismatch || invalidCoordBlockIdEnd || invalidCoordBlockIdStart || blockEndNotFullSize || blockStartsNonStridedBySize;
-	bool newHashTestsFailed = newHashStartIndexNonSelf || newHashCoordBlockNonZero || newHashCoordBlockIdNonZero;
+	bool unconditionalTestsFailed = globalIdsNonsequential || threadBlockIdsNonsequential || searchTargetBlockSizeMismatch || iterationCountNonZero || iterationNeighborIndexIncorrect;
+	bool intraCoordBlockTestsFailed = startsMismatch || hashMismatch || intraCoordBlockMismatch || sizeMismatch || idsNonsequential;
+	bool interCoordBlockTestsFailed = interCoordBlockNonsequential || hashMismatch || invalididEnd || invalididStart || blockEndNotFullSize || blockStartsNonStridedBySize;
+	bool newHashTestsFailed = newHashStartIndexNonSelf || newHashCoordBlockNonZero || newHashidNonZero;
 
 	bool metadataValueFailures = unconditionalTestsFailed || intraCoordBlockTestsFailed || interCoordBlockTestsFailed || newHashTestsFailed;
 
@@ -711,18 +892,18 @@ void TestInitNeighborSearch(uint3 globalId, uint3 warpId)
 	{
 		//Checks for Position Values
 		uint threadBlockStartIndex = globalIndex - index;
-		uint coordBlockStartIndexInThreadBlock = index - xData.coordBlockId;
+		uint coordBlockStartIndexInThreadBlock = index - xData.coordBlock.id;
 		uint coordBlockGlobalStartIndex = threadBlockStartIndex + coordBlockStartIndexInThreadBlock;
 
-		for (uint i = 0; i < xData.coordBlockSize; i++)
+		for (uint i = 0; i < xData.coordBlock.size; i++)
 		{
 			float3 curBuffPos = PredictedPositions[coordBlockGlobalStartIndex + i];
-			float3 curResultPos = xData.positions[i];
+			float3 curResultPos = xData.cache.positions[i];
 
 			positionValueFailures = positionValueFailures || ((curResultPos.x != curBuffPos.x) || 
 				(curResultPos.y != curBuffPos.y) || (curResultPos.z != curBuffPos.z) );
 
-			float3 curResultSums = xData.partialSums[i];
+			float3 curResultSums = xData.cache.partialSums[i];
 
 			partialSumValueFailures = partialSumValueFailures || ((curResultSums.x != 0) ||
 				(curResultSums.y != 0) || (curResultSums.z != 0));
@@ -733,14 +914,39 @@ void TestInitNeighborSearch(uint3 globalId, uint3 warpId)
 
 	bool arrayValueFailures = positionValueFailures || partialSumValueFailures || dependentValueFailures;
 
-	bool someFailures = metadataValueFailures || arrayValueFailures;
+	//Validate shared memory values
 
-	float testResultFloat = (someFailures) * 4.0;
+	bool sh_positionsIncorrect = sh_positions[index] != PredictedPositions[globalIndex];
+	//TODO bool sh_dependentValuesIncorrect = sh_dependentValues != ???
+	bool sh_partialSumsIncorrect = sh_partialSums[index] != float3(0, 0, 0);
+	bool sh_blockSizesIncorrect = sh_blockSizes[index] != xData.coordBlock.size;
+	bool sh_neighborIndexIncorrect = sh_neighborIndex[index] != xData.coordBlock.id;
+
+	bool anySharedMemValueIncorrect = sh_positionsIncorrect || sh_partialSumsIncorrect || sh_blockSizesIncorrect || sh_neighborIndexIncorrect;
+
+	bool someFailures = metadataValueFailures || arrayValueFailures || anySharedMemValueIncorrect;
+
+	float testResultFloat = (someFailures);
 	DebugValues[globalId.x] = float3(testResultFloat, testResultFloat, testResultFloat);
 }
 
 [numthreads(NEIGHBOR_SEARCH_NUM_THREADS, 1, 1)]
-void Debug(uint3 globalId : SV_DispatchThreadID, uint3 warpId : SV_GroupThreadID)
+void Debug(uint3 globalId : SV_DispatchThreadID, uint3 threadBlockId : SV_GroupThreadID)
 {
-	TestInitNeighborSearch(globalId, warpId);
+	if (globalId.x >= numParticles) return;
+	NeighborSearchData ns = initNeighborSearch(globalId.x, threadBlockId.x);
+	NeighborSearchData postSearch = performNeighborSearch(ns);
+	float3 rawResults = postSearch.cache.partialSums[ns.coordBlock.id];
+	float2 actualResult = float2(rawResults.x, rawResults.y);
+
+	float2 expectedResult = Densities[globalId.x];
+
+	const float floatingPointPrecisionErrorAvoidanceThreshold = 0.001;
+	bool failed = (abs(actualResult.x - expectedResult.x) > floatingPointPrecisionErrorAvoidanceThreshold) 
+		|| (abs(actualResult.y - expectedResult.y) > floatingPointPrecisionErrorAvoidanceThreshold);
+
+	float testResultFloat = failed;
+	//float testResultFloat = (float)postSearch.iteration.count <= 4.0;
+	DebugValues[globalId.x] = float3(testResultFloat, testResultFloat, testResultFloat);
+	Densities[globalId.x] = actualResult;
 }

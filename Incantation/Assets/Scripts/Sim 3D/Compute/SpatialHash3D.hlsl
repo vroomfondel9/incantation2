@@ -13,7 +13,6 @@ static const int3 offsets3D[27] =
 	int3(0, -1, 0),
 	int3(1, -1, 0),
 	int3(-1, 0, 0),
-	int3(0, 0, 0),
 	int3(1, 0, 0),
 	int3(-1, 1, 0),
 	int3(0, 1, 0),
@@ -26,15 +25,11 @@ static const int3 offsets3D[27] =
 	int3(1, 0, 1),
 	int3(-1, 1, 1),
 	int3(0, 1, 1),
-	int3(1, 1, 1)
+	int3(1, 1, 1),
+	//Origin is last element because some functionality only cares about adjascent cells and loops 1-26, and others care about
+	//origin of this cell too and loops 1-27.
+	int3(0, 0, 0),
 };
-
-// assumes given value is (-1, 0, or 1) in all dimensions. Consumers responsible for ensuring this (to avoid unnecessary repeated computation here)
-int offsetIndexFromValue(int3 offset)
-{
-	int3 zeroIndexedOffset = offset + int3(1, 1, 1);
-	return 9 * zeroIndexedOffset.z + 3 * zeroIndexedOffset.y + zeroIndexedOffset.x;
-}
 
 // Constants used for hashing
 static const uint hashK1 = 15823;
