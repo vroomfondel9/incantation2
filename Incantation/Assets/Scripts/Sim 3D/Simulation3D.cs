@@ -3,6 +3,8 @@ using UnityEngine.Assertions;
 using Unity.Mathematics;
 using System.Collections.Generic;
 
+using static UnityEngine.Mathf;
+
 public class Simulation3D : MonoBehaviour
 {
     public static bool DEBUG_MODE = true;

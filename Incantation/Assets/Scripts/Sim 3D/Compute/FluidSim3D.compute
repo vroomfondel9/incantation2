@@ -1,4 +1,4 @@
-#pragma use_dxc
+//#pragma use_dxc
 
 #pragma kernel ExternalForces
 #pragma kernel InitializeSpacialPartitionBuffers
@@ -45,6 +45,7 @@ RWStructuredBuffer<float3> tempBuffer;	// Used to copy values for memory coalesc
 
 // Settings
 const uint numParticles;
+
 const float gravity;
 const float deltaTime;
 const float collisionDamping;
@@ -57,7 +58,7 @@ const float edgeForce;
 const float edgeForceDst;
 const float3 boundsSize;
 const float3 centre;
-const int copyBufferId;		//Position = 0, PredictedPosition = 1, Velocity = 2, Density = 3
+const int copyBufferId;			//Position = 0, PredictedPosition = 1, Velocity = 2, Density = 3
 const int copyDirection;		//0 = real buffer to temp buffer, 1 = temp buffer to real buffer
 
 const float4x4 localToWorld;
@@ -514,7 +515,7 @@ NeighborSearchData performNeighborSearch(NeighborSearchData ns)
 				// Skip if hash does not match
 				if (neighborHash != hash) continue;
 
-				for (int curCoordBlockIndex = 0; curCoordBlockIndex < NS_MAX_COORD_BLOCK_SIZE; curCoordBlockIndex++)
+				for (uint curCoordBlockIndex = 0; curCoordBlockIndex < NS_MAX_COORD_BLOCK_SIZE; curCoordBlockIndex++)
 				{
 					if (curCoordBlockIndex >= ns.coordBlock.size) break;
 
@@ -916,11 +917,15 @@ void TestInitNeighborSearch(uint3 globalId, uint3 warpId)
 
 	//Validate shared memory values
 
-	bool sh_positionsIncorrect = sh_positions[index] != PredictedPositions[globalIndex];
+	float3 pGlobMem = PredictedPositions[globalIndex];
+	float3 pSharedMem = sh_positions[index]; 
+	float3 pPartSumsSharedMem = sh_partialSums[index];
+
+	bool sh_positionsIncorrect = (pSharedMem.x != pGlobMem.x) || (pSharedMem.y != pGlobMem.y) || (pSharedMem.z != pGlobMem.z);
 	//TODO bool sh_dependentValuesIncorrect = sh_dependentValues != ???
-	bool sh_partialSumsIncorrect = sh_partialSums[index] != float3(0, 0, 0);
+	bool sh_partialSumsIncorrect = (pPartSumsSharedMem.x != 0) || (pPartSumsSharedMem.y != 0) || (pPartSumsSharedMem.z != 0);
 	bool sh_blockSizesIncorrect = sh_blockSizes[index] != xData.coordBlock.size;
-	bool sh_neighborIndexIncorrect = sh_neighborIndex[index] != xData.coordBlock.id;
+	bool sh_neighborIndexIncorrect = sh_neighborIndex[index] != (int)xData.coordBlock.id;
 
 	bool anySharedMemValueIncorrect = sh_positionsIncorrect || sh_partialSumsIncorrect || sh_blockSizesIncorrect || sh_neighborIndexIncorrect;
 
@@ -930,23 +935,66 @@ void TestInitNeighborSearch(uint3 globalId, uint3 warpId)
 	DebugValues[globalId.x] = float3(testResultFloat, testResultFloat, testResultFloat);
 }
 
+float2 CalculateDensitiesExperimental(uint3 id)
+{
+	if (id.x >= numParticles) return float2(-1, -1);
+
+	float3 pos = PredictedPositions[id.x];
+	int3 originCell = GetCell3D(pos, smoothingRadius);
+	float sqrRadius = smoothingRadius * smoothingRadius;
+	float density = 0;
+	float nearDensity = 0;
+
+	// Neighbour search
+	for (int i = 0; i < 27; i++)
+	{
+		uint hash = HashCell3D(originCell + offsets3D[i]);
+		uint key = KeyFromHash(hash, numParticles);
+		uint curIndex = spacialPart2[key];
+
+		while (curIndex < numParticles)
+		{
+			//Modulo is surprisingly expensive, so looking up the key from global memory in parallel is cheaper, apparently
+			uint neighborKey = spacialPart1[curIndex];
+			float3 neighbourPos = PredictedPositions[curIndex];
+
+			// Exit if no longer looking at correct bin
+			if (neighborKey != key) break;
+
+			int3 neighborCell = GetCell3D(neighbourPos, smoothingRadius);
+			uint neighborHash = HashCell3D(neighborCell);
+
+			bool hashMatches = (neighborHash == hash);
+
+			float3 offsetToNeighbour = neighbourPos - pos;
+			float sqrDstToNeighbour = dot(offsetToNeighbour, offsetToNeighbour);
+
+			bool withinRadius = (sqrDstToNeighbour <= sqrRadius);
+
+			float dst = sqrt(sqrDstToNeighbour);
+			density += hashMatches * withinRadius * DensityKernel(dst, smoothingRadius);
+			nearDensity += hashMatches * withinRadius * NearDensityKernel(dst, smoothingRadius);
+
+			curIndex++;
+		}
+	}
+
+	return float2(density, nearDensity);
+}
+
 [numthreads(NEIGHBOR_SEARCH_NUM_THREADS, 1, 1)]
 void Debug(uint3 globalId : SV_DispatchThreadID, uint3 threadBlockId : SV_GroupThreadID)
 {
 	if (globalId.x >= numParticles) return;
-	NeighborSearchData ns = initNeighborSearch(globalId.x, threadBlockId.x);
-	NeighborSearchData postSearch = performNeighborSearch(ns);
-	float3 rawResults = postSearch.cache.partialSums[ns.coordBlock.id];
-	float2 actualResult = float2(rawResults.x, rawResults.y);
 
+	float2 actualResult = CalculateDensitiesExperimental(globalId);
 	float2 expectedResult = Densities[globalId.x];
 
-	const float floatingPointPrecisionErrorAvoidanceThreshold = 0.001;
+	const float floatingPointPrecisionErrorAvoidanceThreshold = 0.0;
 	bool failed = (abs(actualResult.x - expectedResult.x) > floatingPointPrecisionErrorAvoidanceThreshold) 
 		|| (abs(actualResult.y - expectedResult.y) > floatingPointPrecisionErrorAvoidanceThreshold);
 
 	float testResultFloat = failed;
-	//float testResultFloat = (float)postSearch.iteration.count <= 4.0;
 	DebugValues[globalId.x] = float3(testResultFloat, testResultFloat, testResultFloat);
-	Densities[globalId.x] = actualResult;
+	//Densities[globalId.x] = actualResult;
 }
