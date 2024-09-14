@@ -401,7 +401,7 @@ void InitOffsets(uint3 id : SV_DispatchThreadID)
 // 
 // We also know how many particles are in the same cell as P, given by: endIndex - startIndex + 1
 // 
-// NOTE: offsets buffer must filled with values equal to (or greater than) its length to ensure that this works correctly
+// NOTE: offsets buffer must filled with that are outside the normal addressable range for this to work properly.
 // So this depends on InitOffsets being run.
 [numthreads(NUM_THREADS, 1, 1)]
 void CalcOffsets(uint3 id : SV_DispatchThreadID)

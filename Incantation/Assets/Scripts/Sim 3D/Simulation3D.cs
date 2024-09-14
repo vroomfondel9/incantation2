@@ -18,11 +18,16 @@ public class Simulation3D : MonoBehaviour
     public float gravity = -10;
     [Range(0, 1)] public float collisionDamping = 0.05f;
     public float smoothingRadius = 0.2f;
+    public float gridCellSize = 0.2f;
+
+    [Header("Fluid Properties")]
     public float targetDensity;
     public float pressureMultiplier;
     public float nearPressureMultiplier;
     public float viscosityStrength;
-    public bool showSpacialPartitions;
+
+    [Header("Visualizations")]
+    public bool showUniformGrid;
 
     [Header("References")]
     public ComputeShader compute;
@@ -329,7 +334,7 @@ public class Simulation3D : MonoBehaviour
         Gizmos.DrawWireCube(Vector3.zero, Vector3.one);
         Gizmos.matrix = m;
 
-        if (showSpacialPartitions)
+        if (showUniformGrid)
         {
             Gizmos.color = new Color(1, 0, 0, 0.5f);
             Vector3 scale = transform.localScale;
