@@ -37,9 +37,7 @@ public class Simulation3D : MonoBehaviour
     public ComputeBuffer predictedPositionsBuffer;
     public ComputeBuffer debugBuffer { get; private set; }
 
-    // These are reused, depending on the kernel to hold things like keys vs indices
-    // After indices have been reordered, this is repurposed to hold keys and offsets
-    // Once offsets are computed, keys are no longer needed as they're computed based on position
+    // Used to hold indices and keys for sorting
     // Buffers 3 & 4 may not be needed but is used by sort algorithms that can't sort in place and need to double buffer
     ComputeBuffer spacialPart1;
     ComputeBuffer spacialPart2;
@@ -48,6 +46,9 @@ public class Simulation3D : MonoBehaviour
 
     //Used as a double buffer to re-order density, velocity, position, predicated position values after sort
     public ComputeBuffer tempBuffer;
+
+    //Offsets into the array for origin cells. Stores the start and end indices.
+    public ComputeBuffer offsets;
 
     // Kernel Names and IDs
     private const string externalForcesKernel = "ExternalForces";
@@ -103,6 +104,7 @@ public class Simulation3D : MonoBehaviour
         spacialPart3 = ComputeHelper.CreateStructuredBuffer<uint>(numParticles);
         spacialPart4 = ComputeHelper.CreateStructuredBuffer<uint>(numParticles);
         tempBuffer = ComputeHelper.CreateStructuredBuffer<float3>(numParticles);
+        offsets = ComputeHelper.CreateStructuredBuffer<uint2>(numParticles);
         if (DEBUG_MODE)
         {
             debugBuffer = ComputeHelper.CreateStructuredBuffer<float3>(numParticles);
@@ -116,9 +118,10 @@ public class Simulation3D : MonoBehaviour
         ComputeHelper.SetBuffer(compute, predictedPositionsBuffer, "PredictedPositions", kernelNameToId[externalForcesKernel], kernelNameToId[initializeSpacialPartitionBuffers], kernelNameToId[copyBufferKernel], kernelNameToId[densityKernel], kernelNameToId[pressureKernel], kernelNameToId[viscosityKernel], kernelNameToId[updatePositionsKernel]);
         ComputeHelper.SetBuffer(compute, densityBuffer, "Densities", kernelNameToId[densityKernel], kernelNameToId[pressureKernel], kernelNameToId[viscosityKernel], kernelNameToId[copyBufferKernel]);
         ComputeHelper.SetBuffer(compute, velocityBuffer, "Velocities", kernelNameToId[externalForcesKernel], kernelNameToId[pressureKernel], kernelNameToId[viscosityKernel], kernelNameToId[updatePositionsKernel], kernelNameToId[copyBufferKernel]);
-        ComputeHelper.SetBuffer(compute, spacialPart1, "spacialPart1", kernelNameToId[initializeSpacialPartitionBuffers], kernelNameToId[calculateOffsetsKernel], kernelNameToId[densityKernel], kernelNameToId[pressureKernel], kernelNameToId[viscosityKernel]);
-        ComputeHelper.SetBuffer(compute, spacialPart2, "spacialPart2", kernelNameToId[initializeSpacialPartitionBuffers], kernelNameToId[initalizeOffsetsKernel], kernelNameToId[calculateOffsetsKernel], kernelNameToId[copyBufferKernel], kernelNameToId[densityKernel], kernelNameToId[pressureKernel], kernelNameToId[viscosityKernel]);
+        ComputeHelper.SetBuffer(compute, spacialPart1, "keys", kernelNameToId[initializeSpacialPartitionBuffers], kernelNameToId[calculateOffsetsKernel]);
+        ComputeHelper.SetBuffer(compute, spacialPart2, "indices", kernelNameToId[initializeSpacialPartitionBuffers], kernelNameToId[copyBufferKernel]);
         ComputeHelper.SetBuffer(compute, tempBuffer, "tempBuffer", kernelNameToId[copyBufferKernel]);
+        ComputeHelper.SetBuffer(compute, offsets, "offsets", kernelNameToId[initalizeOffsetsKernel], kernelNameToId[calculateOffsetsKernel], kernelNameToId[densityKernel], kernelNameToId[pressureKernel], kernelNameToId[viscosityKernel]);
 
         if (DEBUG_MODE)
         {
@@ -126,9 +129,10 @@ public class Simulation3D : MonoBehaviour
             ComputeHelper.SetBuffer(compute, predictedPositionsBuffer, "PredictedPositions", kernelNameToId[debugKernel]);
             ComputeHelper.SetBuffer(compute, densityBuffer, "Densities", kernelNameToId[debugKernel]);
             ComputeHelper.SetBuffer(compute, velocityBuffer, "Velocities", kernelNameToId[debugKernel]);
-            ComputeHelper.SetBuffer(compute, spacialPart1, "spacialPart1", kernelNameToId[debugKernel]);
-            ComputeHelper.SetBuffer(compute, spacialPart2, "spacialPart2", kernelNameToId[debugKernel]);
+            ComputeHelper.SetBuffer(compute, spacialPart1, "keys", kernelNameToId[debugKernel]);
+            ComputeHelper.SetBuffer(compute, spacialPart2, "indices", kernelNameToId[debugKernel]);
             ComputeHelper.SetBuffer(compute, tempBuffer, "tempBuffer", kernelNameToId[debugKernel]);
+            ComputeHelper.SetBuffer(compute, offsets, "offsets", kernelNameToId[debugKernel]);
 
             ComputeHelper.SetBuffer(compute, debugBuffer, "DebugValues", kernelNameToId[debugKernel]);
         }

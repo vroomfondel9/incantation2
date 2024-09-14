@@ -39,9 +39,10 @@ RWStructuredBuffer<float2> Densities; // Density, Near Density
 RWStructuredBuffer<float3> DebugValues;
 
 //Multipurpose spacial partitioning array, to be initialized here but used by sort
-RWStructuredBuffer<uint> spacialPart1;	//Initialized to keys. Remains keys for reindexing.
-RWStructuredBuffer<uint> spacialPart2;	//Initialized to indices. Used as indices for reindexing, but afterwards set to offsets.
+RWStructuredBuffer<uint> keys;			//Sorted key list. Used to construct offsets.
+RWStructuredBuffer<uint> indices;	//Sorted index list. Used to construct offsets.
 RWStructuredBuffer<float3> tempBuffer;	// Used to copy values for memory coalescing
+RWStructuredBuffer<uint2> offsets;		// Holds the locations (start and end indices) where origin cell indices are located.
 
 // Settings
 const uint numParticles;
@@ -135,8 +136,8 @@ void InitializeSpacialPartitionBuffers (uint3 id : SV_DispatchThreadID)
 	uint hash = HashCell3D(cell);
 	uint key = KeyFromHash(hash, numParticles);
 
-	spacialPart1[index] = key;
-	spacialPart2[index] = index;
+	keys[index] = key;
+	indices[index] = index;
 }
 
 [numthreads(NUM_THREADS,1,1)]
@@ -151,42 +152,38 @@ void CalculateDensities (uint3 id : SV_DispatchThreadID)
 	float nearDensity = 0;
 
 	// Neighbour search
-	for (int i = 0; i < 27; i ++)
+	for (int i = 0; i < 27; i++)
 	{
 		uint hash = HashCell3D(originCell + offsets3D[i]);
 		uint key = KeyFromHash(hash, numParticles);
-		int3 neighborCell;
-		uint neighborHash;
-		uint neighborKey;
-		uint currIndex = spacialPart2[key];
-		uint unincIndex;
 
-		while (currIndex < numParticles)
+		uint2 keyOffset = offsets[key];
+		uint keyStartIndex = keyOffset.x;
+		uint keyEndIndex = keyOffset.y;
+
+		uint curIndex = keyStartIndex;
+
+		while (curIndex < numParticles)
 		{
-			unincIndex = currIndex;
-			currIndex ++;
+			float3 neighbourPos = PredictedPositions[curIndex];
 
-			neighborKey = spacialPart1[unincIndex];
-			// Exit if no longer looking at correct bin
-			if (neighborKey != key) break;
-			
-			float3 neighbourPos = PredictedPositions[unincIndex];
-			neighborCell = GetCell3D(neighbourPos, smoothingRadius);
-			neighborHash = HashCell3D(neighborCell);
+			int3 neighborCell = GetCell3D(neighbourPos, smoothingRadius);
+			uint neighborHash = HashCell3D(neighborCell);
 
-			// Skip if hash does not match
-			if (neighborHash != hash) continue;
+			bool hashMatches = (neighborHash == hash);
 
 			float3 offsetToNeighbour = neighbourPos - pos;
 			float sqrDstToNeighbour = dot(offsetToNeighbour, offsetToNeighbour);
 
-			// Skip if not within radius
-			if (sqrDstToNeighbour > sqrRadius) continue;
+			bool withinRadius = (sqrDstToNeighbour <= sqrRadius);
 
-			// Calculate density and near density
 			float dst = sqrt(sqrDstToNeighbour);
-			density += DensityKernel(dst, smoothingRadius);
-			nearDensity += NearDensityKernel(dst, smoothingRadius);
+			density += hashMatches * withinRadius * DensityKernel(dst, smoothingRadius);
+			nearDensity += hashMatches * withinRadius * NearDensityKernel(dst, smoothingRadius);
+
+			// Exit if no longer looking at correct bin
+			if (curIndex == keyEndIndex) break;
+			curIndex++;
 		}
 	}
 	
@@ -214,39 +211,33 @@ void CalculatePressureForce (uint3 id : SV_DispatchThreadID)
 	{
 		uint hash = HashCell3D(originCell + offsets3D[i]);
 		uint key = KeyFromHash(hash, numParticles);
-		int3 neighborCell;
-		uint neighborHash;
-		uint neighborKey;
-		uint currIndex = spacialPart2[key];
-		uint unincIndex;
 
-		while (currIndex < numParticles)
+		uint2 keyOffset = offsets[key];
+		uint keyStartIndex = keyOffset.x;
+		uint keyEndIndex = keyOffset.y;
+
+		uint curIndex = keyStartIndex;
+
+		while (curIndex < numParticles)
 		{
-			unincIndex = currIndex;
-			currIndex ++;
+			float3 neighbourPos = PredictedPositions[curIndex];
+			float2 neighborDens = Densities[curIndex];
 
-			neighborKey = spacialPart1[unincIndex];
-			// Exit if no longer looking at correct bin
-			if (neighborKey != key) break;
+			int3 neighborCell = GetCell3D(neighbourPos, smoothingRadius);
+			uint neighborHash = HashCell3D(neighborCell);
 
-			float3 neighbourPos = PredictedPositions[unincIndex];
-			neighborCell = GetCell3D(neighbourPos, smoothingRadius);
-			neighborHash = HashCell3D(neighborCell);
-
-			// Skip if hash does not match
-			if (neighborHash != hash) continue;
-			// Skip if looking at self
-			if (unincIndex == id.x) continue;
+			bool hashMatches = (neighborHash == hash);
 
 			float3 offsetToNeighbour = neighbourPos - pos;
 			float sqrDstToNeighbour = dot(offsetToNeighbour, offsetToNeighbour);
 
-			// Skip if not within radius
-			if (sqrDstToNeighbour > sqrRadius) continue;
+			bool withinRadius = (sqrDstToNeighbour <= sqrRadius);
+			bool neighborIsNotSelf = (curIndex != id.x);
 
 			// Calculate pressure force
-			float densityNeighbour = Densities[unincIndex][0];
-			float nearDensityNeighbour = Densities[unincIndex][1];
+			float densityNeighbour = neighborDens[0];
+			float nearDensityNeighbour = neighborDens[1];
+
 			float neighbourPressure = PressureFromDensity(densityNeighbour);
 			float neighbourPressureNear = NearPressureFromDensity(nearDensityNeighbour);
 
@@ -256,8 +247,12 @@ void CalculatePressureForce (uint3 id : SV_DispatchThreadID)
 			float dst = sqrt(sqrDstToNeighbour);
 			float3 dir = dst > 0 ? offsetToNeighbour / dst : float3(0, 1, 0);
 
-			pressureForce += dir * DensityDerivative(dst, smoothingRadius) * sharedPressure / densityNeighbour;
-			pressureForce += dir * NearDensityDerivative(dst, smoothingRadius) * sharedNearPressure / nearDensityNeighbour;
+			pressureForce += hashMatches * withinRadius * neighborIsNotSelf * dir * DensityDerivative(dst, smoothingRadius) * sharedPressure / densityNeighbour;
+			pressureForce += hashMatches * withinRadius * neighborIsNotSelf * dir * NearDensityDerivative(dst, smoothingRadius) * sharedNearPressure / nearDensityNeighbour;
+
+			// Exit if no longer looking at correct bin
+			if (curIndex == keyEndIndex) break;
+			curIndex++;
 		}
 	}
 
@@ -283,40 +278,36 @@ void CalculateViscosity (uint3 id : SV_DispatchThreadID)
 	{
 		uint hash = HashCell3D(originCell + offsets3D[i]);
 		uint key = KeyFromHash(hash, numParticles);
-		int3 neighborCell;
-		uint neighborHash;
-		uint neighborKey;
-		uint currIndex = spacialPart2[key];
-		uint unincIndex;
 
-		while (currIndex < numParticles)
+		uint2 keyOffset = offsets[key];
+		uint keyStartIndex = keyOffset.x;
+		uint keyEndIndex = keyOffset.y;
+
+		uint curIndex = keyStartIndex;
+
+		while (curIndex < numParticles)
 		{
-			unincIndex = currIndex;			
-			currIndex ++;
+			float3 neighbourPos = PredictedPositions[curIndex];
 
-			neighborKey = spacialPart1[unincIndex];
-			// Exit if no longer looking at correct bin
-			if (neighborKey != key) break;
+			int3 neighborCell = GetCell3D(neighbourPos, smoothingRadius);
+			uint neighborHash = HashCell3D(neighborCell);
 
-			float3 neighbourPos = PredictedPositions[unincIndex];
-			neighborCell = GetCell3D(neighbourPos, smoothingRadius);
-			neighborHash = HashCell3D(neighborCell);
-
-			// Skip if hash does not match
-			if (neighborHash != hash) continue;
-			// Skip if looking at self
-			if (unincIndex == id.x) continue;
+			bool hashMatches = (neighborHash == hash);
 
 			float3 offsetToNeighbour = neighbourPos - pos;
 			float sqrDstToNeighbour = dot(offsetToNeighbour, offsetToNeighbour);
 
-			// Skip if not within radius
-			if (sqrDstToNeighbour > sqrRadius) continue;
+			bool withinRadius = (sqrDstToNeighbour <= sqrRadius);
+			bool neighborIsNotSelf = (curIndex != id.x);
 
 			// Calculate viscosity
 			float dst = sqrt(sqrDstToNeighbour);
-			float3 neighbourVelocity = Velocities[unincIndex];
-			viscosityForce += (neighbourVelocity - velocity) * SmoothingKernelPoly6(dst, smoothingRadius);
+			float3 neighbourVelocity = Velocities[curIndex];
+			viscosityForce += hashMatches * withinRadius * neighborIsNotSelf * (neighbourVelocity - velocity) * SmoothingKernelPoly6(dst, smoothingRadius);
+
+			// Exit if no longer looking at correct bin
+			if (curIndex == keyEndIndex) break;
+			curIndex++;
 		}
 	}
 	Velocities[id.x] += viscosityForce * viscosityStrength * deltaTime;
@@ -340,7 +331,7 @@ void CopyBuffer(uint3 id : SV_DispatchThreadID)
 	if (copyDirection == 0)
 	{
 		// Copy to temp buffer
-		uint uncoalescedIndex = spacialPart2[id.x];
+		uint uncoalescedIndex = indices[id.x];
 		if (copyBufferId == 0)
 		{
 			tempBuffer[id.x] = Positions[uncoalescedIndex];
@@ -384,26 +375,31 @@ void CopyBuffer(uint3 id : SV_DispatchThreadID)
 
 // Reinitialized the array formerly used to store scatter indices for sorting to be the key offset array.
 // The values are all numParticles (which is 1 more than the maximum possible key) in order to ensure that
-// any possible key is less than this value. This is important for determing the end of the key bucket
+// any possible key is not equal to this value. This is important for determing divisions in the key list.
 [numthreads(NUM_THREADS, 1, 1)]
 void InitOffsets(uint3 id : SV_DispatchThreadID)
 {
 	if (id.x >= numParticles) { return; }
 
-	spacialPart2[id.x] = numParticles;
+	offsets[id.x] = uint2(numParticles, numParticles);
 }
 
-// Calculate offsets into the sorted spacialPart1 buffer (used for spatial hashing).
-// For example, given an spacialPart1 buffer sorted by key like so: {2, 2, 2, 3, 6, 6, 9, 9, 9, 9}
-// The resulting Offsets (spacialPart2) calculated here should be:  {-, -, 0, 3, -, -, 4, -, -, 6}
+// Calculate offsets into the sorted keys buffer (used for spatial hashing).
+// For example, given an keys buffer sorted by key like so: {2, 2, 2, 3, 6, 6, 9, 9, 9, 9}
+// The resulting Offsets calculated here should be:         {-, -, 0, 3, -, -, 4, -, -, 6}
 // (where '-' represents elements that won't be read/written)
 // 
 // Usage example:
 // Say we have a particular particle P, and we want to know which particles are in the same grid cell as it.
 // First we would calculate the Key of P based on its position. Let's say in this example that Key = 9.
-// Next we can look up spacialPart2[Key] to get: spacialPart2[9] = 6
-// This tells us that SortedEntries[6] is the first particle that's in the same cell as P.
-// We can then loop until we reach a particle with a different cell key in order to iterate over all the particles in the cell.
+// Next we can look up offsets[Key] to get: offsets[9] = 6
+// This tells us that keys[6] is the first particle that's in the same cell as P.
+// We follow the same process for finding the index of the last particle in the same cell as P, which would be:
+// Given the same keys:                                     {2, 2, 2, 3, 6, 6, 9, 9, 9, 9}
+// The resulting ending Offsets calculated here should be:  {-, -, 2, 3, -, -, 5, -, -, 9}
+// Now we know the start and end indices of all particles in the same cell as P, and can loop over them.
+// 
+// We also know how many particles are in the same cell as P, given by: endIndex - startIndex + 1
 // 
 // NOTE: offsets buffer must filled with values equal to (or greater than) its length to ensure that this works correctly
 // So this depends on InitOffsets being run.
@@ -414,14 +410,25 @@ void CalcOffsets(uint3 id : SV_DispatchThreadID)
 
 	uint i = id.x;
 
-	uint key = spacialPart1[i];
-	uint keyPrev = i == 0 ? numParticles : spacialPart1[i - 1];
+	uint firstParticle = i == 0;
+	uint lastParticle = i == (numParticles - 1);
 
-	if (key != keyPrev)
+	uint key = keys[i];
+	uint keyPrev = keys[i - !firstParticle];
+	uint keyNext = keys[i + !lastParticle];
+
+	uint prevKeyMatches = keyPrev == key && !firstParticle;
+	uint nextKeyMatches = keyNext == key && !lastParticle;
+
+	if (!prevKeyMatches)
 	{
-		spacialPart2[key] = i;
+		offsets[key].x = i;
 	}
-	
+
+	if (!nextKeyMatches)
+	{
+		offsets[key].y = i;
+	}
 }
 
 float2 CalculateDensitiesExperimental(uint3 id)
@@ -439,23 +446,21 @@ float2 CalculateDensitiesExperimental(uint3 id)
 	{
 		uint hash = HashCell3D(originCell + offsets3D[i]);
 		uint key = KeyFromHash(hash, numParticles);
-		uint curIndex = spacialPart2[key];
+
+		uint2 keyOffset = offsets[key];
+		uint keyStartIndex = keyOffset.x;
+		uint keyEndIndex = keyOffset.y;
+
+		uint curIndex = keyStartIndex;
 
 		while (curIndex < numParticles)
 		{
-			//Modulo is surprisingly expensive, so looking up the key from global memory in parallel is cheaper, apparently
-			uint neighborKey = spacialPart1[curIndex];
 			float3 neighbourPos = PredictedPositions[curIndex];
 
-			// Exit if no longer looking at correct bin
-			if (neighborKey != key) break;
+			int3 neighborCell = GetCell3D(neighbourPos, smoothingRadius);
+			uint neighborHash = HashCell3D(neighborCell);
 
-			//int3 neighborCell = GetCell3D(neighbourPos, smoothingRadius);
-			//uint neighborHash = HashCell3D(neighborCell);
-
-			//bool hashMatches = (neighborHash == hash);
-
-			bool hashMatches = (spacialPart2[curIndex] > 1) && (spacialPart1[key] > 1);
+			bool hashMatches = (neighborHash == hash);
 
 			float3 offsetToNeighbour = neighbourPos - pos;
 			float sqrDstToNeighbour = dot(offsetToNeighbour, offsetToNeighbour);
@@ -466,6 +471,8 @@ float2 CalculateDensitiesExperimental(uint3 id)
 			density += hashMatches * withinRadius * DensityKernel(dst, smoothingRadius);
 			nearDensity += hashMatches * withinRadius * NearDensityKernel(dst, smoothingRadius);
 
+			// Exit if no longer looking at correct bin
+			if (curIndex == keyEndIndex) break;
 			curIndex++;
 		}
 	}
