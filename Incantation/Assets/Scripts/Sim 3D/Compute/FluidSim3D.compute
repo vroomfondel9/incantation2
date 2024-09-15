@@ -46,6 +46,7 @@ RWStructuredBuffer<uint2> offsets;		// Holds the locations (start and end indice
 
 // Settings
 const uint numParticles;
+const uint numCells;
 
 const float gravity;
 const float deltaTime;
@@ -133,7 +134,7 @@ void InitializeSpacialPartitionBuffers (uint3 id : SV_DispatchThreadID)
 
 	// Update index buffer
 	int3 cell = BoundedGetCell3D(PredictedPositions[index], cellSize, boundsSize);
-	uint key = BoundedKeyCell3D(cell, boundsSize);
+	int key = BoundedKeyCell3D(cell, boundsSize);
 
 	keys[index] = key;
 	indices[index] = index;
@@ -153,13 +154,24 @@ void CalculateDensities (uint3 id : SV_DispatchThreadID)
 	// Neighbour search
 	for (int i = 0; i < 27; i++)
 	{
-		uint key = BoundedKeyCell3D(originCell + offsets3D[i], boundsSize);
+		int3 neighborCell = originCell + offsets3D[i];
+		bool inBounds = isCellInBounds(neighborCell, boundsSize);
+		int key = BoundedKeyCell3D(neighborCell, boundsSize);
 
-		uint2 keyOffset = offsets[key];
-		uint keyStartIndex = keyOffset.x;
-		uint keyEndIndex = keyOffset.y;
+		uint keyStartIndex = numParticles;
+		uint keyEndIndex = numParticles;
 
+		if (inBounds)
+		{
+			uint2 keyOffset = offsets[key];
+			keyStartIndex = keyOffset.x;
+			keyEndIndex = keyOffset.y;
+		}
+
+		uint particlesInCell = keyEndIndex - keyStartIndex;
 		uint curIndex = keyStartIndex;
+
+		if (particlesInCell == 0) continue;
 
 		while (curIndex < numParticles)
 		{
@@ -202,13 +214,24 @@ void CalculatePressureForce (uint3 id : SV_DispatchThreadID)
 	// Neighbour search
 	for (int i = 0; i < 27; i ++)
 	{
-		uint key = BoundedKeyCell3D(originCell + offsets3D[i], boundsSize);
+		int3 neighborCell = originCell + offsets3D[i];
+		bool inBounds = isCellInBounds(neighborCell, boundsSize);
+		int key = BoundedKeyCell3D(neighborCell, boundsSize);
 
-		uint2 keyOffset = offsets[key];
-		uint keyStartIndex = keyOffset.x;
-		uint keyEndIndex = keyOffset.y;
+		uint keyStartIndex = numParticles;
+		uint keyEndIndex = numParticles;
 
+		if (inBounds)
+		{
+			uint2 keyOffset = offsets[key];
+			keyStartIndex = keyOffset.x;
+			keyEndIndex = keyOffset.y;
+		}
+
+		uint particlesInCell = keyEndIndex - keyStartIndex;
 		uint curIndex = keyStartIndex;
+
+		if (particlesInCell == 0) continue;
 
 		while (curIndex < numParticles)
 		{
@@ -263,13 +286,24 @@ void CalculateViscosity (uint3 id : SV_DispatchThreadID)
 	// Neighbour search
 	for (int i = 0; i < 27; i ++)
 	{
-		uint key = BoundedKeyCell3D(originCell + offsets3D[i], boundsSize);
+		int3 neighborCell = originCell + offsets3D[i];
+		bool inBounds = isCellInBounds(neighborCell, boundsSize);
+		int key = BoundedKeyCell3D(neighborCell, boundsSize);
 
-		uint2 keyOffset = offsets[key];
-		uint keyStartIndex = keyOffset.x;
-		uint keyEndIndex = keyOffset.y;
+		uint keyStartIndex = numParticles;
+		uint keyEndIndex = numParticles;
 
+		if (inBounds)
+		{
+			uint2 keyOffset = offsets[key];
+			keyStartIndex = keyOffset.x;
+			keyEndIndex = keyOffset.y;
+		}
+
+		uint particlesInCell = keyEndIndex - keyStartIndex;
 		uint curIndex = keyStartIndex;
+
+		if (particlesInCell == 0) continue;
 
 		while (curIndex < numParticles)
 		{
@@ -355,14 +389,14 @@ void CopyBuffer(uint3 id : SV_DispatchThreadID)
 }
 
 // Reinitialized the array formerly used to store scatter indices for sorting to be the key offset array.
-// The values are all numParticles (which is 1 more than the maximum possible key) in order to ensure that
+// The values are all numCells (which is 1 more than the maximum possible key) in order to ensure that
 // any possible key is not equal to this value. This is important for determing divisions in the key list.
 [numthreads(NUM_THREADS, 1, 1)]
 void InitOffsets(uint3 id : SV_DispatchThreadID)
 {
-	if (id.x >= numParticles) { return; }
+	if (id.x >= numCells) { return; }
 
-	offsets[id.x] = uint2(numParticles, numParticles);
+	offsets[id.x] = uint2(numCells, numCells);
 }
 
 // Calculate offsets into the sorted keys buffer (used for spatial hashing).
@@ -382,7 +416,7 @@ void InitOffsets(uint3 id : SV_DispatchThreadID)
 // 
 // We also know how many particles are in the same cell as P, given by: endIndex - startIndex + 1
 // 
-// NOTE: offsets buffer must filled with that are outside the normal addressable range for this to work properly.
+// NOTE: offsets buffer must filled with values that are outside the normal addressable range for this to work properly.
 // So this depends on InitOffsets being run.
 [numthreads(NUM_THREADS, 1, 1)]
 void CalcOffsets(uint3 id : SV_DispatchThreadID)
@@ -425,13 +459,24 @@ float2 CalculateDensitiesExperimental(uint3 id)
 	// Neighbour search
 	for (int i = 0; i < 27; i++)
 	{
-		uint key = BoundedKeyCell3D(originCell + offsets3D[i], boundsSize);
+		int3 neighborCell = originCell + offsets3D[i];
+		bool inBounds = isCellInBounds(neighborCell, boundsSize);
+		int key = BoundedKeyCell3D(neighborCell, boundsSize);
 
-		uint2 keyOffset = offsets[key];
-		uint keyStartIndex = keyOffset.x;
-		uint keyEndIndex = keyOffset.y;
+		uint keyStartIndex = numParticles;
+		uint keyEndIndex = numParticles;
 
+		if (inBounds)
+		{
+			uint2 keyOffset = offsets[key];
+			keyStartIndex = keyOffset.x;
+			keyEndIndex = keyOffset.y;
+		}
+
+		uint particlesInCell = keyEndIndex - keyStartIndex;
 		uint curIndex = keyStartIndex;
+
+		if (particlesInCell == 0) continue;
 
 		while (curIndex < numParticles)
 		{
