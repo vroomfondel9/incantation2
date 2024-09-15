@@ -106,7 +106,8 @@ public class Simulation3D : MonoBehaviour
         int numParticles = spawnData.points.Length;
         this.simBounds = new SimulationBounds(this.transform, this.gridCellSize);
         uint numCells = this.simBounds.getCellTotal();
-        Assert.IsTrue(numParticles > numCells, "Number of particles spawned must exceed number of uniform grid cells.");
+        Assert.IsTrue(numParticles > numCells, "Number of particles spawned must exceed number of uniform grid cells (#Particles=" 
+            + numParticles+ ", #Cells=" + numCells + ").");
 
         // Create buffers
         positionBuffer = ComputeHelper.CreateStructuredBuffer<float3>(numParticles);

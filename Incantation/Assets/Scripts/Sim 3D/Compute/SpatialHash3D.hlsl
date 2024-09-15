@@ -37,7 +37,7 @@ static const uint hashK2 = 9737333;
 static const uint hashK3 = 440817757;
 
 // Convert floating point position into an unsigned grid cell coordinate
-uint3 GetCell3D(float3 position, float radius, uint3 boundsSize)
+uint3 BoundedGetCell3D(float3 position, float radius, uint3 boundsSize)
 {
 	float3 halfBoundsSizeWorldCoord = (boundsSize / 2.0f) * radius;
 	float3 offsetPosition = position + halfBoundsSizeWorldCoord;
