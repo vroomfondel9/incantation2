@@ -20,6 +20,10 @@ public class Simulation3D : MonoBehaviour
     public float smoothingRadius = 0.2f;
     public float gridCellSize = 0.2f;
 
+    [Header("Debug Info")]
+    public uint3 gridDimensions;
+    public uint totalGridCells;
+
     [Header("Fluid Properties")]
     public float targetDensity;
     public float pressureMultiplier;
@@ -81,6 +85,7 @@ public class Simulation3D : MonoBehaviour
     bool isPaused;
     bool pauseNextFrame;
     Spawner3D.SpawnData spawnData;
+    public SimulationBounds simBounds;
 
     void Start()
     {
@@ -98,8 +103,12 @@ public class Simulation3D : MonoBehaviour
 
         spawnData = spawner.GetSpawnData();
 
-        // Create buffers
         int numParticles = spawnData.points.Length;
+        this.simBounds = new SimulationBounds(this.transform, this.gridCellSize);
+        uint numCells = this.simBounds.getCellTotal();
+        Assert.IsTrue(numParticles > numCells, "Number of particles spawned must exceed number of uniform grid cells.");
+
+        // Create buffers
         positionBuffer = ComputeHelper.CreateStructuredBuffer<float3>(numParticles);
         predictedPositionsBuffer = ComputeHelper.CreateStructuredBuffer<float3>(numParticles);
         velocityBuffer = ComputeHelper.CreateStructuredBuffer<float3>(numParticles);
@@ -257,8 +266,12 @@ public class Simulation3D : MonoBehaviour
 
     void UpdateSettings(float deltaTime)
     {
-        Vector3 simBoundsSize = transform.localScale;
-        Vector3 simBoundsCentre = transform.position;
+        this.simBounds.update(this.transform, this.gridCellSize);
+
+        this.gridDimensions = this.simBounds.getDimensions();
+        this.totalGridCells = this.simBounds.getCellTotal();
+
+        uint3 dim = simBounds.getDimensions();
 
         compute.SetFloat("deltaTime", deltaTime);
         compute.SetFloat("gravity", gravity);
@@ -268,11 +281,10 @@ public class Simulation3D : MonoBehaviour
         compute.SetFloat("pressureMultiplier", pressureMultiplier);
         compute.SetFloat("nearPressureMultiplier", nearPressureMultiplier);
         compute.SetFloat("viscosityStrength", viscosityStrength);
-        compute.SetVector("boundsSize", simBoundsSize);
-        compute.SetVector("centre", simBoundsCentre);
-
-        compute.SetMatrix("localToWorld", transform.localToWorldMatrix);
-        compute.SetMatrix("worldToLocal", transform.worldToLocalMatrix);
+        compute.SetFloat("cellSize", gridCellSize);
+        compute.SetInts("boundsSize", new int[] { (int)dim.x, (int)dim.y, (int)dim.z});
+        compute.SetMatrix("localToWorld", this.simBounds.getLocalToWorldMatrix());
+        compute.SetMatrix("worldToLocal", this.simBounds.getWorldToLocalMatrix());
     }
 
     void SetInitialBufferData(Spawner3D.SpawnData spawnData)
@@ -327,33 +339,45 @@ public class Simulation3D : MonoBehaviour
 
     void OnDrawGizmos()
     {
+        if (this.simBounds == null)
+        {
+            this.simBounds = new SimulationBounds(this.transform, this.gridCellSize);
+        }
+        this.simBounds.update(this.transform, this.gridCellSize);
+
         // Draw Bounds
         var m = Gizmos.matrix;
-        Gizmos.matrix = transform.localToWorldMatrix;
+
+        Gizmos.matrix = this.transform.localToWorldMatrix;
+        Gizmos.color = new Color(0, 0.75f, 0.25f, 0.5f);
+        Gizmos.DrawWireCube(Vector3.zero, Vector3.one);
+
+        Gizmos.matrix = this.simBounds.getLocalToWorldMatrix();
         Gizmos.color = new Color(0, 1, 0, 0.5f);
         Gizmos.DrawWireCube(Vector3.zero, Vector3.one);
+
         Gizmos.matrix = m;
 
         if (showUniformGrid)
         {
-            Gizmos.color = new Color(1, 0, 0, 0.5f);
-            Vector3 scale = transform.localScale;
-            Vector3 halfScale = new Vector3(transform.localScale.x / 2.0f, transform.localScale.y / 2.0f, transform.localScale.z / 2.0f);
-            Vector3 halfSmoothingRadius = new Vector3(smoothingRadius / 2.0f, smoothingRadius / 2.0f, smoothingRadius / 2.0f);
-            Vector3 startPos = -1 * halfScale + halfSmoothingRadius;
-            Vector3 maxPartitions = new Vector3(Mathf.Ceil(scale.x / smoothingRadius), 
-                Mathf.Ceil(scale.y / smoothingRadius), Mathf.Ceil(scale.z / smoothingRadius));
-            Vector3 partitionScale = Vector3.one * smoothingRadius;
+            Gizmos.color = new Color(1, 1, 1, 0.25f);
+
+            uint3 dimensions = this.simBounds.getDimensions();
+            Vector3 scale = this.simBounds.getScale();
+            Vector3 halfScale = new Vector3(scale.x / 2.0f, scale.y / 2.0f, scale.z / 2.0f);
+            Vector3 halfCellSize = new Vector3(this.gridCellSize / 2.0f, this.gridCellSize / 2.0f, this.gridCellSize / 2.0f);
+            Vector3 startPos = -1 * halfScale + halfCellSize;
+            Vector3 singleCellScale = Vector3.one * this.gridCellSize;
 
             Vector3 curStartPos;
-            for (int x = 0; x < maxPartitions.x; x++)
+            for (int x = 0; x < dimensions.x; x++)
             {
-                for (int y = 0; y < maxPartitions.y; y++)
+                for (int y = 0; y < dimensions.y; y++)
                 {
-                    for (int z = 0; z < maxPartitions.z; z++)
+                    for (int z = 0; z < dimensions.z; z++)
                     {
-                        curStartPos = new Vector3(startPos.x + x * smoothingRadius, startPos.y + y * smoothingRadius, startPos.z + z * smoothingRadius);
-                        Gizmos.DrawWireCube(curStartPos, partitionScale);
+                        curStartPos = new Vector3(startPos.x + x * this.gridCellSize, startPos.y + y * this.gridCellSize, startPos.z + z * this.gridCellSize);
+                        Gizmos.DrawWireCube(curStartPos, singleCellScale);
                     }
                 }
             }

@@ -38,7 +38,6 @@ RenderSettings:
   m_ReflectionIntensity: 1
   m_CustomReflection: {fileID: 0}
   m_Sun: {fileID: 0}
-  m_IndirectSpecularColor: {r: 0.4492334, g: 0.49930477, b: 0.5757145, a: 1}
   m_UseRadianceAmbientProbe: 0
 --- !u!157 &3
 LightmapSettings:
@@ -247,7 +246,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 8.6, y: 5.16, z: 5}
+  m_LocalScale: {x: 8, y: 4, z: 4}
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 620375868}
@@ -271,10 +270,17 @@ MonoBehaviour:
   gravity: -10
   collisionDamping: 0.95
   smoothingRadius: 0.2
+  gridCellSize: 0.5
+  gridDimensions:
+    x: 0
+    y: 0
+    z: 0
+  totalGridCells: 0
   targetDensity: 630
   pressureMultiplier: 288
   nearPressureMultiplier: 2.25
   viscosityStrength: 0.001
+  showUniformGrid: 0
   compute: {fileID: 7200000, guid: 9443696acfd0ebe4fb503b56d952256c, type: 3}
   spawner: {fileID: 271053323}
   display: {fileID: 271053320}
@@ -349,7 +355,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   numParticlesPerAxis: 35
-  centre: {x: 0, y: -0.47, z: 0}
+  centre: {x: 0, y: 0.14, z: 0}
   size: 3.7
   initialVel:
     x: 0
