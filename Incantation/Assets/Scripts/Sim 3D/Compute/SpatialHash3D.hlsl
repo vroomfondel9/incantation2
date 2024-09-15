@@ -44,7 +44,7 @@ uint3 GetCell3D(float3 position, float radius, uint3 boundsSize)
 	return (uint3)floor(offsetPosition / radius);
 }
 
-uint BoundedKeyCell3D(uint3 cell, uint3 boundsSize, uint tableSize)
+uint BoundedKeyCell3D(uint3 cell, uint3 boundsSize)
 {
 	uint key = (boundsSize.x * boundsSize.y * cell.z) + (boundsSize.x * cell.y) + cell.x;
 	return key;
