@@ -46,6 +46,7 @@ RWStructuredBuffer<uint2> offsets;		// Holds the locations (start and end indice
 
 // Settings
 const uint numParticles;
+const uint numCells;
 
 const float gravity;
 const float deltaTime;
@@ -153,11 +154,18 @@ void CalculateDensities (uint3 id : SV_DispatchThreadID)
 	// Neighbour search
 	for (int i = 0; i < 27; i++)
 	{
-		uint key = BoundedKeyCell3D(originCell + offsets3D[i], boundsSize);
+		int3 neighborCell = originCell + offsets3D[i];
+		bool inBounds = isCellInBounds(neighborCell, boundsSize);
+
+		//if (!inBounds) continue;
+
+		uint key = BoundedKeyCell3D(neighborCell, boundsSize);
 
 		uint2 keyOffset = offsets[key];
 		uint keyStartIndex = keyOffset.x;
 		uint keyEndIndex = keyOffset.y;
+
+		//if (keyStartIndex == numParticles) continue;
 
 		uint curIndex = keyStartIndex;
 
@@ -202,11 +210,18 @@ void CalculatePressureForce (uint3 id : SV_DispatchThreadID)
 	// Neighbour search
 	for (int i = 0; i < 27; i ++)
 	{
-		uint key = BoundedKeyCell3D(originCell + offsets3D[i], boundsSize);
+		int3 neighborCell = originCell + offsets3D[i];
+		bool inBounds = isCellInBounds(neighborCell, boundsSize);
+
+		//if (!inBounds) continue;
+
+		uint key = BoundedKeyCell3D(neighborCell, boundsSize);
 
 		uint2 keyOffset = offsets[key];
 		uint keyStartIndex = keyOffset.x;
 		uint keyEndIndex = keyOffset.y;
+
+		//if (keyStartIndex == numParticles) continue;
 
 		uint curIndex = keyStartIndex;
 
@@ -263,11 +278,18 @@ void CalculateViscosity (uint3 id : SV_DispatchThreadID)
 	// Neighbour search
 	for (int i = 0; i < 27; i ++)
 	{
-		uint key = BoundedKeyCell3D(originCell + offsets3D[i], boundsSize);
+		int3 neighborCell = originCell + offsets3D[i];
+		bool inBounds = isCellInBounds(neighborCell, boundsSize);
+
+		//if (!inBounds) continue;
+
+		uint key = BoundedKeyCell3D(neighborCell, boundsSize);
 
 		uint2 keyOffset = offsets[key];
 		uint keyStartIndex = keyOffset.x;
 		uint keyEndIndex = keyOffset.y;
+
+		//if (keyStartIndex == numParticles) continue;
 
 		uint curIndex = keyStartIndex;
 
@@ -360,7 +382,7 @@ void CopyBuffer(uint3 id : SV_DispatchThreadID)
 [numthreads(NUM_THREADS, 1, 1)]
 void InitOffsets(uint3 id : SV_DispatchThreadID)
 {
-	if (id.x >= numParticles) { return; }
+	if (id.x >= numCells) { return; }
 
 	offsets[id.x] = uint2(numParticles, numParticles);
 }
@@ -421,20 +443,31 @@ float2 CalculateDensitiesExperimental(uint3 id)
 	float sqrRadius = smoothingRadius * smoothingRadius;
 	float density = 0;
 	float nearDensity = 0;
+	int count = 0;
 
 	// Neighbour search
 	for (int i = 0; i < 27; i++)
 	{
-		uint key = BoundedKeyCell3D(originCell + offsets3D[i], boundsSize);
+		int3 neighborCell = originCell + offsets3D[i];
+		bool inBounds = isCellInBounds(neighborCell, boundsSize);
+
+		if (!inBounds) continue;
+
+		uint key = BoundedKeyCell3D(neighborCell, boundsSize);
 
 		uint2 keyOffset = offsets[key];
 		uint keyStartIndex = keyOffset.x;
 		uint keyEndIndex = keyOffset.y;
 
+		if (keyStartIndex == numParticles) continue;
+
 		uint curIndex = keyStartIndex;
 
 		while (curIndex < numParticles)
 		{
+			// Exit if no longer looking at correct bin
+			if (curIndex >= keyEndIndex + 1) break;
+
 			float3 neighbourPos = PredictedPositions[curIndex];
 
 			float3 offsetToNeighbour = neighbourPos - pos;
@@ -446,8 +479,6 @@ float2 CalculateDensitiesExperimental(uint3 id)
 			density += withinRadius * DensityKernel(dst, smoothingRadius);
 			nearDensity += withinRadius * NearDensityKernel(dst, smoothingRadius);
 
-			// Exit if no longer looking at correct bin
-			if (curIndex == keyEndIndex) break;
 			curIndex++;
 		}
 	}
@@ -467,7 +498,19 @@ void Debug(uint3 globalId : SV_DispatchThreadID, uint3 threadBlockId : SV_GroupT
 	bool failed = (abs(actualResult.x - expectedResult.x) > floatingPointPrecisionErrorAvoidanceThreshold) 
 		|| (abs(actualResult.y - expectedResult.y) > floatingPointPrecisionErrorAvoidanceThreshold);
 
-	float testResultFloat = failed;
+	float3 pos = PredictedPositions[globalId.x];
+	int3 originCell = BoundedGetCell3D(pos, cellSize, boundsSize);
+	bool isOutOfBound = !isCellInBounds(originCell, boundsSize);
+
+	float3 originCellAsFloat = (float3)originCell;
+	//originCellAsFloat /= boundsSize;
+	originCellAsFloat = float3(
+		originCellAsFloat.x / boundsSize.x,
+		originCellAsFloat.y / boundsSize.y,
+		originCellAsFloat.z / boundsSize.z
+	);
+
+	float testResultFloat = isOutOfBound * 1.0;
 	DebugValues[globalId.x] = float3(testResultFloat, testResultFloat, testResultFloat);
 	//Densities[globalId.x] = actualResult;
 }
