@@ -7,7 +7,7 @@ using static UnityEngine.Mathf;
 
 public class Simulation3D : MonoBehaviour
 {
-    public static bool DEBUG_MODE = true;
+    public static bool DEBUG_MODE = false;
 
     public event System.Action SimulationStepCompleted;
 
@@ -260,7 +260,10 @@ public class Simulation3D : MonoBehaviour
 
         // SPH core functions
         ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: kernelNameToId[densityKernel]);
-        ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: kernelNameToId[debugKernel]);
+        if (DEBUG_MODE)
+        {
+            ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: kernelNameToId[debugKernel]);
+        }
         ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: kernelNameToId[pressureKernel]);
         ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: kernelNameToId[viscosityKernel]);
 
