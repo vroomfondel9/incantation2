@@ -164,6 +164,9 @@ void CalculateDensities (uint3 id : SV_DispatchThreadID)
 		uint keyStartIndex = keyOffset.x;
 		uint keyEndIndex = keyOffset.y;
 
+		int numParticlesInNeighborCell = keyEndIndex - keyStartIndex + 1;
+		if (numParticlesInNeighborCell == 0) continue;
+
 		uint curIndex = keyStartIndex;
 
 		while (curIndex < numParticles)
@@ -217,6 +220,9 @@ void CalculatePressureForce (uint3 id : SV_DispatchThreadID)
 		uint2 keyOffset = offsets[key];
 		uint keyStartIndex = keyOffset.x;
 		uint keyEndIndex = keyOffset.y;
+
+		int numParticlesInNeighborCell = keyEndIndex - keyStartIndex + 1;
+		if (numParticlesInNeighborCell == 0) continue;
 
 		uint curIndex = keyStartIndex;
 
@@ -283,6 +289,9 @@ void CalculateViscosity (uint3 id : SV_DispatchThreadID)
 		uint2 keyOffset = offsets[key];
 		uint keyStartIndex = keyOffset.x;
 		uint keyEndIndex = keyOffset.y;
+
+		int numParticlesInNeighborCell = keyEndIndex - keyStartIndex + 1;
+		if (numParticlesInNeighborCell == 0) continue;
 
 		uint curIndex = keyStartIndex;
 
@@ -377,7 +386,7 @@ void InitOffsets(uint3 id : SV_DispatchThreadID)
 {
 	if (id.x >= numParticles) { return; }
 
-	offsets[id.x] = uint2(numParticles, numParticles);
+	offsets[id.x] = uint2(numParticles + 1, numParticles);
 }
 
 // Calculate offsets into the sorted keys buffer (used for spatial hashing).
@@ -450,6 +459,9 @@ float2 CalculateDensitiesExperimental(uint3 id)
 		uint2 keyOffset = offsets[key];
 		uint keyStartIndex = keyOffset.x;
 		uint keyEndIndex = keyOffset.y;
+
+		int numParticlesInNeighborCell = keyEndIndex - keyStartIndex + 1;
+		if (numParticlesInNeighborCell == 0) continue;
 
 		uint curIndex = keyStartIndex;
 
