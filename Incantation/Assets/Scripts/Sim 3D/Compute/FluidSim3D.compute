@@ -153,7 +153,12 @@ void CalculateDensities (uint3 id : SV_DispatchThreadID)
 	// Neighbour search
 	for (int i = 0; i < 27; i++)
 	{
-		uint key = BoundedKeyCell3D(originCell + offsets3D[i], boundsSize);
+		int3 neighborOriginCell = originCell + offsets3D[i];
+		bool neighborInBounds = isCellInBounds(neighborOriginCell, boundsSize);
+
+		if (!neighborInBounds) continue;
+
+		uint key = BoundedKeyCell3D(neighborOriginCell, boundsSize);
 
 		uint2 keyOffset = offsets[key];
 		uint keyStartIndex = keyOffset.x;
@@ -202,7 +207,12 @@ void CalculatePressureForce (uint3 id : SV_DispatchThreadID)
 	// Neighbour search
 	for (int i = 0; i < 27; i ++)
 	{
-		uint key = BoundedKeyCell3D(originCell + offsets3D[i], boundsSize);
+		int3 neighborOriginCell = originCell + offsets3D[i];
+		bool neighborInBounds = isCellInBounds(neighborOriginCell, boundsSize);
+
+		if (!neighborInBounds) continue;
+
+		uint key = BoundedKeyCell3D(neighborOriginCell, boundsSize);
 
 		uint2 keyOffset = offsets[key];
 		uint keyStartIndex = keyOffset.x;
@@ -263,7 +273,12 @@ void CalculateViscosity (uint3 id : SV_DispatchThreadID)
 	// Neighbour search
 	for (int i = 0; i < 27; i ++)
 	{
-		uint key = BoundedKeyCell3D(originCell + offsets3D[i], boundsSize);
+		int3 neighborOriginCell = originCell + offsets3D[i];
+		bool neighborInBounds = isCellInBounds(neighborOriginCell, boundsSize);
+
+		if (!neighborInBounds) continue;
+
+		uint key = BoundedKeyCell3D(neighborOriginCell, boundsSize);
 
 		uint2 keyOffset = offsets[key];
 		uint keyStartIndex = keyOffset.x;
@@ -425,7 +440,12 @@ float2 CalculateDensitiesExperimental(uint3 id)
 	// Neighbour search
 	for (int i = 0; i < 27; i++)
 	{
-		uint key = BoundedKeyCell3D(originCell + offsets3D[i], boundsSize);
+		int3 neighborOriginCell = originCell + offsets3D[i];
+		bool neighborInBounds = isCellInBounds(neighborOriginCell, boundsSize);
+
+		if (!neighborInBounds) continue;
+
+		uint key = BoundedKeyCell3D(neighborOriginCell, boundsSize);
 
 		uint2 keyOffset = offsets[key];
 		uint keyStartIndex = keyOffset.x;

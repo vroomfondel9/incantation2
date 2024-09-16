@@ -36,7 +36,7 @@ static const uint hashK1 = 15823;
 static const uint hashK2 = 9737333;
 static const uint hashK3 = 440817757;
 
-bool isCellInBounds(int3 cell, uint3 boundsSize)
+bool isCellInBounds(int3 cell, int3 boundsSize)
 {
 	return (cell.x >= 0) && (cell.x < boundsSize.x) &&
 		(cell.y >= 0) && (cell.y < boundsSize.y) &&
