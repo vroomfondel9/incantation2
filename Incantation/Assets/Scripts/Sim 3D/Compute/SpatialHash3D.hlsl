@@ -45,7 +45,7 @@ bool isCellInBounds(int3 cell, int3 boundsSize)
 // TODO compare more sophisticated matrix-based approach.
 uint3 GetInBoundsCell(float3 position, float radius, uint3 boundsSize)
 {
-	float3 halfBoundsSizeWorldCoord = (boundsSize / 2.0f) * radius;
+	float3 halfBoundsSizeWorldCoord = 0.5f * boundsSize * radius;
 	float3 offsetPosition = position + halfBoundsSizeWorldCoord;
 	float3 unclampedCell = floor(offsetPosition / radius);
 	float3 clampedCell = clamp(unclampedCell, 0, boundsSize - 1);

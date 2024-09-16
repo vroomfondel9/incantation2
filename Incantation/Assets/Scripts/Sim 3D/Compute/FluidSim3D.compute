@@ -165,27 +165,28 @@ void CalculateDensities (uint3 id : SV_DispatchThreadID)
 		uint keyStartIndex = keyOffset.x;
 		uint keyEndIndex = keyOffset.y;
 
-		int numParticlesInNeighborCell = keyEndIndex - keyStartIndex + 1;
-		if (numParticlesInNeighborCell == 0) continue;
-
-		uint curIndex = keyStartIndex;
-
-		while (curIndex < numParticles)
+		for (uint curIndex = keyStartIndex; curIndex <= keyEndIndex; curIndex++)
 		{
+			// Dependent Data Retrieval
 			float3 neighbourPos = PredictedPositions[curIndex];
 
+			// Influence Calculation
 			float3 offsetToNeighbour = neighbourPos - pos;
 			float sqrDstToNeighbour = dot(offsetToNeighbour, offsetToNeighbour);
 
 			bool withinRadius = (sqrDstToNeighbour <= sqrRadius);
 
 			float dst = sqrt(sqrDstToNeighbour);
-			density += withinRadius * DensityKernel(dst, smoothingRadius);
-			nearDensity += withinRadius * NearDensityKernel(dst, smoothingRadius);
 
-			// Exit if no longer looking at correct bin
-			if (curIndex == keyEndIndex) break;
-			curIndex++;
+			float influenceFactor = withinRadius * DensityKernel(dst, smoothingRadius);
+			float influenceFactorNear = withinRadius * NearDensityKernel(dst, smoothingRadius);
+
+			// Density Calculation
+			float densityStrength = 1.0;			//Each particle has an assumed mass of 1 (for now)
+
+			// Accumulation
+			density += influenceFactor * densityStrength;
+			nearDensity += influenceFactorNear * densityStrength;
 		}
 	}
 	
@@ -222,23 +223,26 @@ void CalculatePressureForce (uint3 id : SV_DispatchThreadID)
 		uint keyStartIndex = keyOffset.x;
 		uint keyEndIndex = keyOffset.y;
 
-		int numParticlesInNeighborCell = keyEndIndex - keyStartIndex + 1;
-		if (numParticlesInNeighborCell == 0) continue;
-
-		uint curIndex = keyStartIndex;
-
-		while (curIndex < numParticles)
+		for (uint curIndex = keyStartIndex; curIndex <= keyEndIndex; curIndex++)
 		{
+			// Dependent Data Retrieval
 			float3 neighbourPos = PredictedPositions[curIndex];
 			float2 neighborDens = Densities[curIndex];
 
+			// Influence Calculation
 			float3 offsetToNeighbour = neighbourPos - pos;
 			float sqrDstToNeighbour = dot(offsetToNeighbour, offsetToNeighbour);
 
 			bool withinRadius = (sqrDstToNeighbour <= sqrRadius);
 			bool neighborIsNotSelf = (curIndex != id.x);
 
-			// Calculate pressure force
+			float dst = sqrt(sqrDstToNeighbour);
+			float3 dir = dst > 0 ? offsetToNeighbour / dst : float3(0, 1, 0);
+
+			float influenceFactor = withinRadius * neighborIsNotSelf * DensityDerivative(dst, smoothingRadius);
+			float influenceFactorNear = withinRadius * neighborIsNotSelf * NearDensityDerivative(dst, smoothingRadius);
+
+			// Pressure Calculation
 			float densityNeighbour = neighborDens[0];
 			float nearDensityNeighbour = neighborDens[1];
 
@@ -248,15 +252,12 @@ void CalculatePressureForce (uint3 id : SV_DispatchThreadID)
 			float sharedPressure = (pressure + neighbourPressure) / 2;
 			float sharedNearPressure = (nearPressure + neighbourPressureNear) / 2;
 
-			float dst = sqrt(sqrDstToNeighbour);
-			float3 dir = dst > 0 ? offsetToNeighbour / dst : float3(0, 1, 0);
+			float pressureStrength = sharedPressure / densityNeighbour;
+			float nearPressureStrength = sharedNearPressure / nearDensityNeighbour;
 
-			pressureForce += withinRadius * neighborIsNotSelf * dir * DensityDerivative(dst, smoothingRadius) * sharedPressure / densityNeighbour;
-			pressureForce += withinRadius * neighborIsNotSelf * dir * NearDensityDerivative(dst, smoothingRadius) * sharedNearPressure / nearDensityNeighbour;
-
-			// Exit if no longer looking at correct bin
-			if (curIndex == keyEndIndex) break;
-			curIndex++;
+			// Accumulation
+			pressureForce += dir * influenceFactor * pressureStrength;
+			pressureForce += dir * influenceFactorNear * nearPressureStrength;
 		}
 	}
 
@@ -291,29 +292,27 @@ void CalculateViscosity (uint3 id : SV_DispatchThreadID)
 		uint keyStartIndex = keyOffset.x;
 		uint keyEndIndex = keyOffset.y;
 
-		int numParticlesInNeighborCell = keyEndIndex - keyStartIndex + 1;
-		if (numParticlesInNeighborCell == 0) continue;
-
-		uint curIndex = keyStartIndex;
-
-		while (curIndex < numParticles)
+		for (uint curIndex = keyStartIndex; curIndex <= keyEndIndex; curIndex++)
 		{
+			// Dependent Data Retrieval
 			float3 neighbourPos = PredictedPositions[curIndex];
+			float3 neighbourVelocity = Velocities[curIndex];
 
+			// Influence Calculation
 			float3 offsetToNeighbour = neighbourPos - pos;
 			float sqrDstToNeighbour = dot(offsetToNeighbour, offsetToNeighbour);
 
 			bool withinRadius = (sqrDstToNeighbour <= sqrRadius);
 			bool neighborIsNotSelf = (curIndex != id.x);
 
-			// Calculate viscosity
 			float dst = sqrt(sqrDstToNeighbour);
-			float3 neighbourVelocity = Velocities[curIndex];
-			viscosityForce += withinRadius * neighborIsNotSelf * (neighbourVelocity - velocity) * SmoothingKernelPoly6(dst, smoothingRadius);
+			float influenceFactor = withinRadius * neighborIsNotSelf * SmoothingKernelPoly6(dst, smoothingRadius);
 
-			// Exit if no longer looking at correct bin
-			if (curIndex == keyEndIndex) break;
-			curIndex++;
+			// Viscosity Calculation
+			float3 viscosityStrength = (neighbourVelocity - velocity);
+
+			// Accumulation
+			viscosityForce += influenceFactor * viscosityStrength;
 		}
 	}
 	Velocities[id.x] += viscosityForce * viscosityStrength * deltaTime;
@@ -380,8 +379,13 @@ void CopyBuffer(uint3 id : SV_DispatchThreadID)
 }
 
 // Reinitialized the array formerly used to store scatter indices for sorting to be the key offset array.
-// The values are all numParticles (which is 1 more than the maximum possible key) in order to ensure that
-// any possible key is not equal to this value. This is important for determing divisions in the key list.
+// Each value is a start and end index (inclusive) into the particle-based buffers. 
+// 
+// If start = end index, that implies there's one particle in the cell. If start = end - 1, there are 2. etc.
+// Therefore we initialize this such that start + 1 = end. This implies no particles in the cell (empty).
+// 
+// We also initialize these to values outside the particle-based buffer's indexable range, so they blow up if 
+// consumers don't properly check them before indexing with them (hopefully making bugs more discoverable).
 [numthreads(NUM_THREADS, 1, 1)]
 void InitOffsets(uint3 id : SV_DispatchThreadID)
 {
@@ -461,27 +465,28 @@ float2 CalculateDensitiesExperimental(uint3 id)
 		uint keyStartIndex = keyOffset.x;
 		uint keyEndIndex = keyOffset.y;
 
-		int numParticlesInNeighborCell = keyEndIndex - keyStartIndex + 1;
-		if (numParticlesInNeighborCell == 0) continue;
-
-		uint curIndex = keyStartIndex;
-
-		while (curIndex < numParticles)
+		for (uint curIndex = keyStartIndex; curIndex <= keyEndIndex; curIndex++)
 		{
+			// Dependent Data Retrieval
 			float3 neighbourPos = PredictedPositions[curIndex];
 
+			// Influence Calculation
 			float3 offsetToNeighbour = neighbourPos - pos;
 			float sqrDstToNeighbour = dot(offsetToNeighbour, offsetToNeighbour);
 
 			bool withinRadius = (sqrDstToNeighbour <= sqrRadius);
 
 			float dst = sqrt(sqrDstToNeighbour);
-			density += withinRadius * DensityKernel(dst, smoothingRadius);
-			nearDensity += withinRadius * NearDensityKernel(dst, smoothingRadius);
 
-			// Exit if no longer looking at correct bin
-			if (curIndex == keyEndIndex) break;
-			curIndex++;
+			float influenceFactor = withinRadius * DensityKernel(dst, smoothingRadius);
+			float influenceFactorNear = withinRadius * NearDensityKernel(dst, smoothingRadius);
+
+			// Density Calculation
+			float densityStrength = 1.0;			//Each particle has an assumed mass of 1 (for now)
+
+			// Accumulation
+			density += influenceFactor * densityStrength;
+			nearDensity += influenceFactorNear * densityStrength;
 		}
 	}
 

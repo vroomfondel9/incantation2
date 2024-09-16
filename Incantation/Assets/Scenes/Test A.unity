@@ -246,7 +246,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 8, y: 4, z: 4}
+  m_LocalScale: {x: 12.8, y: 6.4, z: 6.4}
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 620375868}
@@ -270,12 +270,12 @@ MonoBehaviour:
   gravity: -10
   collisionDamping: 0.95
   smoothingRadius: 0.2
-  gridCellSize: 0.5
+  gridCellSize: 0.2
   gridDimensions:
-    x: 0
-    y: 0
-    z: 0
-  totalGridCells: 0
+    x: 64
+    y: 32
+    z: 32
+  totalGridCells: 65536
   targetDensity: 630
   pressureMultiplier: 288
   nearPressureMultiplier: 2.25
