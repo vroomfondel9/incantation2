@@ -133,8 +133,8 @@ void InitializeSpacialPartitionBuffers (uint3 id : SV_DispatchThreadID)
 	uint index = id.x;
 
 	// Update index buffer
-	int3 cell = BoundedGetCell3D(PredictedPositions[index], cellSize, boundsSize);
-	uint key = BoundedKeyCell3D(cell, boundsSize);
+	int3 cell = GetInBoundsCell(PredictedPositions[index], cellSize, boundsSize);
+	uint key = GetKeyFromInBoundsCell(cell, boundsSize);
 
 	keys[index] = key;
 	indices[index] = index;
@@ -146,7 +146,7 @@ void CalculateDensities (uint3 id : SV_DispatchThreadID)
 	if (id.x >= numParticles) return;
 
 	float3 pos = PredictedPositions[id.x];
-	int3 originCell = BoundedGetCell3D(pos, cellSize, boundsSize);
+	int3 originCell = GetInBoundsCell(pos, cellSize, boundsSize);
 	float sqrRadius = smoothingRadius * smoothingRadius;
 	float density = 0;
 	float nearDensity = 0;
@@ -159,7 +159,7 @@ void CalculateDensities (uint3 id : SV_DispatchThreadID)
 
 		if (!neighborInBounds) continue;
 
-		uint key = BoundedKeyCell3D(neighborOriginCell, boundsSize);
+		uint key = GetKeyFromInBoundsCell(neighborOriginCell, boundsSize);
 
 		uint2 keyOffset = offsets[key];
 		uint keyStartIndex = keyOffset.x;
@@ -205,7 +205,7 @@ void CalculatePressureForce (uint3 id : SV_DispatchThreadID)
 	float3 pressureForce = 0;
 	
 	float3 pos = PredictedPositions[id.x];
-	int3 originCell = BoundedGetCell3D(pos, cellSize, boundsSize);
+	int3 originCell = GetInBoundsCell(pos, cellSize, boundsSize);
 	float sqrRadius = smoothingRadius * smoothingRadius;
 
 	// Neighbour search
@@ -216,7 +216,7 @@ void CalculatePressureForce (uint3 id : SV_DispatchThreadID)
 
 		if (!neighborInBounds) continue;
 
-		uint key = BoundedKeyCell3D(neighborOriginCell, boundsSize);
+		uint key = GetKeyFromInBoundsCell(neighborOriginCell, boundsSize);
 
 		uint2 keyOffset = offsets[key];
 		uint keyStartIndex = keyOffset.x;
@@ -271,7 +271,7 @@ void CalculateViscosity (uint3 id : SV_DispatchThreadID)
 	if (id.x >= numParticles) return;
 		
 	float3 pos = PredictedPositions[id.x];
-	int3 originCell = BoundedGetCell3D(pos, cellSize, boundsSize);
+	int3 originCell = GetInBoundsCell(pos, cellSize, boundsSize);
 	float sqrRadius = smoothingRadius * smoothingRadius;
 
 	float3 viscosityForce = 0;
@@ -285,7 +285,7 @@ void CalculateViscosity (uint3 id : SV_DispatchThreadID)
 
 		if (!neighborInBounds) continue;
 
-		uint key = BoundedKeyCell3D(neighborOriginCell, boundsSize);
+		uint key = GetKeyFromInBoundsCell(neighborOriginCell, boundsSize);
 
 		uint2 keyOffset = offsets[key];
 		uint keyStartIndex = keyOffset.x;
@@ -442,7 +442,7 @@ float2 CalculateDensitiesExperimental(uint3 id)
 	if (id.x >= numParticles) return float2(-1, -1);
 
 	float3 pos = PredictedPositions[id.x];
-	int3 originCell = BoundedGetCell3D(pos, cellSize, boundsSize);
+	int3 originCell = GetInBoundsCell(pos, cellSize, boundsSize);
 	float sqrRadius = smoothingRadius * smoothingRadius;
 	float density = 0;
 	float nearDensity = 0;
@@ -455,7 +455,7 @@ float2 CalculateDensitiesExperimental(uint3 id)
 
 		if (!neighborInBounds) continue;
 
-		uint key = BoundedKeyCell3D(neighborOriginCell, boundsSize);
+		uint key = GetKeyFromInBoundsCell(neighborOriginCell, boundsSize);
 
 		uint2 keyOffset = offsets[key];
 		uint keyStartIndex = keyOffset.x;

@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -18,36 +19,58 @@ public class SimulationBounds
 
     public SimulationBounds(Transform parentTransform, float gridCellSize) 
     {
-        create(parentTransform, gridCellSize);
+        bool created = create(parentTransform, gridCellSize);
+
+        if (!created) throw new ArgumentException("Invalid simulation bounds provided. Probably gridCellSize is 0.");
     }
 
-    public void update(Transform parentTransform, float gridCellSize)
+    public bool update(Transform parentTransform, float gridCellSize)
     {
+        bool updated = false;
+
         if (needsUpdate(parentTransform, gridCellSize))
         {
-            create(parentTransform, gridCellSize);
+            updated = create(parentTransform, gridCellSize);
         }
+
+        return updated;
     }
 
-    private void create(Transform parentTransform, float gridCellSize)
+    private bool isValid(Transform parentTransform, float gridCellSize)
     {
-        this.gridCellSize = gridCellSize;
+        return gridCellSize != 0;
+    }
 
-        uint3 dimensionsFractional = new uint3(
-            (uint)math.floor(parentTransform.localScale.x / gridCellSize),
-            (uint)math.floor(parentTransform.localScale.y / gridCellSize),
-            (uint)math.floor(parentTransform.localScale.z / gridCellSize)
-        );
-        int3 prevLog2 = math.floorlog2(dimensionsFractional);
-        this.gridDimensions = new uint3(
-            (uint)Mathf.Pow(2, prevLog2.x),
-            (uint)Mathf.Pow(2, prevLog2.y),
-            (uint)Mathf.Pow(2, prevLog2.z)
-        );
+    private bool create(Transform parentTransform, float gridCellSize)
+    {
+        bool valid = isValid(parentTransform, gridCellSize);
 
-        this.position = parentTransform.position;
-        this.rotation = parentTransform.rotation;
-        this.parentScale = parentTransform.localScale;
+        if (valid)
+        {
+            this.gridCellSize = math.abs(gridCellSize);
+
+            uint3 dimensionsFractional = new uint3(
+                (uint)math.floor(parentTransform.localScale.x / gridCellSize),
+                (uint)math.floor(parentTransform.localScale.y / gridCellSize),
+                (uint)math.floor(parentTransform.localScale.z / gridCellSize)
+            );
+            int3 prevLog2 = math.floorlog2(dimensionsFractional);
+            this.gridDimensions = new uint3(
+                (uint)Mathf.Pow(2, prevLog2.x),
+                (uint)Mathf.Pow(2, prevLog2.y),
+                (uint)Mathf.Pow(2, prevLog2.z)
+            );
+
+            this.position = parentTransform.position;
+            this.rotation = parentTransform.rotation;
+            this.parentScale = math.abs(parentTransform.localScale);
+        }
+        else
+        {
+            Debug.LogWarning("Invalid simulation bounds provided. Ignoring.");
+        }
+
+        return valid;
     }
 
     private bool needsUpdate(Transform parentTransform, float gridCellSize)
@@ -99,5 +122,10 @@ public class SimulationBounds
     {
         Matrix4x4 lToW = getLocalToWorldMatrix();
         return lToW.inverse;
+    }
+
+    public float getCellSize()
+    {
+        return this.gridCellSize;
     }
 }

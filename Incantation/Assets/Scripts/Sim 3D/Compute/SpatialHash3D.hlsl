@@ -31,11 +31,7 @@ static const int3 offsets3D[27] =
 	int3(0, 0, 0),
 };
 
-// Constants used for hashing
-static const uint hashK1 = 15823;
-static const uint hashK2 = 9737333;
-static const uint hashK3 = 440817757;
-
+//Checks if the given cell is in-bounds to the grid or not.
 bool isCellInBounds(int3 cell, int3 boundsSize)
 {
 	return (cell.x >= 0) && (cell.x < boundsSize.x) &&
@@ -44,7 +40,10 @@ bool isCellInBounds(int3 cell, int3 boundsSize)
 }
 
 // Convert floating point position into an unsigned grid cell coordinate
-uint3 BoundedGetCell3D(float3 position, float radius, uint3 boundsSize)
+// Clamps out-of-bounds positions to within the grid.
+// Assumes the world boundaries are at position and rotation (0, 0, 0). This will break if this is false.
+// TODO compare more sophisticated matrix-based approach.
+uint3 GetInBoundsCell(float3 position, float radius, uint3 boundsSize)
 {
 	float3 halfBoundsSizeWorldCoord = (boundsSize / 2.0f) * radius;
 	float3 offsetPosition = position + halfBoundsSizeWorldCoord;
@@ -53,26 +52,10 @@ uint3 BoundedGetCell3D(float3 position, float radius, uint3 boundsSize)
 	return (uint3)clampedCell;
 }
 
-uint BoundedKeyCell3D(uint3 cell, uint3 boundsSize)
+//Requires an in-bounds cell grid or will return values outside the range [0, (numCells - 1)].
+uint GetKeyFromInBoundsCell(uint3 cell, uint3 boundsSize)
 {
-	uint key = (boundsSize.x * boundsSize.y * cell.z) + (boundsSize.x * cell.y) + cell.x;
-	return key;
-}
-
-// Convert floating point position into an integer cell coordinate
-int3 UnboundedGetCell3D(float3 position, float radius)
-{
-	return (int3)floor(position / radius);
-}
-
-// Hash cell coordinate to a single unsigned integer
-uint UnboundedHashCell3D(int3 cell)
-{
-	cell = (uint3) cell;
-	return (cell.x * hashK1) + (cell.y * hashK2) + (cell.z * hashK3);
-}
-
-uint UnboundedKeyFromHash(uint hash, uint tableSize)
-{
-	return hash % tableSize;
+	return (boundsSize.x * boundsSize.y * cell.z) 
+		+ (boundsSize.x * cell.y) 
+		+ cell.x;
 }

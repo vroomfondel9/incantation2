@@ -104,7 +104,7 @@ public class Simulation3D : MonoBehaviour
         spawnData = spawner.GetSpawnData();
 
         int numParticles = spawnData.points.Length;
-        this.simBounds = new SimulationBounds(this.transform, this.gridCellSize);
+        this.simBounds = new SimulationBounds(this.transform, Mathf.Max(this.gridCellSize, this.smoothingRadius));
         int numCells = (int)this.simBounds.getCellTotal();
 
         // Create buffers
@@ -152,6 +152,10 @@ public class Simulation3D : MonoBehaviour
 
         compute.SetInt("numParticles", numParticles);
         compute.SetInt("numCells", numCells);
+
+        uint3 dim = simBounds.getDimensions();
+        compute.SetFloat("cellSize", gridCellSize);
+        compute.SetInts("boundsSize", new int[] { (int)dim.x, (int)dim.y, (int)dim.z });
 
         gpuSort = new DeviceRdxSort();
         gpuSort.SetBuffers(predictedPositionsBuffer.count, spacialPart1, spacialPart2, spacialPart3, spacialPart4);
@@ -266,13 +270,6 @@ public class Simulation3D : MonoBehaviour
 
     void UpdateSettings(float deltaTime)
     {
-        this.simBounds.update(this.transform, this.gridCellSize);
-
-        this.gridDimensions = this.simBounds.getDimensions();
-        this.totalGridCells = this.simBounds.getCellTotal();
-
-        uint3 dim = simBounds.getDimensions();
-
         compute.SetFloat("deltaTime", deltaTime);
         compute.SetFloat("gravity", gravity);
         compute.SetFloat("collisionDamping", collisionDamping);
@@ -281,10 +278,8 @@ public class Simulation3D : MonoBehaviour
         compute.SetFloat("pressureMultiplier", pressureMultiplier);
         compute.SetFloat("nearPressureMultiplier", nearPressureMultiplier);
         compute.SetFloat("viscosityStrength", viscosityStrength);
-        compute.SetFloat("cellSize", gridCellSize);
-        compute.SetInts("boundsSize", new int[] { (int)dim.x, (int)dim.y, (int)dim.z});
-        compute.SetMatrix("localToWorld", this.simBounds.getLocalToWorldMatrix());
-        compute.SetMatrix("worldToLocal", this.simBounds.getWorldToLocalMatrix());
+        compute.SetMatrix("localToWorld", simBounds.getLocalToWorldMatrix());
+        compute.SetMatrix("worldToLocal", simBounds.getWorldToLocalMatrix());
     }
 
     void SetInitialBufferData(Spawner3D.SpawnData spawnData)
@@ -337,13 +332,29 @@ public class Simulation3D : MonoBehaviour
         this.gpuSort.destroy();
     }
 
+    void checkResizeSimBounds()
+    {
+        if (!Application.isPlaying)
+        {
+            if (simBounds == null)
+            {
+                simBounds = new SimulationBounds(this.transform, Mathf.Max(this.gridCellSize, this.smoothingRadius));
+            }
+            simBounds.update(this.transform, Mathf.Max(this.gridCellSize, this.smoothingRadius));
+
+            gridDimensions = simBounds.getDimensions();
+            totalGridCells = simBounds.getCellTotal();
+        }
+    }
+
+    void OnValidate()
+    {
+        checkResizeSimBounds();
+    }
+
     void OnDrawGizmos()
     {
-        if (this.simBounds == null)
-        {
-            this.simBounds = new SimulationBounds(this.transform, this.gridCellSize);
-        }
-        this.simBounds.update(this.transform, this.gridCellSize);
+        checkResizeSimBounds();
 
         // Draw Bounds
         var m = Gizmos.matrix;
@@ -364,10 +375,12 @@ public class Simulation3D : MonoBehaviour
 
             uint3 dimensions = this.simBounds.getDimensions();
             Vector3 scale = this.simBounds.getScale();
+            float cellSize = this.simBounds.getCellSize();
+
             Vector3 halfScale = new Vector3(scale.x / 2.0f, scale.y / 2.0f, scale.z / 2.0f);
-            Vector3 halfCellSize = new Vector3(this.gridCellSize / 2.0f, this.gridCellSize / 2.0f, this.gridCellSize / 2.0f);
+            Vector3 halfCellSize = new Vector3(cellSize / 2.0f, cellSize / 2.0f, cellSize / 2.0f);
             Vector3 startPos = -1 * halfScale + halfCellSize;
-            Vector3 singleCellScale = Vector3.one * this.gridCellSize;
+            Vector3 singleCellScale = Vector3.one * cellSize;
 
             Vector3 curStartPos;
             for (int x = 0; x < dimensions.x; x++)
@@ -376,7 +389,11 @@ public class Simulation3D : MonoBehaviour
                 {
                     for (int z = 0; z < dimensions.z; z++)
                     {
-                        curStartPos = new Vector3(startPos.x + x * this.gridCellSize, startPos.y + y * this.gridCellSize, startPos.z + z * this.gridCellSize);
+                        curStartPos = new Vector3(
+                            startPos.x + x * cellSize, 
+                            startPos.y + y * cellSize, 
+                            startPos.z + z * cellSize
+                        );
                         Gizmos.DrawWireCube(curStartPos, singleCellScale);
                     }
                 }
