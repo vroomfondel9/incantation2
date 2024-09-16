@@ -105,9 +105,7 @@ public class Simulation3D : MonoBehaviour
 
         int numParticles = spawnData.points.Length;
         this.simBounds = new SimulationBounds(this.transform, this.gridCellSize);
-        uint numCells = this.simBounds.getCellTotal();
-        Assert.IsTrue(numParticles > numCells, "Number of particles spawned must exceed number of uniform grid cells (#Particles=" 
-            + numParticles+ ", #Cells=" + numCells + ").");
+        int numCells = (int)this.simBounds.getCellTotal();
 
         // Create buffers
         positionBuffer = ComputeHelper.CreateStructuredBuffer<float3>(numParticles);
@@ -119,7 +117,7 @@ public class Simulation3D : MonoBehaviour
         spacialPart3 = ComputeHelper.CreateStructuredBuffer<uint>(numParticles);
         spacialPart4 = ComputeHelper.CreateStructuredBuffer<uint>(numParticles);
         tempBuffer = ComputeHelper.CreateStructuredBuffer<float3>(numParticles);
-        offsets = ComputeHelper.CreateStructuredBuffer<uint2>(numParticles);
+        offsets = ComputeHelper.CreateStructuredBuffer<uint2>(numCells);
         if (DEBUG_MODE)
         {
             debugBuffer = ComputeHelper.CreateStructuredBuffer<float3>(numParticles);
@@ -152,7 +150,8 @@ public class Simulation3D : MonoBehaviour
             ComputeHelper.SetBuffer(compute, debugBuffer, "DebugValues", kernelNameToId[debugKernel]);
         }
 
-        compute.SetInt("numParticles", positionBuffer.count);
+        compute.SetInt("numParticles", numParticles);
+        compute.SetInt("numCells", numCells);
 
         gpuSort = new DeviceRdxSort();
         gpuSort.SetBuffers(predictedPositionsBuffer.count, spacialPart1, spacialPart2, spacialPart3, spacialPart4);
@@ -252,7 +251,7 @@ public class Simulation3D : MonoBehaviour
         ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: kernelNameToId[initializeSpacialPartitionBuffers]);
         gpuSort.Sort();
         coalesceMemory();
-        ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: kernelNameToId[initalizeOffsetsKernel]);
+        ComputeHelper.Dispatch(compute, offsets.count, kernelIndex: kernelNameToId[initalizeOffsetsKernel]);
         ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: kernelNameToId[calculateOffsetsKernel]);
 
         // SPH core functions

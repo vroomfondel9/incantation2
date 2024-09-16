@@ -46,6 +46,7 @@ RWStructuredBuffer<uint2> offsets;		// Holds the locations (start and end indice
 
 // Settings
 const uint numParticles;
+const uint numCells;
 
 const float gravity;
 const float deltaTime;
@@ -384,7 +385,7 @@ void CopyBuffer(uint3 id : SV_DispatchThreadID)
 [numthreads(NUM_THREADS, 1, 1)]
 void InitOffsets(uint3 id : SV_DispatchThreadID)
 {
-	if (id.x >= numParticles) { return; }
+	if (id.x >= numCells) { return; }
 
 	offsets[id.x] = uint2(numParticles + 1, numParticles);
 }
