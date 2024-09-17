@@ -31,6 +31,25 @@ static const int3 offsets3D[27] =
 	int3(0, 0, 0),
 };
 
+//Used to spread out a given dimension by 2 bits in order to calculate Morton codes
+uint Part1By2(uint n)
+{
+	n &= 0x000003ff;                    // Mask to consider only the lowest 10 bits
+	n = (n ^ (n << 16)) & 0xFF0000FF;   // Spread bits 16 positions apart
+	n = (n ^ (n << 8)) & 0x0300F00F;    // Spread bits 8 positions apart
+	n = (n ^ (n << 4)) & 0x030C30C3;    // Spread bits 4 positions apart
+	n = (n ^ (n << 2)) & 0x09249249;    // Spread bits 2 positions apart
+	return n;
+}
+
+//Computes Morton code for 3D space. This generally keeps spacially close values close together in memory.
+//Experimentally, I found that using this slows down performance compared to a more basic approach (which makes sense - it's more ops)
+//Maybe try again later.
+uint Morton3D(uint3 cellCoords)
+{
+	return (Part1By2(cellCoords.z) << 2) | (Part1By2(cellCoords.y) << 1) | Part1By2(cellCoords.x);
+}
+
 //Checks if the given cell is in-bounds to the grid or not.
 bool isCellInBounds(int3 cell, int3 boundsSize)
 {

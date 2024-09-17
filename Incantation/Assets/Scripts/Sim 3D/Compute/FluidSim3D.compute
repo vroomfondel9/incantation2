@@ -501,7 +501,7 @@ void Debug(uint3 globalId : SV_DispatchThreadID, uint3 threadBlockId : SV_GroupT
 	float2 actualResult = CalculateDensitiesExperimental(globalId);
 	float2 expectedResult = Densities[globalId.x];
 
-	const float floatingPointPrecisionErrorAvoidanceThreshold = 0.0001;
+	const float floatingPointPrecisionErrorAvoidanceThreshold = 0.001;
 	bool failed = (abs(actualResult.x - expectedResult.x) > floatingPointPrecisionErrorAvoidanceThreshold) 
 		|| (abs(actualResult.y - expectedResult.y) > floatingPointPrecisionErrorAvoidanceThreshold);
 

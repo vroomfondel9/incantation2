@@ -7,7 +7,7 @@ using static UnityEngine.Mathf;
 
 public class Simulation3D : MonoBehaviour
 {
-    public static bool DEBUG_MODE = false;
+    public static bool DEBUG_MODE = true;
 
     public event System.Action SimulationStepCompleted;
 
