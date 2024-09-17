@@ -56,8 +56,9 @@ public class Simulation3D : MonoBehaviour
     //Used as a double buffer to re-order density, velocity, position, predicated position values after sort
     public ComputeBuffer tempBuffer;
 
-    //Offsets into the array for origin cells. Stores the start and end indices.
+    //Offsets into the array for origin cells in the uniform grid. Stores the start and end indices.
     public ComputeBuffer offsets;
+    public ComputeBuffer particlesPerCell;
 
     // Kernel Names and IDs
     private const string externalForcesKernel = "ExternalForces";
@@ -69,10 +70,11 @@ public class Simulation3D : MonoBehaviour
     private const string pressureKernel = "CalculatePressureForce";
     private const string viscosityKernel = "CalculateViscosity";
     private const string updatePositionsKernel = "UpdatePositions";
+    private const string calcParticlesPerCellKernel = "CalcParticlesPerCell";
     private const string debugKernel = "Debug";
     private string[] kernelNames = { externalForcesKernel, initializeSpacialPartitionBuffers,
         copyBufferKernel, initalizeOffsetsKernel, calculateOffsetsKernel, densityKernel, pressureKernel,
-            viscosityKernel, updatePositionsKernel };
+            viscosityKernel, updatePositionsKernel, calcParticlesPerCellKernel };
     private Dictionary<string, int> kernelNameToId = new();
 
     // Constants for copying data
@@ -118,6 +120,7 @@ public class Simulation3D : MonoBehaviour
         spacialPart4 = ComputeHelper.CreateStructuredBuffer<uint>(numParticles);
         tempBuffer = ComputeHelper.CreateStructuredBuffer<float3>(numParticles);
         offsets = ComputeHelper.CreateStructuredBuffer<uint2>(numCells);
+        particlesPerCell = ComputeHelper.CreateStructuredBuffer<uint>(numCells);
         if (DEBUG_MODE)
         {
             debugBuffer = ComputeHelper.CreateStructuredBuffer<float3>(numParticles);
@@ -134,7 +137,8 @@ public class Simulation3D : MonoBehaviour
         ComputeHelper.SetBuffer(compute, spacialPart1, "keys", kernelNameToId[initializeSpacialPartitionBuffers], kernelNameToId[calculateOffsetsKernel]);
         ComputeHelper.SetBuffer(compute, spacialPart2, "indices", kernelNameToId[initializeSpacialPartitionBuffers], kernelNameToId[copyBufferKernel]);
         ComputeHelper.SetBuffer(compute, tempBuffer, "tempBuffer", kernelNameToId[copyBufferKernel]);
-        ComputeHelper.SetBuffer(compute, offsets, "offsets", kernelNameToId[initalizeOffsetsKernel], kernelNameToId[calculateOffsetsKernel], kernelNameToId[densityKernel], kernelNameToId[pressureKernel], kernelNameToId[viscosityKernel]);
+        ComputeHelper.SetBuffer(compute, offsets, "offsets", kernelNameToId[initalizeOffsetsKernel], kernelNameToId[calculateOffsetsKernel], kernelNameToId[calcParticlesPerCellKernel], kernelNameToId[densityKernel], kernelNameToId[pressureKernel], kernelNameToId[viscosityKernel]);
+        ComputeHelper.SetBuffer(compute, particlesPerCell, "particlesPerCell", kernelNameToId[calcParticlesPerCellKernel]);
 
         if (DEBUG_MODE)
         {
@@ -146,6 +150,7 @@ public class Simulation3D : MonoBehaviour
             ComputeHelper.SetBuffer(compute, spacialPart2, "indices", kernelNameToId[debugKernel]);
             ComputeHelper.SetBuffer(compute, tempBuffer, "tempBuffer", kernelNameToId[debugKernel]);
             ComputeHelper.SetBuffer(compute, offsets, "offsets", kernelNameToId[debugKernel]);
+            ComputeHelper.SetBuffer(compute, particlesPerCell, "particlesPerCell", kernelNameToId[debugKernel]);
 
             ComputeHelper.SetBuffer(compute, debugBuffer, "DebugValues", kernelNameToId[debugKernel]);
         }
@@ -255,8 +260,9 @@ public class Simulation3D : MonoBehaviour
         ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: kernelNameToId[initializeSpacialPartitionBuffers]);
         gpuSort.Sort();
         coalesceMemory();
-        ComputeHelper.Dispatch(compute, offsets.count, kernelIndex: kernelNameToId[initalizeOffsetsKernel]);
+        ComputeHelper.Dispatch(compute, particlesPerCell.count, kernelIndex: kernelNameToId[initalizeOffsetsKernel]);
         ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: kernelNameToId[calculateOffsetsKernel]);
+        ComputeHelper.Dispatch(compute, particlesPerCell.count, kernelIndex: kernelNameToId[calcParticlesPerCellKernel]);
 
         // SPH core functions
         ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: kernelNameToId[densityKernel]);

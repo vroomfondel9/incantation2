@@ -9,6 +9,7 @@
 #pragma kernel CopyBuffer
 #pragma kernel InitOffsets
 #pragma kernel CalcOffsets
+#pragma kernel CalcParticlesPerCell
 #pragma kernel Debug
 
 #define NUM_THREADS							64
@@ -34,15 +35,15 @@
 RWStructuredBuffer<float3> Positions;
 RWStructuredBuffer<float3> PredictedPositions;
 RWStructuredBuffer<float3> Velocities;
-RWStructuredBuffer<float2> Densities; // Density, Near Density
+RWStructuredBuffer<float2> Densities;		// Density, Near Density
 
 RWStructuredBuffer<float3> DebugValues;
 
-//Multipurpose spacial partitioning array, to be initialized here but used by sort
-RWStructuredBuffer<uint> keys;			//Sorted key list. Used to construct offsets.
-RWStructuredBuffer<uint> indices;	//Sorted index list. Used to construct offsets.
-RWStructuredBuffer<float3> tempBuffer;	// Used to copy values for memory coalescing
-RWStructuredBuffer<uint2> offsets;		// Holds the locations (start and end indices) where origin cell indices are located.
+RWStructuredBuffer<uint> keys;				//Sorted key list. Used to construct offsets.
+RWStructuredBuffer<uint> indices;			//Sorted index list. Used to construct offsets.
+RWStructuredBuffer<float3> tempBuffer;		// Used to copy values for memory coalescing
+RWStructuredBuffer<uint2> offsets;			// Holds the locations (start and end indices) where origin cell indices are located in the uniform grid
+RWStructuredBuffer<uint> particlesPerCell;	//Total number of particles in a given cell in the uniform grid
 
 // Settings
 const uint numParticles;
@@ -441,6 +442,18 @@ void CalcOffsets(uint3 id : SV_DispatchThreadID)
 	}
 }
 
+[numthreads(NUM_THREADS, 1, 1)]
+void CalcParticlesPerCell(uint3 id : SV_DispatchThreadID)
+{
+	if (id.x >= numCells) { return; }
+
+	uint2 offset = offsets[id.x];
+	uint startIndex = offset.x;
+	uint endIndex = offset.y;
+
+	particlesPerCell[id.x] = endIndex - startIndex + 1;
+}
+
 float2 CalculateDensitiesExperimental(uint3 id)
 {
 	if (id.x >= numParticles) return float2(-1, -1);
@@ -505,7 +518,12 @@ void Debug(uint3 globalId : SV_DispatchThreadID, uint3 threadBlockId : SV_GroupT
 	bool failed = (abs(actualResult.x - expectedResult.x) > floatingPointPrecisionErrorAvoidanceThreshold) 
 		|| (abs(actualResult.y - expectedResult.y) > floatingPointPrecisionErrorAvoidanceThreshold);
 
-	float testResultFloat = failed;
+	float3 pos = PredictedPositions[globalId.x];
+	int3 originCell = GetInBoundsCell(pos, cellSize, boundsSize);
+	uint key = GetKeyFromInBoundsCell(originCell, boundsSize);
+	uint numParticlesInOrigin = particlesPerCell[key];
+
+	float testResultFloat = numParticlesInOrigin / 10.0f;//failed;
 	DebugValues[globalId.x] = float3(testResultFloat, testResultFloat, testResultFloat);
 	//Densities[globalId.x] = actualResult;
 }
