@@ -1,12 +1,14 @@
 //#pragma use_dxc
 
 #pragma kernel ExternalForces
-#pragma kernel InitializeSpacialPartitionBuffers
+#pragma kernel InitializeSpacialPartitionBuffers3D
+#pragma kernel InitializeSpacialPartitionBuffers1D
 #pragma kernel CalculateDensities
 #pragma kernel CalculatePressureForce
 #pragma kernel CalculateViscosity
 #pragma kernel UpdatePositions
-#pragma kernel CopyBuffer
+#pragma kernel CopyBuffer3D
+#pragma kernel CopyBuffer1D
 #pragma kernel InitOffsets
 #pragma kernel CalcOffsets
 #pragma kernel Debug
@@ -126,7 +128,7 @@ void ExternalForces (uint3 id : SV_DispatchThreadID)
 }
 
 [numthreads(NUM_THREADS,1,1)]
-void InitializeSpacialPartitionBuffers (uint3 id : SV_DispatchThreadID)
+void InitializeSpacialPartitionBuffers3D (uint3 id : SV_DispatchThreadID)
 {
 	if (id.x >= numParticles) return;
 
@@ -138,6 +140,33 @@ void InitializeSpacialPartitionBuffers (uint3 id : SV_DispatchThreadID)
 
 	keys[index] = key;
 	indices[index] = index;
+}
+
+//Scatters the current particle to the neighboring 9 cells in the YZ direction.
+[numthreads(NUM_THREADS, 1, 1)]
+void InitializeSpacialPartitionBuffers1D(uint3 id : SV_DispatchThreadID)
+{
+	if (id.x >= numParticles) return;
+
+	uint threeDimIndex = id.x;
+
+	// Update index buffer
+	int3 originCell = GetInBoundsCell(PredictedPositions[threeDimIndex], cellSize, boundsSize);
+
+	[unroll]
+	for (int i = 0; i < 9; i++)
+	{
+		int3 neighborScatterCell = originCell + offsets3D[i];
+		bool neighborInBounds = isCellInBounds(neighborScatterCell, boundsSize);
+
+		//Sets key to a value greater than any possible key (numCells) if out of bounds in any direction.
+		//This ensures out of bounds neighbors are moved to the end of the list after sort and shouldn't be iterated over during NS.
+		uint key = numCells * !neighborInBounds + neighborInBounds * GetKeyFromInBoundsCell(neighborScatterCell, boundsSize);
+		
+		uint oneDimIndex = threeDimIndex + i * numCells;
+		keys[oneDimIndex] = key;
+		indices[oneDimIndex] = threeDimIndex;
+	}
 }
 
 [numthreads(NUM_THREADS,1,1)]
@@ -329,7 +358,7 @@ void UpdatePositions(uint3 id : SV_DispatchThreadID)
 
 // The branchiness of this kernel is okay because all threads will follow the same branches on a given Dispatch so there will be no divergence
 [numthreads(NUM_THREADS, 1, 1)]
-void CopyBuffer(uint3 id : SV_DispatchThreadID)
+void CopyBuffer3D(uint3 id : SV_DispatchThreadID)
 {
 	if (id.x >= numParticles) return;
 
@@ -362,6 +391,57 @@ void CopyBuffer(uint3 id : SV_DispatchThreadID)
 		{
 			Positions[id.x] = tempBuffer[id.x];
 		} 
+		else if (copyBufferId == 1)
+		{
+			PredictedPositions[id.x] = tempBuffer[id.x];
+		}
+		else if (copyBufferId == 2)
+		{
+			Velocities[id.x] = tempBuffer[id.x];
+		}
+		else if (copyBufferId == 3)
+		{
+			float3 density = tempBuffer[id.x];
+			Densities[id.x] = float2(density[0], density[1]);
+		}
+	}
+}
+
+// The branchiness of this kernel is okay because all threads will follow the same branches on a given Dispatch so there will be no divergence
+[numthreads(NUM_THREADS, 1, 1)]
+void CopyBuffer1D(uint3 id : SV_DispatchThreadID)
+{
+	if (id.x >= numParticles) return;
+
+	if (copyDirection == 0)
+	{
+		// Copy to temp buffer
+		uint uncoalescedIndex = indices[id.x];
+		if (copyBufferId == 0)
+		{
+			tempBuffer[id.x] = Positions[uncoalescedIndex];
+		}
+		else if (copyBufferId == 1)
+		{
+			tempBuffer[id.x] = PredictedPositions[uncoalescedIndex];
+		}
+		else if (copyBufferId == 2)
+		{
+			tempBuffer[id.x] = Velocities[uncoalescedIndex];
+		}
+		else if (copyBufferId == 3)
+		{
+			float2 density = Densities[uncoalescedIndex];
+			tempBuffer[id.x] = float3(density[0], density[1], 0.0);
+		}
+	}
+	else
+	{
+		// Copy from temp buffer
+		if (copyBufferId == 0)
+		{
+			Positions[id.x] = tempBuffer[id.x];
+		}
 		else if (copyBufferId == 1)
 		{
 			PredictedPositions[id.x] = tempBuffer[id.x];
@@ -498,12 +578,40 @@ void Debug(uint3 globalId : SV_DispatchThreadID, uint3 threadBlockId : SV_GroupT
 {
 	if (globalId.x >= numParticles) return;
 
-	float2 actualResult = CalculateDensitiesExperimental(globalId);
+	/*float2 actualResult = CalculateDensitiesExperimental(globalId);
 	float2 expectedResult = Densities[globalId.x];
 
 	const float floatingPointPrecisionErrorAvoidanceThreshold = 0.0001;
 	bool failed = (abs(actualResult.x - expectedResult.x) > floatingPointPrecisionErrorAvoidanceThreshold) 
-		|| (abs(actualResult.y - expectedResult.y) > floatingPointPrecisionErrorAvoidanceThreshold);
+		|| (abs(actualResult.y - expectedResult.y) > floatingPointPrecisionErrorAvoidanceThreshold);*/
+
+
+	float3 pos = PredictedPositions[globalId.x];
+	int3 originCell = GetInBoundsCell(pos, cellSize, boundsSize);
+	uint outOfBoundsKey = numCells;
+
+	bool failed = false;
+	for (int i = 0; i < 9; i++)
+	{
+		uint startIndex1D = globalId.x * 9;
+		uint index1D = startIndex1D + i;
+
+		int3 neighborOriginCell = originCell + offsets3D[i];
+		bool neighborInBounds = isCellInBounds(neighborOriginCell, boundsSize);
+		uint inBoundsKey = GetKeyFromInBoundsCell(neighborOriginCell, boundsSize);
+
+		failed = failed | (indices[index1D] != globalId.x);
+
+		if (neighborInBounds)
+		{
+			failed = failed | (keys[index1D] != inBoundsKey);
+		}
+		else
+		{
+			failed = failed | (keys[index1D] != outOfBoundsKey);
+		}
+
+	}
 
 	float testResultFloat = failed;
 	DebugValues[globalId.x] = float3(testResultFloat, testResultFloat, testResultFloat);

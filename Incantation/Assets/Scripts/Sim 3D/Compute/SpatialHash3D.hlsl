@@ -1,34 +1,37 @@
 static const int3 offsets3D[27] =
 {
-	int3(-1, -1, -1),
+	//First 9 elements represent a single YZ slice, centered at the origin
 	int3(0, -1, -1),
-	int3(1, -1, -1),
-	int3(-1, 0, -1),
 	int3(0, 0, -1),
-	int3(1, 0, -1),
-	int3(-1, 1, -1),
 	int3(0, 1, -1),
-	int3(1, 1, -1),
-	int3(-1, -1, 0),
 	int3(0, -1, 0),
-	int3(1, -1, 0),
-	int3(-1, 0, 0),
-	int3(1, 0, 0),
-	int3(-1, 1, 0),
-	int3(0, 1, 0),
-	int3(1, 1, 0),
-	int3(-1, -1, 1),
-	int3(0, -1, 1),
-	int3(1, -1, 1),
-	int3(-1, 0, 1),
-	int3(0, 0, 1),
-	int3(1, 0, 1),
-	int3(-1, 1, 1),
-	int3(0, 1, 1),
-	int3(1, 1, 1),
-	//Origin is last element because some functionality only cares about adjascent cells and loops 1-26, and others care about
-	//origin of this cell too and loops 1-27.
 	int3(0, 0, 0),
+	int3(0, 1, 0),
+	int3(0, -1, 1),
+	int3(0, 0, 1),
+	int3(0, 1, 1),
+
+	//Next 9 elements represent the previous YZ slice
+	int3(-1, -1, -1),
+	int3(-1, 0, -1),
+	int3(-1, 1, -1),
+	int3(-1, -1, 0),
+	int3(-1, 0, 0),
+	int3(-1, 1, 0),
+	int3(-1, -1, 1),
+	int3(-1, 0, 1),
+	int3(-1, 1, 1),
+	
+	//Finally the last 9 elements represent the next YZ slice
+	int3(1, -1, -1),
+	int3(1, 0, -1),
+	int3(1, 1, -1),
+	int3(1, -1, 0),
+	int3(1, 0, 0),
+	int3(1, 1, 0),
+	int3(1, -1, 1),
+	int3(1, 0, 1),
+	int3(1, 1, 1),
 };
 
 //Checks if the given cell is in-bounds to the grid or not.
