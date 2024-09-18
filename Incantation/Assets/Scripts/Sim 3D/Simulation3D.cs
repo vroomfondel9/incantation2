@@ -11,18 +11,13 @@ public class Simulation3D : MonoBehaviour
 
     public event System.Action SimulationStepCompleted;
 
-    [Header("Settings")]
+    [Header("Tweakable Settings")]
     public float timeScale = 1;
     public bool fixedTimeStep;
     public int iterationsPerFrame;
     public float gravity = -10;
     [Range(0, 1)] public float collisionDamping = 0.05f;
     public float smoothingRadius = 0.2f;
-    public float gridCellSize = 0.2f;
-
-    [Header("Debug Info")]
-    public uint3 gridDimensions;
-    public uint totalGridCells;
 
     [Header("Fluid Properties")]
     public float targetDensity;
@@ -32,6 +27,14 @@ public class Simulation3D : MonoBehaviour
 
     [Header("Visualizations")]
     public bool showUniformGrid;
+
+    [Header("Fixed Settings")]
+    public float gridCellSize = 0.2f;
+    public int neighborListBlockSize = 4000;
+
+    [Header("Debug Info")]
+    public uint3 gridDimensions;
+    public uint totalGridCells;
 
     [Header("References")]
     public ComputeShader compute;
@@ -59,6 +62,7 @@ public class Simulation3D : MonoBehaviour
     //Offsets into the array for origin cells in the uniform grid. Stores the start and end indices.
     public ComputeBuffer offsets;
     public ComputeBuffer particlesPerCell;
+    public ComputeBuffer neighborListIndices;
 
     // Kernel Names and IDs
     private const string externalForcesKernel = "ExternalForces";
@@ -71,10 +75,11 @@ public class Simulation3D : MonoBehaviour
     private const string viscosityKernel = "CalculateViscosity";
     private const string updatePositionsKernel = "UpdatePositions";
     private const string calcParticlesPerCellKernel = "CalcParticlesPerCell";
+    private const string calcNeighborListIndicesKernel = "CalcNeighborListIndices";
     private const string debugKernel = "Debug";
     private string[] kernelNames = { externalForcesKernel, initializeSpacialPartitionBuffers,
         copyBufferKernel, initalizeOffsetsKernel, calculateOffsetsKernel, densityKernel, pressureKernel,
-            viscosityKernel, updatePositionsKernel, calcParticlesPerCellKernel };
+            viscosityKernel, updatePositionsKernel, calcParticlesPerCellKernel, calcNeighborListIndicesKernel };
     private Dictionary<string, int> kernelNameToId = new();
 
     // Constants for copying data
@@ -121,6 +126,8 @@ public class Simulation3D : MonoBehaviour
         tempBuffer = ComputeHelper.CreateStructuredBuffer<float3>(numParticles);
         offsets = ComputeHelper.CreateStructuredBuffer<uint2>(numCells);
         particlesPerCell = ComputeHelper.CreateStructuredBuffer<uint>(numCells);
+        neighborListIndices = ComputeHelper.CreateStructuredBuffer<uint>(numCells);
+
         if (DEBUG_MODE)
         {
             debugBuffer = ComputeHelper.CreateStructuredBuffer<float3>(numParticles);
@@ -139,6 +146,7 @@ public class Simulation3D : MonoBehaviour
         ComputeHelper.SetBuffer(compute, tempBuffer, "tempBuffer", kernelNameToId[copyBufferKernel]);
         ComputeHelper.SetBuffer(compute, offsets, "offsets", kernelNameToId[initalizeOffsetsKernel], kernelNameToId[calculateOffsetsKernel], kernelNameToId[calcParticlesPerCellKernel], kernelNameToId[densityKernel], kernelNameToId[pressureKernel], kernelNameToId[viscosityKernel]);
         ComputeHelper.SetBuffer(compute, particlesPerCell, "particlesPerCell", kernelNameToId[calcParticlesPerCellKernel]);
+        ComputeHelper.SetBuffer(compute, neighborListIndices, "neighborListIndices", kernelNameToId[calcNeighborListIndicesKernel]);
 
         if (DEBUG_MODE)
         {
@@ -151,16 +159,20 @@ public class Simulation3D : MonoBehaviour
             ComputeHelper.SetBuffer(compute, tempBuffer, "tempBuffer", kernelNameToId[debugKernel]);
             ComputeHelper.SetBuffer(compute, offsets, "offsets", kernelNameToId[debugKernel]);
             ComputeHelper.SetBuffer(compute, particlesPerCell, "particlesPerCell", kernelNameToId[debugKernel]);
+            ComputeHelper.SetBuffer(compute, neighborListIndices, "neighborListIndices", kernelNameToId[debugKernel]);
 
             ComputeHelper.SetBuffer(compute, debugBuffer, "DebugValues", kernelNameToId[debugKernel]);
         }
 
         compute.SetInt("numParticles", numParticles);
         compute.SetInt("numCells", numCells);
+        compute.SetInt("neighborListBlockSize", neighborListBlockSize);
 
         uint3 dim = simBounds.getDimensions();
         compute.SetFloat("cellSize", gridCellSize);
         compute.SetInts("boundsSize", new int[] { (int)dim.x, (int)dim.y, (int)dim.z });
+        compute.SetMatrix("localToWorld", simBounds.getLocalToWorldMatrix());
+        compute.SetMatrix("worldToLocal", simBounds.getWorldToLocalMatrix());
 
         gpuSort = new DeviceRdxSort();
         gpuSort.SetBuffers(predictedPositionsBuffer.count, spacialPart1, spacialPart2, spacialPart3, spacialPart4);
@@ -287,8 +299,6 @@ public class Simulation3D : MonoBehaviour
         compute.SetFloat("pressureMultiplier", pressureMultiplier);
         compute.SetFloat("nearPressureMultiplier", nearPressureMultiplier);
         compute.SetFloat("viscosityStrength", viscosityStrength);
-        compute.SetMatrix("localToWorld", simBounds.getLocalToWorldMatrix());
-        compute.SetMatrix("worldToLocal", simBounds.getWorldToLocalMatrix());
     }
 
     void SetInitialBufferData(Spawner3D.SpawnData spawnData)

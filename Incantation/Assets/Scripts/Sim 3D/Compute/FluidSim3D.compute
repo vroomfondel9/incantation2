@@ -10,6 +10,7 @@
 #pragma kernel InitOffsets
 #pragma kernel CalcOffsets
 #pragma kernel CalcParticlesPerCell
+#pragma kernel CalcNeighborListIndices
 #pragma kernel Debug
 
 #define NUM_THREADS							64
@@ -35,15 +36,16 @@
 RWStructuredBuffer<float3> Positions;
 RWStructuredBuffer<float3> PredictedPositions;
 RWStructuredBuffer<float3> Velocities;
-RWStructuredBuffer<float2> Densities;		// Density, Near Density
+RWStructuredBuffer<float2> Densities;			// Density, Near Density
 
 RWStructuredBuffer<float3> DebugValues;
 
-RWStructuredBuffer<uint> keys;				//Sorted key list. Used to construct offsets.
-RWStructuredBuffer<uint> indices;			//Sorted index list. Used to construct offsets.
-RWStructuredBuffer<float3> tempBuffer;		// Used to copy values for memory coalescing
-RWStructuredBuffer<uint2> offsets;			// Holds the locations (start and end indices) where origin cell indices are located in the uniform grid
-RWStructuredBuffer<uint> particlesPerCell;	//Total number of particles in a given cell in the uniform grid
+RWStructuredBuffer<uint> keys;					//Sorted key list. Used to construct offsets.
+RWStructuredBuffer<uint> indices;				//Sorted index list. Used to construct offsets.
+RWStructuredBuffer<float3> tempBuffer;			// Used to copy values for memory coalescing
+RWStructuredBuffer<uint2> offsets;				// Holds the locations (start and end indices) where origin cell indices are located in the uniform grid
+RWStructuredBuffer<uint> particlesPerCell;		//Total number of particles in a given cell in the uniform grid
+RWStructuredBuffer<uint> neighborListIndices;	//Total number of particles in a given cell in the uniform grid
 
 // Settings
 const uint numParticles;
@@ -61,6 +63,7 @@ const float edgeForce;
 const float edgeForceDst;
 const int3 boundsSize;
 const float cellSize;
+const int neighborListBlockSize;
 const int copyBufferId;			//Position = 0, PredictedPosition = 1, Velocity = 2, Density = 3
 const int copyDirection;		//0 = real buffer to temp buffer, 1 = temp buffer to real buffer
 
@@ -452,6 +455,14 @@ void CalcParticlesPerCell(uint3 id : SV_DispatchThreadID)
 	uint endIndex = offset.y;
 
 	particlesPerCell[id.x] = endIndex - startIndex + 1;
+}
+
+[numthreads(NUM_THREADS, 1, 1)]
+void CalcNeighborListIndices(uint3 id : SV_DispatchThreadID)
+{
+	if (id.x >= numCells) { return; }
+
+	//TODO this
 }
 
 float2 CalculateDensitiesExperimental(uint3 id)
