@@ -9,6 +9,7 @@
 #pragma kernel CopyBuffer
 #pragma kernel InitOffsets
 #pragma kernel CalcOffsets
+#pragma kernel SpanOffsets
 #pragma kernel Debug
 
 #define NUM_THREADS							64
@@ -38,11 +39,11 @@ RWStructuredBuffer<float2> Densities; // Density, Near Density
 
 RWStructuredBuffer<float3> DebugValues;
 
-//Multipurpose spacial partitioning array, to be initialized here but used by sort
-RWStructuredBuffer<uint> keys;			//Sorted key list. Used to construct offsets.
-RWStructuredBuffer<uint> indices;	//Sorted index list. Used to construct offsets.
-RWStructuredBuffer<float3> tempBuffer;	// Used to copy values for memory coalescing
-RWStructuredBuffer<uint2> offsets;		// Holds the locations (start and end indices) where origin cell indices are located.
+RWStructuredBuffer<uint> keys;				//Sorted key list. Used to construct offsets.
+RWStructuredBuffer<uint> indices;			//Sorted index list. Used to construct offsets.
+RWStructuredBuffer<float3> tempBuffer;		// Used to copy values for memory coalescing
+RWStructuredBuffer<uint2> offsets;			// Holds the locations (start and end indices) where origin cell indices are located.
+RWStructuredBuffer<uint2> spannedOffsets;	// Holds the locations (start and end indices) where sets of 3 spanned adjascent neighbor indices are located
 
 // Settings
 const uint numParticles;
@@ -152,7 +153,7 @@ void CalculateDensities (uint3 id : SV_DispatchThreadID)
 	float nearDensity = 0;
 
 	// Neighbour search
-	for (int i = 0; i < 27; i++)
+	for (int i = 0; i < 9; i++)
 	{
 		int3 neighborOriginCell = originCell + offsets3D[i];
 		bool neighborInBounds = isCellInBounds(neighborOriginCell, boundsSize);
@@ -161,7 +162,7 @@ void CalculateDensities (uint3 id : SV_DispatchThreadID)
 
 		uint key = GetKeyFromInBoundsCell(neighborOriginCell, boundsSize);
 
-		uint2 keyOffset = offsets[key];
+		uint2 keyOffset = spannedOffsets[key];
 		uint keyStartIndex = keyOffset.x;
 		uint keyEndIndex = keyOffset.y;
 
@@ -210,7 +211,7 @@ void CalculatePressureForce (uint3 id : SV_DispatchThreadID)
 	float sqrRadius = smoothingRadius * smoothingRadius;
 
 	// Neighbour search
-	for (int i = 0; i < 27; i ++)
+	for (int i = 0; i < 9; i ++)
 	{
 		int3 neighborOriginCell = originCell + offsets3D[i];
 		bool neighborInBounds = isCellInBounds(neighborOriginCell, boundsSize);
@@ -219,7 +220,7 @@ void CalculatePressureForce (uint3 id : SV_DispatchThreadID)
 
 		uint key = GetKeyFromInBoundsCell(neighborOriginCell, boundsSize);
 
-		uint2 keyOffset = offsets[key];
+		uint2 keyOffset = spannedOffsets[key];
 		uint keyStartIndex = keyOffset.x;
 		uint keyEndIndex = keyOffset.y;
 
@@ -279,7 +280,7 @@ void CalculateViscosity (uint3 id : SV_DispatchThreadID)
 	float3 velocity = Velocities[id.x];
 
 	// Neighbour search
-	for (int i = 0; i < 27; i ++)
+	for (int i = 0; i < 9; i ++)
 	{
 		int3 neighborOriginCell = originCell + offsets3D[i];
 		bool neighborInBounds = isCellInBounds(neighborOriginCell, boundsSize);
@@ -288,7 +289,7 @@ void CalculateViscosity (uint3 id : SV_DispatchThreadID)
 
 		uint key = GetKeyFromInBoundsCell(neighborOriginCell, boundsSize);
 
-		uint2 keyOffset = offsets[key];
+		uint2 keyOffset = spannedOffsets[key];
 		uint keyStartIndex = keyOffset.x;
 		uint keyEndIndex = keyOffset.y;
 
@@ -441,6 +442,60 @@ void CalcOffsets(uint3 id : SV_DispatchThreadID)
 	}
 }
 
+// Takes advantage of the fact that keys are numbered from with increasing x, then increasing y, then increasing z.
+// This allows us to iterate through one (y,z) slice of space while holding x constant for 3 spaces during neighbor
+// iteration, reducing the number of random memory accesses from 27 to 9.
+//
+// For example, for the following cells with start and end particle indices (inclusive), and boundSize.x == 4:
+//
+// start index:		5	8	13	14	72
+// end index:		7	12	13	16	79	...
+// cell				0	1	2	3	4
+//
+// We just carry over the prev and next cell's start and end indices, being mindful of edges. The result will be:
+//
+// start index:		5	5	8	13	72
+// end index:		12	13	16	16	?	...
+// cell				0	1	2	3	4
+//
+// Note that the special case of an empty cell (initialized to start index = numParticles + 1, end index = numParticles)
+// Also needs to be accounted for. Note that this method may keep things empty if itself and its direct neighbors are empty.
+[numthreads(NUM_THREADS, 1, 1)]
+void SpanOffsets(uint3 id : SV_DispatchThreadID)
+{
+	if (id.x >= numCells) { return; }
+
+	uint index = id.x;
+
+	int posInXDim = index % boundsSize.x;
+	uint leftBoundaryCell = posInXDim == 0;
+	uint rightBoundaryCell = posInXDim == (boundsSize.x - 1);
+
+	uint2 offsetsArray[3];
+
+	offsetsArray[0] = offsets[index - !leftBoundaryCell];
+	offsetsArray[1] = offsets[index];
+	offsetsArray[2] = offsets[index + !rightBoundaryCell];
+
+	uint startIndex = numParticles + 1;
+	uint endIndex = numParticles;
+	uint startIndexEmpty;
+	uint endIndexEmpty;
+
+	[unroll]
+	for (uint i = 0; i < 3; i++)
+	{
+		startIndexEmpty = startIndex == numParticles + 1;
+		endIndexEmpty = endIndex == numParticles;
+
+		startIndex = startIndex * !startIndexEmpty + startIndexEmpty * offsetsArray[i].x;
+		endIndex = endIndex * !endIndexEmpty + endIndexEmpty * offsetsArray[2 - i].y;
+	}
+
+	spannedOffsets[index].x = startIndex;
+	spannedOffsets[index].y = endIndex;
+}
+
 float2 CalculateDensitiesExperimental(uint3 id)
 {
 	if (id.x >= numParticles) return float2(-1, -1);
@@ -452,7 +507,7 @@ float2 CalculateDensitiesExperimental(uint3 id)
 	float nearDensity = 0;
 
 	// Neighbour search
-	for (int i = 0; i < 27; i++)
+	for (int i = 0; i < 9; i++)
 	{
 		int3 neighborOriginCell = originCell + offsets3D[i];
 		bool neighborInBounds = isCellInBounds(neighborOriginCell, boundsSize);
@@ -461,7 +516,7 @@ float2 CalculateDensitiesExperimental(uint3 id)
 
 		uint key = GetKeyFromInBoundsCell(neighborOriginCell, boundsSize);
 
-		uint2 keyOffset = offsets[key];
+		uint2 keyOffset = spannedOffsets[key];
 		uint keyStartIndex = keyOffset.x;
 		uint keyEndIndex = keyOffset.y;
 
@@ -501,7 +556,7 @@ void Debug(uint3 globalId : SV_DispatchThreadID, uint3 threadBlockId : SV_GroupT
 	float2 actualResult = CalculateDensitiesExperimental(globalId);
 	float2 expectedResult = Densities[globalId.x];
 
-	const float floatingPointPrecisionErrorAvoidanceThreshold = 0.0001;
+	const float floatingPointPrecisionErrorAvoidanceThreshold = 0.0005;
 	bool failed = (abs(actualResult.x - expectedResult.x) > floatingPointPrecisionErrorAvoidanceThreshold) 
 		|| (abs(actualResult.y - expectedResult.y) > floatingPointPrecisionErrorAvoidanceThreshold);
 

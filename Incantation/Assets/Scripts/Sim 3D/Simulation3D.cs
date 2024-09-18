@@ -7,7 +7,7 @@ using static UnityEngine.Mathf;
 
 public class Simulation3D : MonoBehaviour
 {
-    public static bool DEBUG_MODE = false;
+    public static bool DEBUG_MODE = true;
 
     public event System.Action SimulationStepCompleted;
 
@@ -59,20 +59,24 @@ public class Simulation3D : MonoBehaviour
     //Offsets into the array for origin cells. Stores the start and end indices.
     public ComputeBuffer offsets;
 
+    //Offsets into the array for neighbor lists aligned along the one dimension. Stores the start and end indices.
+    public ComputeBuffer spannedOffsets;
+
     // Kernel Names and IDs
     private const string externalForcesKernel = "ExternalForces";
     private const string initializeSpacialPartitionBuffers = "InitializeSpacialPartitionBuffers";
     private const string copyBufferKernel = "CopyBuffer";
     private const string initalizeOffsetsKernel = "InitOffsets";
     private const string calculateOffsetsKernel = "CalcOffsets";
+    private const string spanOffsetsKernel = "SpanOffsets";
     private const string densityKernel = "CalculateDensities";
     private const string pressureKernel = "CalculatePressureForce";
     private const string viscosityKernel = "CalculateViscosity";
     private const string updatePositionsKernel = "UpdatePositions";
     private const string debugKernel = "Debug";
     private string[] kernelNames = { externalForcesKernel, initializeSpacialPartitionBuffers,
-        copyBufferKernel, initalizeOffsetsKernel, calculateOffsetsKernel, densityKernel, pressureKernel,
-            viscosityKernel, updatePositionsKernel };
+        copyBufferKernel, initalizeOffsetsKernel, calculateOffsetsKernel,spanOffsetsKernel, densityKernel,
+            pressureKernel, viscosityKernel, updatePositionsKernel };
     private Dictionary<string, int> kernelNameToId = new();
 
     // Constants for copying data
@@ -118,6 +122,8 @@ public class Simulation3D : MonoBehaviour
         spacialPart4 = ComputeHelper.CreateStructuredBuffer<uint>(numParticles);
         tempBuffer = ComputeHelper.CreateStructuredBuffer<float3>(numParticles);
         offsets = ComputeHelper.CreateStructuredBuffer<uint2>(numCells);
+        spannedOffsets = ComputeHelper.CreateStructuredBuffer<uint2>(numCells);
+
         if (DEBUG_MODE)
         {
             debugBuffer = ComputeHelper.CreateStructuredBuffer<float3>(numParticles);
@@ -134,7 +140,8 @@ public class Simulation3D : MonoBehaviour
         ComputeHelper.SetBuffer(compute, spacialPart1, "keys", kernelNameToId[initializeSpacialPartitionBuffers], kernelNameToId[calculateOffsetsKernel]);
         ComputeHelper.SetBuffer(compute, spacialPart2, "indices", kernelNameToId[initializeSpacialPartitionBuffers], kernelNameToId[copyBufferKernel]);
         ComputeHelper.SetBuffer(compute, tempBuffer, "tempBuffer", kernelNameToId[copyBufferKernel]);
-        ComputeHelper.SetBuffer(compute, offsets, "offsets", kernelNameToId[initalizeOffsetsKernel], kernelNameToId[calculateOffsetsKernel], kernelNameToId[densityKernel], kernelNameToId[pressureKernel], kernelNameToId[viscosityKernel]);
+        ComputeHelper.SetBuffer(compute, offsets, "offsets", kernelNameToId[initalizeOffsetsKernel], kernelNameToId[calculateOffsetsKernel], kernelNameToId[spanOffsetsKernel]);
+        ComputeHelper.SetBuffer(compute, spannedOffsets, "spannedOffsets", kernelNameToId[spanOffsetsKernel], kernelNameToId[densityKernel], kernelNameToId[pressureKernel], kernelNameToId[viscosityKernel]);
 
         if (DEBUG_MODE)
         {
@@ -146,6 +153,7 @@ public class Simulation3D : MonoBehaviour
             ComputeHelper.SetBuffer(compute, spacialPart2, "indices", kernelNameToId[debugKernel]);
             ComputeHelper.SetBuffer(compute, tempBuffer, "tempBuffer", kernelNameToId[debugKernel]);
             ComputeHelper.SetBuffer(compute, offsets, "offsets", kernelNameToId[debugKernel]);
+            ComputeHelper.SetBuffer(compute, spannedOffsets, "spannedOffsets", kernelNameToId[debugKernel]);
 
             ComputeHelper.SetBuffer(compute, debugBuffer, "DebugValues", kernelNameToId[debugKernel]);
         }
@@ -257,6 +265,7 @@ public class Simulation3D : MonoBehaviour
         coalesceMemory();
         ComputeHelper.Dispatch(compute, offsets.count, kernelIndex: kernelNameToId[initalizeOffsetsKernel]);
         ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: kernelNameToId[calculateOffsetsKernel]);
+        ComputeHelper.Dispatch(compute, offsets.count, kernelIndex: kernelNameToId[spanOffsetsKernel]);
 
         // SPH core functions
         ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: kernelNameToId[densityKernel]);
@@ -331,7 +340,8 @@ public class Simulation3D : MonoBehaviour
 
     void OnDestroy()
     {
-        ComputeHelper.Release(positionBuffer, predictedPositionsBuffer, velocityBuffer, densityBuffer, spacialPart1, spacialPart2, spacialPart3, spacialPart4, tempBuffer);
+        ComputeHelper.Release(positionBuffer, predictedPositionsBuffer, velocityBuffer, densityBuffer, 
+            spacialPart1, spacialPart2, spacialPart3, spacialPart4, tempBuffer, offsets, spannedOffsets);
         this.gpuSort.destroy();
     }
 
