@@ -154,7 +154,7 @@ void CalculateDensities (uint3 id : SV_DispatchThreadID)
 	float nearDensity = 0;
 
 	// Neighbour search
-	for (int i = 0; i < 1; i++)
+	for (int i = 0; i < 9; i++)
 	{
 		int3 neighborOriginCell = originCell + offsets3D[i];
 		bool neighborInBounds = isCellInBounds(neighborOriginCell, boundsSize);
@@ -508,7 +508,7 @@ float2 CalculateDensitiesExperimental(uint3 id)
 	float nearDensity = 0;
 
 	// Neighbour search
-	for (int i = 0; i < 9; i++)
+	for (int i = 0; i < 0; i++)
 	{
 		int3 neighborOriginCell = originCell + offsets3D[i];
 		bool neighborInBounds = isCellInBounds(neighborOriginCell, boundsSize);
@@ -623,9 +623,10 @@ float3 calculateDensityPairwise(float3 pos, float3 neighbourPos)
 	return float3(influenceFactor * densityStrength, influenceFactorNear * densityStrength, 0.0f);
 }
 
-groupshared float3 positionCache[WIDE_MEM_TRANSACTION_SIZE];
+//groupshared float3 positionCache[WIDE_MEM_TRANSACTION_SIZE];
+groupshared float3 positionCache[WIDE_MEM_TRANSACTION_SIZE * 2];
 
-float3 performNeighborSearchIterationOriginSharedMemShenanigans(uint globalId, uint threadBlockId, out float3 particlePos, out uint3 originCell)
+/*float3 performNeighborSearchIterationOriginSharedMemShenanigans(uint globalId, uint threadBlockId, out float3 particlePos, out uint3 originCell)
 {
 	float3 accumulatedDensities = float3(0.0f, 0.0f, 0.0f);
 
@@ -765,6 +766,102 @@ float3 performNeighborSearchIterationOriginPostEdgeHandling(uint globalId, uint 
 	}
 
 	return accumulatedDensities;
+}*/
+
+float3 performNeighborSearchIterationOriginPostEdgeHandlingUncoalesced(uint globalId, uint threadBlockId, out float3 particlePos, out uint3 originCell)
+{
+	const uint paddingSize = WIDE_MEM_TRANSACTION_SIZE / 2;
+
+	float3 accumulatedDensities = float3(0.0f, 0.0f, 0.0f);
+
+	uint threadBlockGlobalStartIndex = globalId - threadBlockId;
+
+	bool rightSidePadder = threadBlockId >= paddingSize;
+	int paddingOffset = (rightSidePadder * 2 - 1) * paddingSize;
+	int particleRelativeThreadBlockId = threadBlockId + paddingOffset;
+	uint paddedThreadBlockId = paddingSize + particleRelativeThreadBlockId;
+
+	int paddedGlobalId = threadBlockGlobalStartIndex + particleRelativeThreadBlockId;
+	bool firstBlock = (paddedGlobalId < 0);
+	uint curIndexPadding = !firstBlock * paddingSize;
+	uint paddedInBoundsGlobalId = (paddedGlobalId < 0) ? 0 : (uint) paddedGlobalId;
+	paddedInBoundsGlobalId = (paddedInBoundsGlobalId >= numParticles) ? numParticles - 1 : paddedInBoundsGlobalId;
+
+	uint nonPaddedInBoundsGlobalId = globalId < numParticles ? globalId : numParticles - 1;
+
+	particlePos = PredictedPositions[nonPaddedInBoundsGlobalId];
+	float3 paddingParticle = PredictedPositions[paddedInBoundsGlobalId];
+	positionCache[threadBlockId] = particlePos;
+	positionCache[paddedThreadBlockId] = paddingParticle;
+
+	originCell = GetInBoundsCell(particlePos, cellSize, boundsSize);
+
+	uint key = GetKeyFromInBoundsCell(originCell, boundsSize);
+
+	uint2 keyOffset = spannedOffsets[key];
+	uint keyStartIndex = keyOffset.x;
+	uint keyEndIndex = keyOffset.y;
+
+	GroupMemoryBarrierWithGroupSync();
+
+	float3 neighborPos;
+	for (uint curIndex = keyStartIndex; curIndex <= keyEndIndex; curIndex++)
+	{
+		int curLocalIndex = curIndex - threadBlockGlobalStartIndex + curIndexPadding;
+		bool inSharedMem = (curLocalIndex >= 0) && (curLocalIndex < WIDE_MEM_TRANSACTION_SIZE * 2);
+
+		float3 neighborPos = positionCache[curIndex];
+		accumulatedDensities += calculateDensityPairwise(particlePos, neighborPos);
+	}
+
+	return accumulatedDensities;
+}
+
+float3 performNeighborSearchIterationOriginPostEdgeHandling(uint globalId, uint threadBlockId, out float3 particlePos, out uint3 originCell)
+{
+	const uint paddingSize = WIDE_MEM_TRANSACTION_SIZE / 2;
+
+	float3 accumulatedDensities = float3(0.0f, 0.0f, 0.0f);
+
+	uint threadBlockGlobalStartIndex = globalId - threadBlockId;
+	bool firstBlock = threadBlockGlobalStartIndex == 0;
+
+	int leftReadGlobalIndex = globalId - (int)paddingSize;
+	uint leftReadInBoundsGlobalIndex = (leftReadGlobalIndex < 0) ? 0 : (uint) leftReadGlobalIndex;
+
+	uint rightReadGlobalIndex = globalId + paddingSize;
+	uint rightReadInBoundsGlobalIndex = (rightReadGlobalIndex >= numParticles) ? numParticles - 1 : rightReadGlobalIndex;
+
+	float3 transferPosLeft = PredictedPositions[leftReadGlobalIndex];
+	float3 transferPosRight = PredictedPositions[rightReadGlobalIndex];
+	positionCache[threadBlockId] = transferPosLeft;
+	positionCache[threadBlockId + WIDE_MEM_TRANSACTION_SIZE] = transferPosRight;
+
+	uint paddedLocalId = threadBlockId + paddingSize;
+
+	GroupMemoryBarrierWithGroupSync();
+
+	particlePos = positionCache[paddedLocalId];
+	originCell = GetInBoundsCell(particlePos, cellSize, boundsSize);
+
+	uint key = GetKeyFromInBoundsCell(originCell, boundsSize);
+
+	uint2 keyOffset = spannedOffsets[key];
+	uint keyStartIndex = keyOffset.x;
+	uint keyEndIndex = keyOffset.y;
+
+
+	float3 neighborPos;
+	for (uint curIndex = keyStartIndex; curIndex <= keyEndIndex; curIndex++)
+	{
+		int curLocalIndex = curIndex - threadBlockGlobalStartIndex + paddingSize;
+		bool inSharedMem = (curLocalIndex >= 0) && (curLocalIndex < WIDE_MEM_TRANSACTION_SIZE * 2);
+
+		float3 neighborPos = positionCache[curIndex];
+		accumulatedDensities += calculateDensityPairwise(particlePos, neighborPos);
+	}
+
+	return accumulatedDensities;
 }
 
 float3 performNeighborSearchIterationOrigin(uint globalId, uint threadBlockId, out float3 particlePos, out uint3 originCell)
@@ -819,18 +916,18 @@ float3 performNeighborSearchIterationZYOriginNeighbor(uint globalId, uint thread
 [numthreads(WIDE_MEM_TRANSACTION_SIZE, 1, 1)]
 void Debug(uint3 globalId : SV_DispatchThreadID, uint3 threadBlockId : SV_GroupThreadID, uint3 groupID : SV_GroupID)
 {
-	//float2 expectedResult = CalculateDensitiesExperimental(globalId);
+	float2 expectedResult = CalculateDensitiesExperimental(globalId);
 
 	float3 particlePos;
 	uint3 originCell;
 	float3 actualResultFloat3 = performNeighborSearchIterationOriginPostEdgeHandling(globalId.x, threadBlockId.x, particlePos, originCell);
 	float2 actualResult = float2(actualResultFloat3.x, actualResultFloat3.y);
 
-	/*const float floatingPointPrecisionErrorAvoidanceThreshold = 0.0005;
+	const float floatingPointPrecisionErrorAvoidanceThreshold = 0.005;
 	bool failed = (abs(actualResult.x - expectedResult.x) > floatingPointPrecisionErrorAvoidanceThreshold) 
-		|| (abs(actualResult.y - expectedResult.y) > floatingPointPrecisionErrorAvoidanceThreshold);*/
+		|| (abs(actualResult.y - expectedResult.y) > floatingPointPrecisionErrorAvoidanceThreshold);
 
-	float testResultFloat = actualResult.x + actualResult.y;
+	float testResultFloat = failed;
 	DebugValues[globalId.x] = float3(testResultFloat, testResultFloat, testResultFloat);
 	//Densities[globalId.x] = actualResult;
 }
