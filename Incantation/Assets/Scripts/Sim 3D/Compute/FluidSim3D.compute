@@ -1,4 +1,4 @@
-//#pragma use_dxc
+#pragma use_dxc
 
 #pragma kernel ExternalForces
 #pragma kernel InitializeSpacialPartitionBuffers
@@ -10,6 +10,7 @@
 #pragma kernel InitOffsets
 #pragma kernel CalcOffsets
 #pragma kernel SpanOffsets
+#pragma kernel CalcBlockNeighborOffsets
 #pragma kernel Debug
 
 #define NUM_THREADS							64
@@ -40,11 +41,13 @@ RWStructuredBuffer<float2> Densities; // Density, Near Density
 
 RWStructuredBuffer<float3> DebugValues;
 
-RWStructuredBuffer<uint> keys;				//Sorted key list. Used to construct offsets.
-RWStructuredBuffer<uint> indices;			//Sorted index list. Used to construct offsets.
-RWStructuredBuffer<float3> tempBuffer;		// Used to copy values for memory coalescing
-RWStructuredBuffer<uint2> offsets;			// Holds the locations (start and end indices) where origin cell indices are located.
-RWStructuredBuffer<uint2> spannedOffsets;	// Holds the locations (start and end indices) where sets of 3 spanned adjascent neighbor indices are located
+RWStructuredBuffer<uint> keys;							//Sorted key list. Used to construct offsets.
+RWStructuredBuffer<uint> indices;						//Sorted index list. Used to construct offsets.
+RWStructuredBuffer<float3> tempBuffer;					// Used to copy values for memory coalescing
+RWStructuredBuffer<uint2> offsets;						// Holds the locations (start and end indices) where origin cell indices are located.
+RWStructuredBuffer<uint2> spannedOffsets;				// Holds the locations (start and end indices) where sets of 3 spanned adjascent neighbor indices are located
+RWStructuredBuffer<uint2> blockNeighborIndexBoundaries;	// Holds the locations (start and end indices) where sets of 3 spanned adjascent neighbor indices are located
+
 
 // Settings
 const uint numParticles;
@@ -497,6 +500,284 @@ void SpanOffsets(uint3 id : SV_DispatchThreadID)
 	spannedOffsets[index].y = endIndex;
 }
 
+groupshared uint startIndexOffsetInBlock[NEIGHBOR_SEARCH_NUM_THREADS];
+groupshared uint endIndexOffsetInBlock[NEIGHBOR_SEARCH_NUM_THREADS];
+
+[numthreads(NEIGHBOR_SEARCH_NUM_THREADS, 1, 1)]
+void CalcBlockNeighborOffsets(uint3 globalId : SV_DispatchThreadID, uint3 threadId : SV_GroupThreadID, uint3 blockId : SV_GroupID)
+{
+	uint particleId = (globalId.x >= numParticles) ? numParticles - 1 : globalId.x;
+
+	uint localId = threadId.x;
+	uint reverseLocalId = NEIGHBOR_SEARCH_NUM_THREADS - 1 - localId;
+
+	uint waveSize = WaveGetLaneCount();
+	uint reductionMax = NEIGHBOR_SEARCH_NUM_THREADS / waveSize;
+
+	uint key = keys[particleId];
+	uint3 originCell = GetCellFromInBoundsKey(key, boundsSize);
+
+	uint globalAddrStart = blockId.x * 9;
+
+	//origin cells should always be in-bounds
+	if (localId == 0)
+	{
+		blockNeighborIndexBoundaries[globalAddrStart].x = spannedOffsets[key].x;
+	}
+
+	if (localId == NEIGHBOR_SEARCH_NUM_THREADS - 1)
+	{
+		blockNeighborIndexBoundaries[globalAddrStart].y = spannedOffsets[key].y;
+	}
+
+	//For neighboring cells, determine the first and last in-bounds thread index (if it exists)
+	uint curNeighborOffsetIndex;
+	for (curNeighborOffsetIndex = 1; curNeighborOffsetIndex < 9; curNeighborOffsetIndex++)
+	{
+		//Step 1: 0 if out-of-bounds, 1 if in-bounds
+		uint blockNeighborGlobalMemAddr = globalAddrStart + curNeighborOffsetIndex;
+		int3 neighborCell = originCell + offsets3D[curNeighborOffsetIndex];
+		uint inBounds = isCellInBounds(neighborCell, boundsSize);
+		uint neighborKey = GetKeyFromInBoundsCell(neighborCell, boundsSize);
+
+		endIndexOffsetInBlock[reverseLocalId] = inBounds;
+		GroupMemoryBarrierWithGroupSync();
+
+		//Quick exit if both start and end are in-bounds
+		if ((endIndexOffsetInBlock[0] == 1) && (endIndexOffsetInBlock[NEIGHBOR_SEARCH_NUM_THREADS - 1] == 1))
+		{
+			if (0 == localId)
+			{
+				blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].x = spannedOffsets[neighborKey].x;
+			}
+
+			if (NEIGHBOR_SEARCH_NUM_THREADS - 1 == localId)
+			{
+				blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].y = spannedOffsets[neighborKey].y;
+			}
+
+			continue;
+		}
+
+		uint inBoundsReversed = endIndexOffsetInBlock[localId];
+
+		//Step 2: Inclusive Prefix Sum
+		uint startValExclPrefSum = WavePrefixSum(inBounds);
+		uint endValExclPrefSum = WavePrefixSum(inBoundsReversed);
+
+		startIndexOffsetInBlock[localId] = startValExclPrefSum;
+		endIndexOffsetInBlock[localId] = endValExclPrefSum;
+
+		uint prefSumIter;
+		for (prefSumIter = 1; prefSumIter < NEIGHBOR_SEARCH_NUM_THREADS; prefSumIter *= 2)
+		{
+			GroupMemoryBarrierWithGroupSync();
+			int pullIndex = localId - prefSumIter * waveSize;
+			if (pullIndex >= 0)
+			{
+				startValExclPrefSum += startIndexOffsetInBlock[pullIndex];
+				endValExclPrefSum += endIndexOffsetInBlock[pullIndex];
+			}
+
+			startIndexOffsetInBlock[localId] = startValExclPrefSum;
+			endIndexOffsetInBlock[localId] = endValExclPrefSum;
+		}
+
+		uint startValInclPrefSum = startValExclPrefSum + inBounds;
+		uint endValInclPrefSum = endValExclPrefSum + inBoundsReversed;
+
+		//Step 3: Map (value == 0) -> 1. If (value > 0) -> 0.
+		uint startIsZero = startValInclPrefSum == 0;
+		uint endIsZero = endValInclPrefSum == 0;
+
+		//Step 4: Reverse
+		startIndexOffsetInBlock[reverseLocalId] = startIsZero;
+		endIndexOffsetInBlock[reverseLocalId] = endIsZero;
+		GroupMemoryBarrierWithGroupSync();
+
+		uint startVal = startIndexOffsetInBlock[localId];
+		uint endVal = startIndexOffsetInBlock[localId];
+
+		//Step 5: Inclusive Prefix Sum
+		startValExclPrefSum = WavePrefixSum(startVal);
+		endValExclPrefSum = WavePrefixSum(endVal);
+
+		startIndexOffsetInBlock[localId] = startValExclPrefSum;
+		endIndexOffsetInBlock[localId] = endValExclPrefSum;
+
+		for (prefSumIter = 1; prefSumIter < reductionMax; prefSumIter *= 2)
+		{
+			GroupMemoryBarrierWithGroupSync();
+			int pullIndex = localId - prefSumIter * waveSize;
+			if (pullIndex >= 0)
+			{
+				startValExclPrefSum += startIndexOffsetInBlock[pullIndex];
+				endValExclPrefSum += endIndexOffsetInBlock[pullIndex];
+			}
+
+			startIndexOffsetInBlock[localId] = startValExclPrefSum;
+			endIndexOffsetInBlock[localId] = endValExclPrefSum;
+		}
+
+		startValInclPrefSum = startValExclPrefSum + startVal;
+		endValInclPrefSum = endValExclPrefSum + endVal;
+
+		//Step 6: The last element of each now contains the index offset from the start/end of the first in-bounds thread for the block
+		uint startIndex = startIndexOffsetInBlock[NEIGHBOR_SEARCH_NUM_THREADS - 1];
+		uint endIndex = NEIGHBOR_SEARCH_NUM_THREADS - 1 - endIndexOffsetInBlock[NEIGHBOR_SEARCH_NUM_THREADS - 1];
+
+		//Step 7: Write it to global memory if it matches current thread ID
+		if (startIndex == localId)
+		{
+			blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].x = spannedOffsets[neighborKey].x;
+		}
+
+		if (endIndex == localId)
+		{
+			blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].y = spannedOffsets[neighborKey].y;
+		}
+	}
+}
+
+[numthreads(NEIGHBOR_SEARCH_NUM_THREADS, 1, 1)]
+void CalcBlockNeighborOffsetsParallel(uint3 globalId : SV_DispatchThreadID, uint3 threadId : SV_GroupThreadID, uint3 blockId : SV_GroupID)
+{
+	uint numParticlesAlignedToThreadBlockSize = ceil(numParticles / NEIGHBOR_SEARCH_NUM_THREADS) * NEIGHBOR_SEARCH_NUM_THREADS;
+
+	uint neighborId = globalId / numParticlesAlignedToThreadBlockSize;
+	uint particleId = globalId % numParticlesAlignedToThreadBlockSize;
+	bool excessThread = (particleId > numParticles);
+	particleId = excessThread ? numParticles - 1 : particleId;
+
+	uint localId = threadId.x;
+	uint blockNeighborGlobalMemIndex = blockId.x * 9 + neighborId;
+
+	uint key = keys[particleId];
+
+	//origin cells should always be in-bounds
+	if (neighborId == 0)
+	{
+		if (localId == 0)
+		{
+			blockNeighborIndexBoundaries[blockNeighborGlobalMemIndex].x = spannedOffsets[key].x;
+		}
+
+		if (localId == NEIGHBOR_SEARCH_NUM_THREADS - 1)
+		{
+			blockNeighborIndexBoundaries[blockNeighborGlobalMemIndex].y = spannedOffsets[key].y;
+		}
+	}
+	//For neighboring cells, determine the first and last in-bounds thread index (if it exists)
+	else
+	{
+		uint reverseLocalId = NEIGHBOR_SEARCH_NUM_THREADS - 1 - localId;
+		uint waveSize = WaveGetLaneCount();
+		uint reductionMax = NEIGHBOR_SEARCH_NUM_THREADS / waveSize;
+
+		//Step 1: 0 if out-of-bounds, 1 if in-bounds
+		uint3 originCell = GetCellFromInBoundsKey(key, boundsSize);
+		int3 neighborCell = originCell + offsets3D[neighborId];
+		uint inBounds = isCellInBounds(neighborCell, boundsSize);
+		uint neighborKey = GetKeyFromInBoundsCell(neighborCell, boundsSize);
+
+		endIndexOffsetInBlock[reverseLocalId] = inBounds;
+		GroupMemoryBarrierWithGroupSync();
+
+		//Quick exit check: Start and end of block are both in-bounds
+		if ((endIndexOffsetInBlock[0] == 1) && (endIndexOffsetInBlock[NEIGHBOR_SEARCH_NUM_THREADS - 1] == 1))
+		{
+			if (localId == 0)
+			{
+				blockNeighborIndexBoundaries[blockNeighborGlobalMemIndex].x = spannedOffsets[neighborKey].x;
+			}
+
+			if (localId == NEIGHBOR_SEARCH_NUM_THREADS - 1)
+			{
+				blockNeighborIndexBoundaries[blockNeighborGlobalMemIndex].y = spannedOffsets[neighborKey].y;
+			}
+
+			return;
+		}
+
+		uint inBoundsReversed = endIndexOffsetInBlock[localId];
+
+		//Step 2: Inclusive Prefix Sum
+		uint startValExclPrefSum = WavePrefixSum(inBounds);
+		uint endValExclPrefSum = WavePrefixSum(inBoundsReversed);
+
+		startIndexOffsetInBlock[localId] = startValExclPrefSum;
+		endIndexOffsetInBlock[localId] = endValExclPrefSum;
+
+		uint prefSumIter;
+		for (prefSumIter = 1; prefSumIter < NEIGHBOR_SEARCH_NUM_THREADS; prefSumIter *= 2)
+		{
+			GroupMemoryBarrierWithGroupSync();
+			int pullIndex = localId - prefSumIter * waveSize;
+			if (pullIndex >= 0)
+			{
+				startValExclPrefSum += startIndexOffsetInBlock[pullIndex];
+				endValExclPrefSum += endIndexOffsetInBlock[pullIndex];
+			}
+
+			startIndexOffsetInBlock[localId] = startValExclPrefSum;
+			endIndexOffsetInBlock[localId] = endValExclPrefSum;
+		}
+
+		uint startValInclPrefSum = startValExclPrefSum + inBounds;
+		uint endValInclPrefSum = endValExclPrefSum + inBoundsReversed;
+
+		//Step 3: Map (value == 0) -> 1. If (value > 0) -> 0.
+		uint startIsZero = startValInclPrefSum == 0;
+		uint endIsZero = endValInclPrefSum == 0;
+
+		//Step 4: Reverse
+		startIndexOffsetInBlock[reverseLocalId] = startIsZero;
+		endIndexOffsetInBlock[reverseLocalId] = endIsZero;
+		GroupMemoryBarrierWithGroupSync();
+
+		uint startVal = startIndexOffsetInBlock[localId];
+		uint endVal = startIndexOffsetInBlock[localId];
+
+		//Step 5: Inclusive Prefix Sum
+		startValExclPrefSum = WavePrefixSum(startVal);
+		endValExclPrefSum = WavePrefixSum(endVal);
+
+		startIndexOffsetInBlock[localId] = startValExclPrefSum;
+		endIndexOffsetInBlock[localId] = endValExclPrefSum;
+
+		for (prefSumIter = 1; prefSumIter < reductionMax; prefSumIter *= 2)
+		{
+			GroupMemoryBarrierWithGroupSync();
+			int pullIndex = localId - prefSumIter * waveSize;
+			if (pullIndex >= 0)
+			{
+				startValExclPrefSum += startIndexOffsetInBlock[pullIndex];
+				endValExclPrefSum += endIndexOffsetInBlock[pullIndex];
+			}
+
+			startIndexOffsetInBlock[localId] = startValExclPrefSum;
+			endIndexOffsetInBlock[localId] = endValExclPrefSum;
+		}
+
+		startValInclPrefSum = startValExclPrefSum + startVal;
+		endValInclPrefSum = endValExclPrefSum + endVal;
+
+		//Step 6: The last element of each now contains the index offset from the start/end of the first in-bounds thread for the block
+		uint startIndex = startIndexOffsetInBlock[NEIGHBOR_SEARCH_NUM_THREADS - 1];
+		uint endIndex = NEIGHBOR_SEARCH_NUM_THREADS - 1 - endIndexOffsetInBlock[NEIGHBOR_SEARCH_NUM_THREADS - 1];
+
+		if (localId == startIndex)
+		{
+			blockNeighborIndexBoundaries[blockNeighborGlobalMemIndex].x = spannedOffsets[neighborKey].x;
+		}
+
+		if (localId == endIndex)
+		{
+			blockNeighborIndexBoundaries[blockNeighborGlobalMemIndex].y = spannedOffsets[neighborKey].y;
+		}
+	}
+}
+
 float2 CalculateDensitiesExperimental(uint3 id)
 {
 	if (id.x >= numParticles) return float2(-1, -1);
@@ -508,7 +789,7 @@ float2 CalculateDensitiesExperimental(uint3 id)
 	float nearDensity = 0;
 
 	// Neighbour search
-	for (int i = 0; i < 0; i++)
+	for (int i = 0; i < 1; i++)
 	{
 		int3 neighborOriginCell = originCell + offsets3D[i];
 		bool neighborInBounds = isCellInBounds(neighborOriginCell, boundsSize);
@@ -850,14 +1131,16 @@ float3 performNeighborSearchIterationOriginPostEdgeHandling(uint globalId, uint 
 	uint keyStartIndex = keyOffset.x;
 	uint keyEndIndex = keyOffset.y;
 
+	int globalOffsets = -1 * (int) threadBlockGlobalStartIndex + paddingSize;
+	uint localKeyStartIndex = keyStartIndex + globalOffsets;
+	uint localKeyEndIndex = keyEndIndex + globalOffsets;
+	uint iterations = localKeyEndIndex - localKeyStartIndex + 1;
 
-	float3 neighborPos;
-	for (uint curIndex = keyStartIndex; curIndex <= keyEndIndex; curIndex++)
+	for (uint curLocalIndex = localKeyStartIndex; curLocalIndex <= localKeyEndIndex; curLocalIndex++)
 	{
-		int curLocalIndex = curIndex - threadBlockGlobalStartIndex + paddingSize;
-		bool inSharedMem = (curLocalIndex >= 0) && (curLocalIndex < WIDE_MEM_TRANSACTION_SIZE * 2);
+		//bool inSharedMem = (curLocalIndex >= 0) && (curLocalIndex < WIDE_MEM_TRANSACTION_SIZE * 2);
 
-		float3 neighborPos = positionCache[curIndex];
+		float3 neighborPos = positionCache[curLocalIndex];
 		accumulatedDensities += calculateDensityPairwise(particlePos, neighborPos);
 	}
 
@@ -910,22 +1193,42 @@ float3 performNeighborSearchIterationOrigin(uint globalId, uint threadBlockId, o
 float3 performNeighborSearchIterationZYOriginNeighbor(uint globalId, uint threadBlockId, float3 particlePos,
 	uint3 originCell, int3 curIterationCellOffset)
 {
-	
+	return float3(0, 0, 0);
 }
 
-[numthreads(WIDE_MEM_TRANSACTION_SIZE, 1, 1)]
+[numthreads(NEIGHBOR_SEARCH_NUM_THREADS, 1, 1)]
 void Debug(uint3 globalId : SV_DispatchThreadID, uint3 threadBlockId : SV_GroupThreadID, uint3 groupID : SV_GroupID)
 {
-	float2 expectedResult = CalculateDensitiesExperimental(globalId);
+	if (globalId.x >= numParticles) return;
+	/*float2 expectedResult = CalculateDensitiesExperimental(globalId);
 
 	float3 particlePos;
 	uint3 originCell;
 	float3 actualResultFloat3 = performNeighborSearchIterationOriginPostEdgeHandling(globalId.x, threadBlockId.x, particlePos, originCell);
 	float2 actualResult = float2(actualResultFloat3.x, actualResultFloat3.y);
 
-	const float floatingPointPrecisionErrorAvoidanceThreshold = 0.005;
+	const float floatingPointPrecisionErrorAvoidanceThreshold = 0.0005;
 	bool failed = (abs(actualResult.x - expectedResult.x) > floatingPointPrecisionErrorAvoidanceThreshold) 
-		|| (abs(actualResult.y - expectedResult.y) > floatingPointPrecisionErrorAvoidanceThreshold);
+		|| (abs(actualResult.y - expectedResult.y) > floatingPointPrecisionErrorAvoidanceThreshold);*/
+
+	float3 pos = PredictedPositions[globalId.x];
+	uint3 origin = GetInBoundsCell(pos, cellSize, boundsSize);
+
+	bool failed = false;
+	for (int i = 0; i < 9; i++)
+	{
+		int3 neighborOriginCell = origin + offsets3D[i];
+		bool neighborInBounds = isCellInBounds(neighborOriginCell, boundsSize);
+
+		if (!neighborInBounds) continue;
+
+		uint key = GetKeyFromInBoundsCell(neighborOriginCell, boundsSize);
+		uint2 spannedOffset = spannedOffsets[key];
+
+		uint2 blockThingy = blockNeighborIndexBoundaries[9 * groupID.x + i];
+		bool myBoundsInBlockBounds = ((blockThingy.x <= spannedOffset.x) && (blockThingy.y >= spannedOffset.y));
+		failed = failed || !myBoundsInBlockBounds;
+	}
 
 	float testResultFloat = failed;
 	DebugValues[globalId.x] = float3(testResultFloat, testResultFloat, testResultFloat);

@@ -62,6 +62,11 @@ public class Simulation3D : MonoBehaviour
     //Offsets into the array for neighbor lists aligned along the one dimension. Stores the start and end indices.
     public ComputeBuffer spannedOffsets;
 
+    //Defines the start and end indices into the particle array for a given neighbor search thread block
+    //Holds uint2 for start and end index of the neighbor lists for the current thread block and neighbor offset index.
+    //Number of elements is (number of thread blocks required to do neighbor search) * 9 neighbor offset indices for x-smooshed sequences of particles.
+    public ComputeBuffer blockNeighborIndexBoundaries;
+
     // Kernel Names and IDs
     private const string externalForcesKernel = "ExternalForces";
     private const string initializeSpacialPartitionBuffers = "InitializeSpacialPartitionBuffers";
@@ -69,14 +74,15 @@ public class Simulation3D : MonoBehaviour
     private const string initalizeOffsetsKernel = "InitOffsets";
     private const string calculateOffsetsKernel = "CalcOffsets";
     private const string spanOffsetsKernel = "SpanOffsets";
+    private const string calcBlockNeighborOffsetsKernel = "CalcBlockNeighborOffsets";
     private const string densityKernel = "CalculateDensities";
     private const string pressureKernel = "CalculatePressureForce";
     private const string viscosityKernel = "CalculateViscosity";
-    private const string updatePositionsKernel = "UpdatePositions";
+    private const string updatePositionsKernel = "UpdatePositions"; 
     private const string debugKernel = "Debug";
     private string[] kernelNames = { externalForcesKernel, initializeSpacialPartitionBuffers,
-        copyBufferKernel, initalizeOffsetsKernel, calculateOffsetsKernel,spanOffsetsKernel, densityKernel,
-            pressureKernel, viscosityKernel, updatePositionsKernel };
+        copyBufferKernel, initalizeOffsetsKernel, calculateOffsetsKernel,spanOffsetsKernel, calcBlockNeighborOffsetsKernel, 
+        densityKernel, pressureKernel, viscosityKernel, updatePositionsKernel };
     private Dictionary<string, int> kernelNameToId = new();
 
     // Constants for copying data
@@ -89,7 +95,8 @@ public class Simulation3D : MonoBehaviour
     bool isPaused;
     bool pauseNextFrame;
     Spawner3D.SpawnData spawnData;
-    public SimulationBounds simBounds;
+    SimulationBounds simBounds;
+    int twoDParallelizedIterationNum;
 
     void Start()
     {
@@ -110,6 +117,9 @@ public class Simulation3D : MonoBehaviour
         int numParticles = spawnData.points.Length;
         this.simBounds = new SimulationBounds(this.transform, Mathf.Max(this.gridCellSize, this.smoothingRadius));
         int numCells = (int)this.simBounds.getCellTotal();
+        int neighborSearchThreadBlockSize = ComputeHelper.GetThreadGroupSizes(compute, kernelNameToId[calcBlockNeighborOffsetsKernel]).x;
+        int numNeighborSearchThreadBlocks = Mathf.CeilToInt(numParticles / (float)neighborSearchThreadBlockSize);
+        twoDParallelizedIterationNum = numNeighborSearchThreadBlocks * neighborSearchThreadBlockSize * 9;
 
         // Create buffers
         positionBuffer = ComputeHelper.CreateStructuredBuffer<float3>(numParticles);
@@ -123,6 +133,7 @@ public class Simulation3D : MonoBehaviour
         tempBuffer = ComputeHelper.CreateStructuredBuffer<float3>(numParticles);
         offsets = ComputeHelper.CreateStructuredBuffer<uint2>(numCells);
         spannedOffsets = ComputeHelper.CreateStructuredBuffer<uint2>(numCells);
+        blockNeighborIndexBoundaries = ComputeHelper.CreateStructuredBuffer<uint2>(numNeighborSearchThreadBlocks * 9);
 
         if (DEBUG_MODE)
         {
@@ -137,11 +148,12 @@ public class Simulation3D : MonoBehaviour
         ComputeHelper.SetBuffer(compute, predictedPositionsBuffer, "PredictedPositions", kernelNameToId[externalForcesKernel], kernelNameToId[initializeSpacialPartitionBuffers], kernelNameToId[copyBufferKernel], kernelNameToId[densityKernel], kernelNameToId[pressureKernel], kernelNameToId[viscosityKernel], kernelNameToId[updatePositionsKernel]);
         ComputeHelper.SetBuffer(compute, densityBuffer, "Densities", kernelNameToId[densityKernel], kernelNameToId[pressureKernel], kernelNameToId[viscosityKernel], kernelNameToId[copyBufferKernel]);
         ComputeHelper.SetBuffer(compute, velocityBuffer, "Velocities", kernelNameToId[externalForcesKernel], kernelNameToId[pressureKernel], kernelNameToId[viscosityKernel], kernelNameToId[updatePositionsKernel], kernelNameToId[copyBufferKernel]);
-        ComputeHelper.SetBuffer(compute, spacialPart1, "keys", kernelNameToId[initializeSpacialPartitionBuffers], kernelNameToId[calculateOffsetsKernel]);
+        ComputeHelper.SetBuffer(compute, spacialPart1, "keys", kernelNameToId[initializeSpacialPartitionBuffers], kernelNameToId[calculateOffsetsKernel], kernelNameToId[calcBlockNeighborOffsetsKernel]);
         ComputeHelper.SetBuffer(compute, spacialPart2, "indices", kernelNameToId[initializeSpacialPartitionBuffers], kernelNameToId[copyBufferKernel]);
         ComputeHelper.SetBuffer(compute, tempBuffer, "tempBuffer", kernelNameToId[copyBufferKernel]);
         ComputeHelper.SetBuffer(compute, offsets, "offsets", kernelNameToId[initalizeOffsetsKernel], kernelNameToId[calculateOffsetsKernel], kernelNameToId[spanOffsetsKernel]);
-        ComputeHelper.SetBuffer(compute, spannedOffsets, "spannedOffsets", kernelNameToId[spanOffsetsKernel], kernelNameToId[densityKernel], kernelNameToId[pressureKernel], kernelNameToId[viscosityKernel]);
+        ComputeHelper.SetBuffer(compute, spannedOffsets, "spannedOffsets", kernelNameToId[spanOffsetsKernel], kernelNameToId[calcBlockNeighborOffsetsKernel], kernelNameToId[densityKernel], kernelNameToId[pressureKernel], kernelNameToId[viscosityKernel]);
+        ComputeHelper.SetBuffer(compute, blockNeighborIndexBoundaries, "blockNeighborIndexBoundaries", kernelNameToId[calcBlockNeighborOffsetsKernel]);
 
         if (DEBUG_MODE)
         {
@@ -154,6 +166,8 @@ public class Simulation3D : MonoBehaviour
             ComputeHelper.SetBuffer(compute, tempBuffer, "tempBuffer", kernelNameToId[debugKernel]);
             ComputeHelper.SetBuffer(compute, offsets, "offsets", kernelNameToId[debugKernel]);
             ComputeHelper.SetBuffer(compute, spannedOffsets, "spannedOffsets", kernelNameToId[debugKernel]);
+            ComputeHelper.SetBuffer(compute, blockNeighborIndexBoundaries, "blockNeighborIndexBoundaries", kernelNameToId[debugKernel]);
+
 
             ComputeHelper.SetBuffer(compute, debugBuffer, "DebugValues", kernelNameToId[debugKernel]);
         }
@@ -266,6 +280,7 @@ public class Simulation3D : MonoBehaviour
         ComputeHelper.Dispatch(compute, offsets.count, kernelIndex: kernelNameToId[initalizeOffsetsKernel]);
         ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: kernelNameToId[calculateOffsetsKernel]);
         ComputeHelper.Dispatch(compute, offsets.count, kernelIndex: kernelNameToId[spanOffsetsKernel]);
+        ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: kernelNameToId[calcBlockNeighborOffsetsKernel]);
 
         // SPH core functions
         ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: kernelNameToId[densityKernel]);

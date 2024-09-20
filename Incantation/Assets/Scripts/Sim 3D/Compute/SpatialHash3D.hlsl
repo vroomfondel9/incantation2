@@ -64,3 +64,16 @@ uint GetKeyFromInBoundsCell(uint3 cell, uint3 boundsSize)
 		+ (boundsSize.x * cell.y) 
 		+ cell.x;
 }
+
+uint3 GetCellFromInBoundsKey(uint key, uint3 boundsSize)
+{
+	uint zDiv = boundsSize.x * boundsSize.y;
+	uint yDiv = boundsSize.x;
+
+	uint z = key / zDiv;
+	key -= z * zDiv;
+	uint y = key / yDiv;
+	uint x = key - y * yDiv;
+
+	return uint3(x, y, z);
+}
