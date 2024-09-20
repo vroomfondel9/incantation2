@@ -511,12 +511,14 @@ void CalcBlockNeighborOffsets(uint3 globalId : SV_DispatchThreadID, uint3 thread
 {
 	uint particleId = (globalId.x >= numParticles) ? numParticles - 1 : globalId.x;
 	uint localId = threadId.x;
+	uint globalAddrStart = blockId.x * 9;
 
 	uint waveSize = WaveGetLaneCount();
 	uint reductionMax = NEIGHBOR_SEARCH_NUM_THREADS / waveSize;
 
 	uint key = keys[particleId];
 	uint3 originCell = GetCellFromInBoundsKey(key, boundsSize);
+
 	//The third element indicates if we're in-bounds and non-empty. The fourth is the key for this neighbor.
 	uint4 spannedOffsetAllNeighbors[8];
 
@@ -544,8 +546,6 @@ void CalcBlockNeighborOffsets(uint3 globalId : SV_DispatchThreadID, uint3 thread
 			spannedOffsetAllNeighbors[populateIndex].y = spannedOff.y;
 		}
 	}
-
-	uint globalAddrStart = blockId.x * 9;
 
 	//origin cells should always be in-bounds
 	if (localId == 0)
@@ -587,12 +587,12 @@ void CalcBlockNeighborOffsets(uint3 globalId : SV_DispatchThreadID, uint3 thread
 		{
 			if (localId == shortCircuitMin)
 			{
-				blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].x = spannedOffsets[neighborKey].x;
+				blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].x = curSpannedOffset.x;
 			}
 
 			if (localId == shortCircuitMax)
 			{
-				blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].y = spannedOffsets[neighborKey].y;
+				blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].y = curSpannedOffset.y;
 			}
 
 			continue;
@@ -632,12 +632,12 @@ void CalcBlockNeighborOffsets(uint3 globalId : SV_DispatchThreadID, uint3 thread
 
 		if (localId == blockMin)
 		{
-			blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].x = spannedOffsets[neighborKey].x;
+			blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].x = curSpannedOffset.x;
 		}
 
 		if (localId == blockMax)
 		{
-			blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].y = spannedOffsets[neighborKey].y;
+			blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].y = curSpannedOffset.y;
 		}
 
 		if ((blockMin == NEIGHBOR_SEARCH_NUM_THREADS) && (localId == 0))
