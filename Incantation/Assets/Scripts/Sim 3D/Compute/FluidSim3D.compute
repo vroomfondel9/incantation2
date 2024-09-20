@@ -501,10 +501,265 @@ void SpanOffsets(uint3 id : SV_DispatchThreadID)
 }
 
 groupshared uint startIndexOffsetInBlock[NEIGHBOR_SEARCH_NUM_THREADS];
-groupshared uint endIndexOffsetInBlock[NEIGHBOR_SEARCH_NUM_THREADS];
+groupshared int endIndexOffsetInBlock[NEIGHBOR_SEARCH_NUM_THREADS];
+
+groupshared int minStartIndex[NEIGHBOR_SEARCH_NUM_THREADS];
+groupshared int maxEndIndex[NEIGHBOR_SEARCH_NUM_THREADS];
 
 [numthreads(NEIGHBOR_SEARCH_NUM_THREADS, 1, 1)]
 void CalcBlockNeighborOffsets(uint3 globalId : SV_DispatchThreadID, uint3 threadId : SV_GroupThreadID, uint3 blockId : SV_GroupID)
+{
+	uint particleId = (globalId.x >= numParticles) ? numParticles - 1 : globalId.x;
+	uint localId = threadId.x;
+
+	uint waveSize = WaveGetLaneCount();
+	uint reductionMax = NEIGHBOR_SEARCH_NUM_THREADS / waveSize;
+
+	uint key = keys[particleId];
+	uint3 originCell = GetCellFromInBoundsKey(key, boundsSize);
+	//The third element indicates if we're in-bounds and non-empty. The fourth is the key for this neighbor.
+	uint4 spannedOffsetAllNeighbors[8];
+
+	[unroll]
+	for (uint initIndex = 0; initIndex < 8; initIndex++)
+	{
+		spannedOffsetAllNeighbors[initIndex].x = numParticles + 1;
+		spannedOffsetAllNeighbors[initIndex].y = numParticles;
+
+		int3 neighborCell = originCell + offsets3D[initIndex];
+		uint inBounds = isCellInBounds(neighborCell, boundsSize);
+		uint neighborKey = GetKeyFromInBoundsCell(neighborCell, boundsSize);
+
+		spannedOffsetAllNeighbors[initIndex].z = neighborKey;
+		spannedOffsetAllNeighbors[initIndex].w = inBounds;
+	}
+
+	[unroll]
+	for (uint populateIndex = 0; populateIndex < 8; populateIndex++)
+	{
+		if (spannedOffsetAllNeighbors[populateIndex].w > 0)
+		{
+			uint2 spannedOff = spannedOffsets[spannedOffsetAllNeighbors[populateIndex].z];
+			spannedOffsetAllNeighbors[populateIndex].x = spannedOff.x;
+			spannedOffsetAllNeighbors[populateIndex].y = spannedOff.y;
+		}
+	}
+
+	uint globalAddrStart = blockId.x * 9;
+
+	//origin cells should always be in-bounds
+	if (localId == 0)
+	{
+		blockNeighborIndexBoundaries[globalAddrStart].x = spannedOffsets[key].x;
+	}
+
+	if (localId == NEIGHBOR_SEARCH_NUM_THREADS - 1)
+	{
+		blockNeighborIndexBoundaries[globalAddrStart].y = spannedOffsets[key].y;
+	}
+
+	//For neighboring cells, determine the first and last in-bounds thread index (if it exists)
+	[unroll]
+	for (uint curNeighborOffsetIndex = 1; curNeighborOffsetIndex < 9; curNeighborOffsetIndex++)
+	{
+		//Step 1: 0 if out-of-bounds, 1 if in-bounds
+		uint blockNeighborGlobalMemAddr = globalAddrStart + curNeighborOffsetIndex;
+		uint4 curSpannedOffset = spannedOffsetAllNeighbors[curNeighborOffsetIndex - 1];
+
+		uint neighborKey = curSpannedOffset.z;
+		uint inBounds = curSpannedOffset.w;
+		uint isEmpty = (curSpannedOffset.y - curSpannedOffset.x + 1) > 0;
+		uint nonEmptyInBounds = inBounds * isEmpty;
+
+		//Must do max and min index search within thread
+		int realignedStart = nonEmptyInBounds * localId + !nonEmptyInBounds * NEIGHBOR_SEARCH_NUM_THREADS;
+		int realignedEnd = nonEmptyInBounds * localId + !nonEmptyInBounds * -1;
+
+		minStartIndex[localId] = realignedStart;
+		maxEndIndex[localId] = realignedEnd;
+		GroupMemoryBarrierWithGroupSync();
+
+		//Short circuit for the fully-filled case
+		int shortCircuitMin = minStartIndex[0];
+		int shortCircuitMax = maxEndIndex[NEIGHBOR_SEARCH_NUM_THREADS - 1];
+
+		if ((shortCircuitMin < NEIGHBOR_SEARCH_NUM_THREADS) && (shortCircuitMax > -1))
+		{
+			if (localId == shortCircuitMin)
+			{
+				blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].x = spannedOffsets[neighborKey].x;
+			}
+
+			if (localId == shortCircuitMax)
+			{
+				blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].y = spannedOffsets[neighborKey].y;
+			}
+
+			continue;
+		}
+
+		//Must do max and min index search within thread
+		int curMin = WaveActiveMin(realignedStart);
+		int curMax = WaveActiveMax(realignedEnd);
+
+		//Step 2: Perform Prefix 
+		for (uint prefIter = 1; prefIter < reductionMax; prefIter *= 2)
+		{
+			minStartIndex[localId] = curMin;
+			maxEndIndex[localId] = curMax;
+
+			int pullIndex = localId - prefIter * waveSize;
+			bool shouldPull = pullIndex >= 0;
+
+			GroupMemoryBarrierWithGroupSync();
+
+			int otherMinValue = shouldPull ? minStartIndex[pullIndex] : NEIGHBOR_SEARCH_NUM_THREADS;
+			int otherMaxValue = shouldPull ? maxEndIndex[pullIndex] : -1;
+
+			curMin = min(curMin, otherMinValue);
+			curMax = max(curMax, otherMaxValue);
+
+			GroupMemoryBarrierWithGroupSync();
+		}
+
+		minStartIndex[localId] = curMin;
+		maxEndIndex[localId] = curMax;
+
+		GroupMemoryBarrierWithGroupSync();
+
+		uint blockMin = minStartIndex[NEIGHBOR_SEARCH_NUM_THREADS - 1];
+		uint blockMax = maxEndIndex[NEIGHBOR_SEARCH_NUM_THREADS - 1];
+
+		if (localId == blockMin)
+		{
+			blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].x = spannedOffsets[neighborKey].x;
+		}
+
+		if (localId == blockMax)
+		{
+			blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].y = spannedOffsets[neighborKey].y;
+		}
+
+		if ((blockMin == NEIGHBOR_SEARCH_NUM_THREADS) && (localId == 0))
+		{
+			blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr] = uint2(numParticles + 1, numParticles);
+		}
+	}
+}
+
+[numthreads(NEIGHBOR_SEARCH_NUM_THREADS, 1, 1)]
+void CalcBlockNeighborOffsetsDoesntCheckEmpty(uint3 globalId : SV_DispatchThreadID, uint3 threadId : SV_GroupThreadID, uint3 blockId : SV_GroupID)
+{
+	uint particleId = (globalId.x >= numParticles) ? numParticles - 1 : globalId.x;
+	uint localId = threadId.x;
+
+	uint waveSize = WaveGetLaneCount();
+	uint reductionMax = NEIGHBOR_SEARCH_NUM_THREADS / waveSize;
+
+	uint key = keys[particleId];
+	uint3 originCell = GetCellFromInBoundsKey(key, boundsSize);
+
+	uint globalAddrStart = blockId.x * 9;
+
+	//origin cells should always be in-bounds
+	if (localId == 0)
+	{
+		blockNeighborIndexBoundaries[globalAddrStart].x = spannedOffsets[key].x;
+	}
+
+	if (localId == NEIGHBOR_SEARCH_NUM_THREADS - 1)
+	{
+		blockNeighborIndexBoundaries[globalAddrStart].y = spannedOffsets[key].y;
+	}
+
+	//For neighboring cells, determine the first and last in-bounds thread index (if it exists)
+	[unroll]
+	for (uint curNeighborOffsetIndex = 1; curNeighborOffsetIndex < 9; curNeighborOffsetIndex++)
+	{
+		//Step 1: 0 if out-of-bounds, 1 if in-bounds
+		uint blockNeighborGlobalMemAddr = globalAddrStart + curNeighborOffsetIndex;
+		int3 neighborCell = originCell + offsets3D[curNeighborOffsetIndex];
+		uint inBounds = isCellInBounds(neighborCell, boundsSize);
+		uint neighborKey = GetKeyFromInBoundsCell(neighborCell, boundsSize);
+
+		//Must do max and min index search within thread
+		int realignedStart = inBounds * localId + !inBounds * NEIGHBOR_SEARCH_NUM_THREADS;
+		int realignedEnd = inBounds * localId + !inBounds * -1;
+
+		minStartIndex[localId] = realignedStart;
+		maxEndIndex[localId] = realignedEnd;
+		GroupMemoryBarrierWithGroupSync();
+
+		//Short circuit for the fully-filled case
+		int shortCircuitMin = minStartIndex[0];
+		int shortCircuitMax = maxEndIndex[NEIGHBOR_SEARCH_NUM_THREADS - 1];
+
+		if ((shortCircuitMin < NEIGHBOR_SEARCH_NUM_THREADS) && (shortCircuitMax > -1))
+		{
+			if (localId == shortCircuitMin)
+			{
+				blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].x = spannedOffsets[neighborKey].x;
+			}
+
+			if (localId == shortCircuitMax)
+			{
+				blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].y = spannedOffsets[neighborKey].y;
+			}
+
+			continue;
+		}
+
+		//Must do max and min index search within thread
+		int curMin = WaveActiveMin(realignedStart);
+		int curMax = WaveActiveMax(realignedEnd);
+
+		//Step 2: Perform Prefix 
+		for (uint prefIter = 1; prefIter < reductionMax; prefIter *= 2)
+		{
+			minStartIndex[localId] = curMin;
+			maxEndIndex[localId] = curMax;
+
+			int pullIndex = localId - prefIter * waveSize;
+			bool shouldPull = pullIndex >= 0;
+
+			GroupMemoryBarrierWithGroupSync();
+
+			int otherMinValue = shouldPull ? minStartIndex[pullIndex] : NEIGHBOR_SEARCH_NUM_THREADS;
+			int otherMaxValue = shouldPull ? maxEndIndex[pullIndex] : -1;
+
+			curMin = min(curMin, otherMinValue);
+			curMax = max(curMax, otherMaxValue);
+
+			GroupMemoryBarrierWithGroupSync();
+		}
+
+		minStartIndex[localId] = curMin;
+		maxEndIndex[localId] = curMax;
+
+		GroupMemoryBarrierWithGroupSync();
+
+		uint blockMin = minStartIndex[NEIGHBOR_SEARCH_NUM_THREADS - 1];
+		uint blockMax = maxEndIndex[NEIGHBOR_SEARCH_NUM_THREADS - 1];
+
+		if (localId == blockMin)
+		{
+			blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].x = spannedOffsets[neighborKey].x;
+		}
+
+		if (localId == blockMax)
+		{
+			blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].y = spannedOffsets[neighborKey].y;
+		}
+
+		if ((blockMin == NEIGHBOR_SEARCH_NUM_THREADS) && (localId == 0))
+		{
+			blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr] = uint2(numParticles + 1, numParticles);
+		}
+	}
+}
+
+[numthreads(NEIGHBOR_SEARCH_NUM_THREADS, 1, 1)]
+void CalcBlockNeighborOffsetsSlower(uint3 globalId : SV_DispatchThreadID, uint3 threadId : SV_GroupThreadID, uint3 blockId : SV_GroupID)
 {
 	uint particleId = (globalId.x >= numParticles) ? numParticles - 1 : globalId.x;
 
@@ -1214,19 +1469,64 @@ void Debug(uint3 globalId : SV_DispatchThreadID, uint3 threadBlockId : SV_GroupT
 	float3 pos = PredictedPositions[globalId.x];
 	uint3 origin = GetInBoundsCell(pos, cellSize, boundsSize);
 
+	float3 prevPos = PredictedPositions[globalId.x-1 > 0 ? globalId.x - 1 : 0];
+	uint3 prevOrigin = GetInBoundsCell(prevPos, cellSize, boundsSize);
+
+	uint blockStart = globalId.x - threadBlockId.x;
+	uint blockEnd = blockStart + NEIGHBOR_SEARCH_NUM_THREADS - 1;
+
+	float3 firstPos = PredictedPositions[blockStart];
+	uint3 firstOrigin = GetInBoundsCell(firstPos, cellSize, boundsSize);
+
+	float3 lastPos = PredictedPositions[blockEnd];
+	uint3 lastOrigin = GetInBoundsCell(lastPos, cellSize, boundsSize);
+
 	bool failed = false;
-	for (int i = 0; i < 9; i++)
+	for (int i = 4; i < 5; i++)
 	{
 		int3 neighborOriginCell = origin + offsets3D[i];
 		bool neighborInBounds = isCellInBounds(neighborOriginCell, boundsSize);
 
+		//int3 prevNeighborOriginCell = prevOrigin + offsets3D[i];
+		//bool prevNeighborInBounds = isCellInBounds(prevNeighborOriginCell, boundsSize);
+
+		int3 firstNeighborOriginCell = firstOrigin + offsets3D[i];
+		bool firstNeighborInBounds = isCellInBounds(firstNeighborOriginCell, boundsSize);
+
+		int3 lastNeighborOriginCell = lastOrigin + offsets3D[i];
+		bool lastNeighborInBounds = isCellInBounds(lastNeighborOriginCell, boundsSize);
+
 		if (!neighborInBounds) continue;
+		//if (!prevNeighborInBounds) continue;
+		if ((!firstNeighborInBounds) || (!lastNeighborInBounds)) continue;
 
 		uint key = GetKeyFromInBoundsCell(neighborOriginCell, boundsSize);
 		uint2 spannedOffset = spannedOffsets[key];
 
+		//uint prevKey = GetKeyFromInBoundsCell(prevNeighborOriginCell, boundsSize);
+		//uint2 prevSpannedOffset = spannedOffsets[prevKey];
+
+		uint firstKey = GetKeyFromInBoundsCell(firstNeighborOriginCell, boundsSize);
+		uint2 firstSpannedOffset = spannedOffsets[firstKey];
+
+		uint lastKey = GetKeyFromInBoundsCell(lastNeighborOriginCell, boundsSize);
+		uint2 lastSpannedOffset = spannedOffsets[lastKey];
+
+		if ((spannedOffset.x == numParticles + 1) && (spannedOffset.y == numParticles)) continue;
+		//if ((prevSpannedOffset.x == numParticles + 1) && (prevSpannedOffset.y == numParticles)) continue;
+		//if ((firstSpannedOffset.x == numParticles + 1) && (firstSpannedOffset.y == numParticles)) continue;
+		//if ((lastSpannedOffset.x == numParticles + 1) && (lastSpannedOffset.y == numParticles)) continue;
+
+		//All failures go away if I uncomment out the line checking if firstSpannedOffset is empty.
+
+
 		uint2 blockThingy = blockNeighborIndexBoundaries[9 * groupID.x + i];
 		bool myBoundsInBlockBounds = ((blockThingy.x <= spannedOffset.x) && (blockThingy.y >= spannedOffset.y));
+		
+		bool firstIsLesser = ((firstSpannedOffset.x <= lastSpannedOffset.x) && (firstSpannedOffset.y <= lastSpannedOffset.y));
+
+		bool failuresDueToWeirdness = !myBoundsInBlockBounds && !firstIsLesser;
+		bool failuresNotDueToWeirdness = !myBoundsInBlockBounds && !failuresDueToWeirdness;
 		failed = failed || !myBoundsInBlockBounds;
 	}
 
