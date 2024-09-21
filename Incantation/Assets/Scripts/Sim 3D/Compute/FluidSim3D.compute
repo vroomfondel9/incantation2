@@ -432,8 +432,8 @@ void CalcOffsets(uint3 id : SV_DispatchThreadID)
 	uint keyPrev = keys[i - !firstParticle];
 	uint keyNext = keys[i + !lastParticle];
 
-	uint prevKeyMatches = keyPrev == key && !firstParticle;
-	uint nextKeyMatches = keyNext == key && !lastParticle;
+	uint prevKeyMatches = (keyPrev == key) && !firstParticle;
+	uint nextKeyMatches = (keyNext == key) && !lastParticle;
 
 	if (!prevKeyMatches)
 	{
@@ -496,8 +496,8 @@ void SpanOffsets(uint3 id : SV_DispatchThreadID)
 		endIndex = endIndex * !endIndexEmpty + endIndexEmpty * offsetsArray[2 - i].y;
 	}
 
-	spannedOffsets[index].x = startIndex;
-	spannedOffsets[index].y = endIndex;
+	uint2 spannedOffset = uint2(startIndex, endIndex);
+	spannedOffsets[index] = spannedOffset;
 }
 
 groupshared uint startIndexOffsetInBlock[NEIGHBOR_SEARCH_NUM_THREADS];
@@ -640,9 +640,17 @@ void CalcBlockNeighborOffsets(uint3 globalId : SV_DispatchThreadID, uint3 thread
 			blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].y = curSpannedOffset.y;
 		}
 
-		if ((blockMin == NEIGHBOR_SEARCH_NUM_THREADS) && (localId == 0))
+		if (localId == 0)
 		{
-			blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr] = uint2(numParticles + 1, numParticles);
+			if ((blockMin < 0) || (blockMin >= NEIGHBOR_SEARCH_NUM_THREADS))
+			{
+				blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].x = numParticles + 1;
+			}
+
+			if ((blockMax < 0) || (blockMax >= NEIGHBOR_SEARCH_NUM_THREADS))
+			{
+				blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].y = numParticles;
+			}
 		}
 	}
 }
@@ -1482,6 +1490,7 @@ void Debug(uint3 globalId : SV_DispatchThreadID, uint3 threadBlockId : SV_GroupT
 	uint3 lastOrigin = GetInBoundsCell(lastPos, cellSize, boundsSize);
 
 	bool failed = false;
+	uint2 blockThingy;
 	for (int i = 4; i < 5; i++)
 	{
 		int3 neighborOriginCell = origin + offsets3D[i];
@@ -1512,7 +1521,8 @@ void Debug(uint3 globalId : SV_DispatchThreadID, uint3 threadBlockId : SV_GroupT
 		uint lastKey = GetKeyFromInBoundsCell(lastNeighborOriginCell, boundsSize);
 		uint2 lastSpannedOffset = spannedOffsets[lastKey];
 
-		if ((spannedOffset.x == numParticles + 1) && (spannedOffset.y == numParticles)) continue;
+		//if ((spannedOffset.x == numParticles + 1) && (spannedOffset.y == numParticles)) continue;
+		bool emptyBlock = ((spannedOffset.x == numParticles + 1) && (spannedOffset.y == numParticles));
 		//if ((prevSpannedOffset.x == numParticles + 1) && (prevSpannedOffset.y == numParticles)) continue;
 		//if ((firstSpannedOffset.x == numParticles + 1) && (firstSpannedOffset.y == numParticles)) continue;
 		//if ((lastSpannedOffset.x == numParticles + 1) && (lastSpannedOffset.y == numParticles)) continue;
@@ -1520,17 +1530,20 @@ void Debug(uint3 globalId : SV_DispatchThreadID, uint3 threadBlockId : SV_GroupT
 		//All failures go away if I uncomment out the line checking if firstSpannedOffset is empty.
 
 
-		uint2 blockThingy = blockNeighborIndexBoundaries[9 * groupID.x + i];
+		blockThingy = blockNeighborIndexBoundaries[9 * groupID.x + i];
 		bool myBoundsInBlockBounds = ((blockThingy.x <= spannedOffset.x) && (blockThingy.y >= spannedOffset.y));
 		
 		bool firstIsLesser = ((firstSpannedOffset.x <= lastSpannedOffset.x) && (firstSpannedOffset.y <= lastSpannedOffset.y));
 
 		bool failuresDueToWeirdness = !myBoundsInBlockBounds && !firstIsLesser;
 		bool failuresNotDueToWeirdness = !myBoundsInBlockBounds && !failuresDueToWeirdness;
-		failed = failed || !myBoundsInBlockBounds;
+		failed = failed || emptyBlock;
 	}
 
-	float testResultFloat = failed;
-	DebugValues[globalId.x] = float3(testResultFloat, testResultFloat, testResultFloat);
+	//Block thingy here was never set/initialized property. It's reading inconsistent values.
+	uint totalBlocks = ceil(numParticles / NEIGHBOR_SEARCH_NUM_THREADS);
+	float blockColorCoding = groupID.x / (float) totalBlocks;
+	float testResultFloat = blockColorCoding * failed;
+	DebugValues[globalId.x] = float3(testResultFloat, 0, 0);
 	//Densities[globalId.x] = actualResult;
 }
