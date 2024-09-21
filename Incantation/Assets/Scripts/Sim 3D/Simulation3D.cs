@@ -137,7 +137,7 @@ public class Simulation3D : MonoBehaviour
 
         if (DEBUG_MODE)
         {
-            debugBuffer = ComputeHelper.CreateStructuredBuffer<float3>(numParticles);
+            debugBuffer = ComputeHelper.CreateStructuredBuffer<float4>(numParticles);
         }
 
         // Set buffer data

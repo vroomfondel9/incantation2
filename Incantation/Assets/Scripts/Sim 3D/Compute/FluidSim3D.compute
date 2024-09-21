@@ -39,7 +39,7 @@ RWStructuredBuffer<float3> PredictedPositions;
 RWStructuredBuffer<float3> Velocities;
 RWStructuredBuffer<float2> Densities; // Density, Near Density
 
-RWStructuredBuffer<float3> DebugValues;
+RWStructuredBuffer<float4> DebugValues;
 
 RWStructuredBuffer<uint> keys;							//Sorted key list. Used to construct offsets.
 RWStructuredBuffer<uint> indices;						//Sorted index list. Used to construct offsets.
@@ -1459,6 +1459,20 @@ float3 performNeighborSearchIterationZYOriginNeighbor(uint globalId, uint thread
 	return float3(0, 0, 0);
 }
 
+float random(uint seed)
+{
+	seed ^= 2747636419u;
+	seed *= 2654435769u;
+	seed ^= seed >> 16;
+	seed *= 2246822519u;
+	seed ^= seed >> 13;
+	seed *= 3266489917u;
+	seed ^= seed >> 16;
+
+	// Convert to [0, 1] range
+	return frac(float(seed) / 4294967296.0);
+}
+
 [numthreads(NEIGHBOR_SEARCH_NUM_THREADS, 1, 1)]
 void Debug(uint3 globalId : SV_DispatchThreadID, uint3 threadBlockId : SV_GroupThreadID, uint3 groupID : SV_GroupID)
 {
@@ -1540,10 +1554,21 @@ void Debug(uint3 globalId : SV_DispatchThreadID, uint3 threadBlockId : SV_GroupT
 		failed = failed || emptyBlock;
 	}
 
+	//Group ID drill-down
+	//failed = failed && (groupID.x < 515) && (groupID.x > 510);
+
 	//Block thingy here was never set/initialized property. It's reading inconsistent values.
-	uint totalBlocks = ceil(numParticles / NEIGHBOR_SEARCH_NUM_THREADS);
-	float blockColorCoding = groupID.x / (float) totalBlocks;
-	float testResultFloat = blockColorCoding * failed;
-	DebugValues[globalId.x] = float3(testResultFloat, 0, 0);
+	uint totalGroups = ceil(numParticles / NEIGHBOR_SEARCH_NUM_THREADS);
+	uint maxGroupId = totalGroups - 1;
+	float3 randoms;
+	//Spreads out colors locally
+	uint initialSeed = (groupID.x % 2) * totalGroups + groupID.x;
+	randoms.x = random(initialSeed) * failed;
+	uint next = round(maxGroupId * randoms.x);
+	randoms.y = random(next) * failed;
+	next = round(maxGroupId * randoms.y);
+	randoms.z = random(next) * failed;
+
+	DebugValues[globalId.x] = float4(randoms.x, randoms.y, randoms.z, 0.0);
 	//Densities[globalId.x] = actualResult;
 }

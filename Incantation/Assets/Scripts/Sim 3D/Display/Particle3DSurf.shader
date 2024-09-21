@@ -37,7 +37,7 @@ Shader "Instanced/Particle3DSurf" {
 			#ifdef UNITY_PROCEDURAL_INSTANCING_ENABLED
 						StructuredBuffer<float3> Positions;
 						StructuredBuffer<float3> Velocities;
-						StructuredBuffer<float3> DebugValues;
+						StructuredBuffer<float4> DebugValues;
 			#endif
 
 			void vert(inout appdata_full v, out Input o)
@@ -48,12 +48,12 @@ Shader "Instanced/Particle3DSurf" {
 	#ifdef UNITY_PROCEDURAL_INSTANCING_ENABLED
 				float speed = length(Velocities[unity_InstanceID]);
 				float speedT = saturate(speed / velocityMax);
-				if (debugMode == 1)
-				{
-					speedT = saturate(DebugValues[unity_InstanceID]);
-				}
 				float colT = speedT;
 				o.colour = tex2Dlod(ColourMap, float4(colT, 0.5,0,0));
+				if (debugMode == 1)
+				{
+					o.colour = DebugValues[unity_InstanceID];
+				}
 	#endif
 			}
 
