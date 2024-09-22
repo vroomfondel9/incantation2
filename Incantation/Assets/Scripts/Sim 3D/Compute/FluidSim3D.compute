@@ -500,12 +500,10 @@ void SpanOffsets(uint3 id : SV_DispatchThreadID)
 	spannedOffsets[index] = spannedOffset;
 }
 
-groupshared uint startIndexOffsetInBlock[NEIGHBOR_SEARCH_NUM_THREADS];
-groupshared int endIndexOffsetInBlock[NEIGHBOR_SEARCH_NUM_THREADS];
-
 groupshared int minStartIndex[NEIGHBOR_SEARCH_NUM_THREADS];
 groupshared int maxEndIndex[NEIGHBOR_SEARCH_NUM_THREADS];
 
+//JWB
 [numthreads(NEIGHBOR_SEARCH_NUM_THREADS, 1, 1)]
 void CalcBlockNeighborOffsets(uint3 globalId : SV_DispatchThreadID, uint3 threadId : SV_GroupThreadID, uint3 blockId : SV_GroupID)
 {
@@ -520,10 +518,10 @@ void CalcBlockNeighborOffsets(uint3 globalId : SV_DispatchThreadID, uint3 thread
 	uint3 originCell = GetCellFromInBoundsKey(key, boundsSize);
 
 	//The third element indicates if we're in-bounds and non-empty. The fourth is the key for this neighbor.
-	uint4 spannedOffsetAllNeighbors[8];
+	uint4 spannedOffsetAllNeighbors[9];
 
 	[unroll]
-	for (uint initIndex = 0; initIndex < 8; initIndex++)
+	for (uint initIndex = 0; initIndex < 9; initIndex++)
 	{
 		spannedOffsetAllNeighbors[initIndex].x = numParticles + 1;
 		spannedOffsetAllNeighbors[initIndex].y = numParticles;
@@ -537,11 +535,12 @@ void CalcBlockNeighborOffsets(uint3 globalId : SV_DispatchThreadID, uint3 thread
 	}
 
 	[unroll]
-	for (uint populateIndex = 0; populateIndex < 8; populateIndex++)
+	for (uint populateIndex = 0; populateIndex < 9; populateIndex++)
 	{
-		if (spannedOffsetAllNeighbors[populateIndex].w > 0)
+		if ((populateIndex != 0) && (spannedOffsetAllNeighbors[populateIndex].w > 0))
 		{
-			uint2 spannedOff = spannedOffsets[spannedOffsetAllNeighbors[populateIndex].z];
+			uint key = spannedOffsetAllNeighbors[populateIndex].z;
+			uint2 spannedOff = spannedOffsets[key];
 			spannedOffsetAllNeighbors[populateIndex].x = spannedOff.x;
 			spannedOffsetAllNeighbors[populateIndex].y = spannedOff.y;
 		}
@@ -564,7 +563,7 @@ void CalcBlockNeighborOffsets(uint3 globalId : SV_DispatchThreadID, uint3 thread
 	{
 		//Step 1: 0 if out-of-bounds, 1 if in-bounds
 		uint blockNeighborGlobalMemAddr = globalAddrStart + curNeighborOffsetIndex;
-		uint4 curSpannedOffset = spannedOffsetAllNeighbors[curNeighborOffsetIndex - 1];
+		uint4 curSpannedOffset = spannedOffsetAllNeighbors[curNeighborOffsetIndex];
 
 		uint neighborKey = curSpannedOffset.z;
 		uint inBounds = curSpannedOffset.w;
@@ -651,392 +650,6 @@ void CalcBlockNeighborOffsets(uint3 globalId : SV_DispatchThreadID, uint3 thread
 			{
 				blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].y = numParticles;
 			}
-		}
-	}
-}
-
-[numthreads(NEIGHBOR_SEARCH_NUM_THREADS, 1, 1)]
-void CalcBlockNeighborOffsetsDoesntCheckEmpty(uint3 globalId : SV_DispatchThreadID, uint3 threadId : SV_GroupThreadID, uint3 blockId : SV_GroupID)
-{
-	uint particleId = (globalId.x >= numParticles) ? numParticles - 1 : globalId.x;
-	uint localId = threadId.x;
-
-	uint waveSize = WaveGetLaneCount();
-	uint reductionMax = NEIGHBOR_SEARCH_NUM_THREADS / waveSize;
-
-	uint key = keys[particleId];
-	uint3 originCell = GetCellFromInBoundsKey(key, boundsSize);
-
-	uint globalAddrStart = blockId.x * 9;
-
-	//origin cells should always be in-bounds
-	if (localId == 0)
-	{
-		blockNeighborIndexBoundaries[globalAddrStart].x = spannedOffsets[key].x;
-	}
-
-	if (localId == NEIGHBOR_SEARCH_NUM_THREADS - 1)
-	{
-		blockNeighborIndexBoundaries[globalAddrStart].y = spannedOffsets[key].y;
-	}
-
-	//For neighboring cells, determine the first and last in-bounds thread index (if it exists)
-	[unroll]
-	for (uint curNeighborOffsetIndex = 1; curNeighborOffsetIndex < 9; curNeighborOffsetIndex++)
-	{
-		//Step 1: 0 if out-of-bounds, 1 if in-bounds
-		uint blockNeighborGlobalMemAddr = globalAddrStart + curNeighborOffsetIndex;
-		int3 neighborCell = originCell + offsets3D[curNeighborOffsetIndex];
-		uint inBounds = isCellInBounds(neighborCell, boundsSize);
-		uint neighborKey = GetKeyFromInBoundsCell(neighborCell, boundsSize);
-
-		//Must do max and min index search within thread
-		int realignedStart = inBounds * localId + !inBounds * NEIGHBOR_SEARCH_NUM_THREADS;
-		int realignedEnd = inBounds * localId + !inBounds * -1;
-
-		minStartIndex[localId] = realignedStart;
-		maxEndIndex[localId] = realignedEnd;
-		GroupMemoryBarrierWithGroupSync();
-
-		//Short circuit for the fully-filled case
-		int shortCircuitMin = minStartIndex[0];
-		int shortCircuitMax = maxEndIndex[NEIGHBOR_SEARCH_NUM_THREADS - 1];
-
-		if ((shortCircuitMin < NEIGHBOR_SEARCH_NUM_THREADS) && (shortCircuitMax > -1))
-		{
-			if (localId == shortCircuitMin)
-			{
-				blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].x = spannedOffsets[neighborKey].x;
-			}
-
-			if (localId == shortCircuitMax)
-			{
-				blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].y = spannedOffsets[neighborKey].y;
-			}
-
-			continue;
-		}
-
-		//Must do max and min index search within thread
-		int curMin = WaveActiveMin(realignedStart);
-		int curMax = WaveActiveMax(realignedEnd);
-
-		//Step 2: Perform Prefix 
-		for (uint prefIter = 1; prefIter < reductionMax; prefIter *= 2)
-		{
-			minStartIndex[localId] = curMin;
-			maxEndIndex[localId] = curMax;
-
-			int pullIndex = localId - prefIter * waveSize;
-			bool shouldPull = pullIndex >= 0;
-
-			GroupMemoryBarrierWithGroupSync();
-
-			int otherMinValue = shouldPull ? minStartIndex[pullIndex] : NEIGHBOR_SEARCH_NUM_THREADS;
-			int otherMaxValue = shouldPull ? maxEndIndex[pullIndex] : -1;
-
-			curMin = min(curMin, otherMinValue);
-			curMax = max(curMax, otherMaxValue);
-
-			GroupMemoryBarrierWithGroupSync();
-		}
-
-		minStartIndex[localId] = curMin;
-		maxEndIndex[localId] = curMax;
-
-		GroupMemoryBarrierWithGroupSync();
-
-		uint blockMin = minStartIndex[NEIGHBOR_SEARCH_NUM_THREADS - 1];
-		uint blockMax = maxEndIndex[NEIGHBOR_SEARCH_NUM_THREADS - 1];
-
-		if (localId == blockMin)
-		{
-			blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].x = spannedOffsets[neighborKey].x;
-		}
-
-		if (localId == blockMax)
-		{
-			blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].y = spannedOffsets[neighborKey].y;
-		}
-
-		if ((blockMin == NEIGHBOR_SEARCH_NUM_THREADS) && (localId == 0))
-		{
-			blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr] = uint2(numParticles + 1, numParticles);
-		}
-	}
-}
-
-[numthreads(NEIGHBOR_SEARCH_NUM_THREADS, 1, 1)]
-void CalcBlockNeighborOffsetsSlower(uint3 globalId : SV_DispatchThreadID, uint3 threadId : SV_GroupThreadID, uint3 blockId : SV_GroupID)
-{
-	uint particleId = (globalId.x >= numParticles) ? numParticles - 1 : globalId.x;
-
-	uint localId = threadId.x;
-	uint reverseLocalId = NEIGHBOR_SEARCH_NUM_THREADS - 1 - localId;
-
-	uint waveSize = WaveGetLaneCount();
-	uint reductionMax = NEIGHBOR_SEARCH_NUM_THREADS / waveSize;
-
-	uint key = keys[particleId];
-	uint3 originCell = GetCellFromInBoundsKey(key, boundsSize);
-
-	uint globalAddrStart = blockId.x * 9;
-
-	//origin cells should always be in-bounds
-	if (localId == 0)
-	{
-		blockNeighborIndexBoundaries[globalAddrStart].x = spannedOffsets[key].x;
-	}
-
-	if (localId == NEIGHBOR_SEARCH_NUM_THREADS - 1)
-	{
-		blockNeighborIndexBoundaries[globalAddrStart].y = spannedOffsets[key].y;
-	}
-
-	//For neighboring cells, determine the first and last in-bounds thread index (if it exists)
-	uint curNeighborOffsetIndex;
-	for (curNeighborOffsetIndex = 1; curNeighborOffsetIndex < 9; curNeighborOffsetIndex++)
-	{
-		//Step 1: 0 if out-of-bounds, 1 if in-bounds
-		uint blockNeighborGlobalMemAddr = globalAddrStart + curNeighborOffsetIndex;
-		int3 neighborCell = originCell + offsets3D[curNeighborOffsetIndex];
-		uint inBounds = isCellInBounds(neighborCell, boundsSize);
-		uint neighborKey = GetKeyFromInBoundsCell(neighborCell, boundsSize);
-
-		endIndexOffsetInBlock[reverseLocalId] = inBounds;
-		GroupMemoryBarrierWithGroupSync();
-
-		//Quick exit if both start and end are in-bounds
-		if ((endIndexOffsetInBlock[0] == 1) && (endIndexOffsetInBlock[NEIGHBOR_SEARCH_NUM_THREADS - 1] == 1))
-		{
-			if (0 == localId)
-			{
-				blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].x = spannedOffsets[neighborKey].x;
-			}
-
-			if (NEIGHBOR_SEARCH_NUM_THREADS - 1 == localId)
-			{
-				blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].y = spannedOffsets[neighborKey].y;
-			}
-
-			continue;
-		}
-
-		uint inBoundsReversed = endIndexOffsetInBlock[localId];
-
-		//Step 2: Inclusive Prefix Sum
-		uint startValExclPrefSum = WavePrefixSum(inBounds);
-		uint endValExclPrefSum = WavePrefixSum(inBoundsReversed);
-
-		startIndexOffsetInBlock[localId] = startValExclPrefSum;
-		endIndexOffsetInBlock[localId] = endValExclPrefSum;
-
-		uint prefSumIter;
-		for (prefSumIter = 1; prefSumIter < NEIGHBOR_SEARCH_NUM_THREADS; prefSumIter *= 2)
-		{
-			GroupMemoryBarrierWithGroupSync();
-			int pullIndex = localId - prefSumIter * waveSize;
-			if (pullIndex >= 0)
-			{
-				startValExclPrefSum += startIndexOffsetInBlock[pullIndex];
-				endValExclPrefSum += endIndexOffsetInBlock[pullIndex];
-			}
-
-			startIndexOffsetInBlock[localId] = startValExclPrefSum;
-			endIndexOffsetInBlock[localId] = endValExclPrefSum;
-		}
-
-		uint startValInclPrefSum = startValExclPrefSum + inBounds;
-		uint endValInclPrefSum = endValExclPrefSum + inBoundsReversed;
-
-		//Step 3: Map (value == 0) -> 1. If (value > 0) -> 0.
-		uint startIsZero = startValInclPrefSum == 0;
-		uint endIsZero = endValInclPrefSum == 0;
-
-		//Step 4: Reverse
-		startIndexOffsetInBlock[reverseLocalId] = startIsZero;
-		endIndexOffsetInBlock[reverseLocalId] = endIsZero;
-		GroupMemoryBarrierWithGroupSync();
-
-		uint startVal = startIndexOffsetInBlock[localId];
-		uint endVal = startIndexOffsetInBlock[localId];
-
-		//Step 5: Inclusive Prefix Sum
-		startValExclPrefSum = WavePrefixSum(startVal);
-		endValExclPrefSum = WavePrefixSum(endVal);
-
-		startIndexOffsetInBlock[localId] = startValExclPrefSum;
-		endIndexOffsetInBlock[localId] = endValExclPrefSum;
-
-		for (prefSumIter = 1; prefSumIter < reductionMax; prefSumIter *= 2)
-		{
-			GroupMemoryBarrierWithGroupSync();
-			int pullIndex = localId - prefSumIter * waveSize;
-			if (pullIndex >= 0)
-			{
-				startValExclPrefSum += startIndexOffsetInBlock[pullIndex];
-				endValExclPrefSum += endIndexOffsetInBlock[pullIndex];
-			}
-
-			startIndexOffsetInBlock[localId] = startValExclPrefSum;
-			endIndexOffsetInBlock[localId] = endValExclPrefSum;
-		}
-
-		startValInclPrefSum = startValExclPrefSum + startVal;
-		endValInclPrefSum = endValExclPrefSum + endVal;
-
-		//Step 6: The last element of each now contains the index offset from the start/end of the first in-bounds thread for the block
-		uint startIndex = startIndexOffsetInBlock[NEIGHBOR_SEARCH_NUM_THREADS - 1];
-		uint endIndex = NEIGHBOR_SEARCH_NUM_THREADS - 1 - endIndexOffsetInBlock[NEIGHBOR_SEARCH_NUM_THREADS - 1];
-
-		//Step 7: Write it to global memory if it matches current thread ID
-		if (startIndex == localId)
-		{
-			blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].x = spannedOffsets[neighborKey].x;
-		}
-
-		if (endIndex == localId)
-		{
-			blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].y = spannedOffsets[neighborKey].y;
-		}
-	}
-}
-
-[numthreads(NEIGHBOR_SEARCH_NUM_THREADS, 1, 1)]
-void CalcBlockNeighborOffsetsParallel(uint3 globalId : SV_DispatchThreadID, uint3 threadId : SV_GroupThreadID, uint3 blockId : SV_GroupID)
-{
-	uint numParticlesAlignedToThreadBlockSize = ceil(numParticles / NEIGHBOR_SEARCH_NUM_THREADS) * NEIGHBOR_SEARCH_NUM_THREADS;
-
-	uint neighborId = globalId / numParticlesAlignedToThreadBlockSize;
-	uint particleId = globalId % numParticlesAlignedToThreadBlockSize;
-	bool excessThread = (particleId > numParticles);
-	particleId = excessThread ? numParticles - 1 : particleId;
-
-	uint localId = threadId.x;
-	uint blockNeighborGlobalMemIndex = blockId.x * 9 + neighborId;
-
-	uint key = keys[particleId];
-
-	//origin cells should always be in-bounds
-	if (neighborId == 0)
-	{
-		if (localId == 0)
-		{
-			blockNeighborIndexBoundaries[blockNeighborGlobalMemIndex].x = spannedOffsets[key].x;
-		}
-
-		if (localId == NEIGHBOR_SEARCH_NUM_THREADS - 1)
-		{
-			blockNeighborIndexBoundaries[blockNeighborGlobalMemIndex].y = spannedOffsets[key].y;
-		}
-	}
-	//For neighboring cells, determine the first and last in-bounds thread index (if it exists)
-	else
-	{
-		uint reverseLocalId = NEIGHBOR_SEARCH_NUM_THREADS - 1 - localId;
-		uint waveSize = WaveGetLaneCount();
-		uint reductionMax = NEIGHBOR_SEARCH_NUM_THREADS / waveSize;
-
-		//Step 1: 0 if out-of-bounds, 1 if in-bounds
-		uint3 originCell = GetCellFromInBoundsKey(key, boundsSize);
-		int3 neighborCell = originCell + offsets3D[neighborId];
-		uint inBounds = isCellInBounds(neighborCell, boundsSize);
-		uint neighborKey = GetKeyFromInBoundsCell(neighborCell, boundsSize);
-
-		endIndexOffsetInBlock[reverseLocalId] = inBounds;
-		GroupMemoryBarrierWithGroupSync();
-
-		//Quick exit check: Start and end of block are both in-bounds
-		if ((endIndexOffsetInBlock[0] == 1) && (endIndexOffsetInBlock[NEIGHBOR_SEARCH_NUM_THREADS - 1] == 1))
-		{
-			if (localId == 0)
-			{
-				blockNeighborIndexBoundaries[blockNeighborGlobalMemIndex].x = spannedOffsets[neighborKey].x;
-			}
-
-			if (localId == NEIGHBOR_SEARCH_NUM_THREADS - 1)
-			{
-				blockNeighborIndexBoundaries[blockNeighborGlobalMemIndex].y = spannedOffsets[neighborKey].y;
-			}
-
-			return;
-		}
-
-		uint inBoundsReversed = endIndexOffsetInBlock[localId];
-
-		//Step 2: Inclusive Prefix Sum
-		uint startValExclPrefSum = WavePrefixSum(inBounds);
-		uint endValExclPrefSum = WavePrefixSum(inBoundsReversed);
-
-		startIndexOffsetInBlock[localId] = startValExclPrefSum;
-		endIndexOffsetInBlock[localId] = endValExclPrefSum;
-
-		uint prefSumIter;
-		for (prefSumIter = 1; prefSumIter < NEIGHBOR_SEARCH_NUM_THREADS; prefSumIter *= 2)
-		{
-			GroupMemoryBarrierWithGroupSync();
-			int pullIndex = localId - prefSumIter * waveSize;
-			if (pullIndex >= 0)
-			{
-				startValExclPrefSum += startIndexOffsetInBlock[pullIndex];
-				endValExclPrefSum += endIndexOffsetInBlock[pullIndex];
-			}
-
-			startIndexOffsetInBlock[localId] = startValExclPrefSum;
-			endIndexOffsetInBlock[localId] = endValExclPrefSum;
-		}
-
-		uint startValInclPrefSum = startValExclPrefSum + inBounds;
-		uint endValInclPrefSum = endValExclPrefSum + inBoundsReversed;
-
-		//Step 3: Map (value == 0) -> 1. If (value > 0) -> 0.
-		uint startIsZero = startValInclPrefSum == 0;
-		uint endIsZero = endValInclPrefSum == 0;
-
-		//Step 4: Reverse
-		startIndexOffsetInBlock[reverseLocalId] = startIsZero;
-		endIndexOffsetInBlock[reverseLocalId] = endIsZero;
-		GroupMemoryBarrierWithGroupSync();
-
-		uint startVal = startIndexOffsetInBlock[localId];
-		uint endVal = startIndexOffsetInBlock[localId];
-
-		//Step 5: Inclusive Prefix Sum
-		startValExclPrefSum = WavePrefixSum(startVal);
-		endValExclPrefSum = WavePrefixSum(endVal);
-
-		startIndexOffsetInBlock[localId] = startValExclPrefSum;
-		endIndexOffsetInBlock[localId] = endValExclPrefSum;
-
-		for (prefSumIter = 1; prefSumIter < reductionMax; prefSumIter *= 2)
-		{
-			GroupMemoryBarrierWithGroupSync();
-			int pullIndex = localId - prefSumIter * waveSize;
-			if (pullIndex >= 0)
-			{
-				startValExclPrefSum += startIndexOffsetInBlock[pullIndex];
-				endValExclPrefSum += endIndexOffsetInBlock[pullIndex];
-			}
-
-			startIndexOffsetInBlock[localId] = startValExclPrefSum;
-			endIndexOffsetInBlock[localId] = endValExclPrefSum;
-		}
-
-		startValInclPrefSum = startValExclPrefSum + startVal;
-		endValInclPrefSum = endValExclPrefSum + endVal;
-
-		//Step 6: The last element of each now contains the index offset from the start/end of the first in-bounds thread for the block
-		uint startIndex = startIndexOffsetInBlock[NEIGHBOR_SEARCH_NUM_THREADS - 1];
-		uint endIndex = NEIGHBOR_SEARCH_NUM_THREADS - 1 - endIndexOffsetInBlock[NEIGHBOR_SEARCH_NUM_THREADS - 1];
-
-		if (localId == startIndex)
-		{
-			blockNeighborIndexBoundaries[blockNeighborGlobalMemIndex].x = spannedOffsets[neighborKey].x;
-		}
-
-		if (localId == endIndex)
-		{
-			blockNeighborIndexBoundaries[blockNeighborGlobalMemIndex].y = spannedOffsets[neighborKey].y;
 		}
 	}
 }
@@ -1505,10 +1118,10 @@ void Debug(uint3 globalId : SV_DispatchThreadID, uint3 threadBlockId : SV_GroupT
 
 	bool failed = false;
 	uint2 blockThingy;
-	for (int i = 4; i < 5; i++)
+	for (int i = 0; i < 9; i++)
 	{
-		int3 neighborOriginCell = origin + offsets3D[i];
-		bool neighborInBounds = isCellInBounds(neighborOriginCell, boundsSize);
+		int3 neighborCell = origin + offsets3D[i];
+		bool neighborInBounds = isCellInBounds(neighborCell, boundsSize);
 
 		//int3 prevNeighborOriginCell = prevOrigin + offsets3D[i];
 		//bool prevNeighborInBounds = isCellInBounds(prevNeighborOriginCell, boundsSize);
@@ -1523,7 +1136,7 @@ void Debug(uint3 globalId : SV_DispatchThreadID, uint3 threadBlockId : SV_GroupT
 		//if (!prevNeighborInBounds) continue;
 		if ((!firstNeighborInBounds) || (!lastNeighborInBounds)) continue;
 
-		uint key = GetKeyFromInBoundsCell(neighborOriginCell, boundsSize);
+		uint key = GetKeyFromInBoundsCell(neighborCell, boundsSize);
 		uint2 spannedOffset = spannedOffsets[key];
 
 		//uint prevKey = GetKeyFromInBoundsCell(prevNeighborOriginCell, boundsSize);
@@ -1537,21 +1150,19 @@ void Debug(uint3 globalId : SV_DispatchThreadID, uint3 threadBlockId : SV_GroupT
 
 		//if ((spannedOffset.x == numParticles + 1) && (spannedOffset.y == numParticles)) continue;
 		bool emptyBlock = ((spannedOffset.x == numParticles + 1) && (spannedOffset.y == numParticles));
+		bool firstBlockIsEmpty = ((firstSpannedOffset.x == numParticles + 1) && (firstSpannedOffset.y == numParticles));
+		bool lastBlockIsEmpty = ((lastSpannedOffset.x == numParticles + 1) && (lastSpannedOffset.y == numParticles));
 		//if ((prevSpannedOffset.x == numParticles + 1) && (prevSpannedOffset.y == numParticles)) continue;
 		//if ((firstSpannedOffset.x == numParticles + 1) && (firstSpannedOffset.y == numParticles)) continue;
 		//if ((lastSpannedOffset.x == numParticles + 1) && (lastSpannedOffset.y == numParticles)) continue;
 
 		//All failures go away if I uncomment out the line checking if firstSpannedOffset is empty.
 
-
 		blockThingy = blockNeighborIndexBoundaries[9 * groupID.x + i];
-		bool myBoundsInBlockBounds = ((blockThingy.x <= spannedOffset.x) && (blockThingy.y >= spannedOffset.y));
-		
-		bool firstIsLesser = ((firstSpannedOffset.x <= lastSpannedOffset.x) && (firstSpannedOffset.y <= lastSpannedOffset.y));
 
-		bool failuresDueToWeirdness = !myBoundsInBlockBounds && !firstIsLesser;
-		bool failuresNotDueToWeirdness = !myBoundsInBlockBounds && !failuresDueToWeirdness;
-		failed = failed || emptyBlock;
+		bool myTest = ((blockThingy.y >= spannedOffset.y));// && (blockThingy.y > spannedOffset.y));
+		
+		failed = failed || (myTest && !emptyBlock);
 	}
 
 	//Group ID drill-down
