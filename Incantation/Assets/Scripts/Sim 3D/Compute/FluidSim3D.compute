@@ -509,12 +509,29 @@ void CalcBlockNeighborOffsets(uint3 globalId : SV_DispatchThreadID, uint3 thread
 {
 	uint particleId = (globalId.x >= numParticles) ? numParticles - 1 : globalId.x;
 	uint localId = threadId.x;
+
+	uint key = keys[particleId];
+
+	// Calculate some stuff that will be needed later while waiting for data...
 	uint globalAddrStart = blockId.x * 9;
 
 	uint waveSize = WaveGetLaneCount();
-	uint reductionMax = NEIGHBOR_SEARCH_NUM_THREADS / waveSize;
+	uint log2BlockSize = firstbithigh(NEIGHBOR_SEARCH_NUM_THREADS);
+	uint log2WaveSize = firstbithigh(waveSize);
+	float logBaseWaveSizeOfBlockSize = log2BlockSize / (float)log2WaveSize;
 
-	uint key = keys[particleId];
+	uint fullyEfficientWaveWideReductionIterations = floor(logBaseWaveSizeOfBlockSize);
+	uint fullyEfficientCoverage = 1 << (fullyEfficientWaveWideReductionIterations * log2WaveSize);	//ie finds 32^n as 2^5n
+	uint leftOversInLastIteration = NEIGHBOR_SEARCH_NUM_THREADS / fullyEfficientCoverage;			//ie 128 & 32 -> 4. 2048 & 32 -> 2.
+	uint leftOverIterations = firstbithigh(leftOversInLastIteration);
+
+	float performLeftOverIterationsInSharedMemThreshold = log2WaveSize / 2;							//Experimentally-determined
+	bool performSharedMemOnlyIterations = (leftOverIterations < performLeftOverIterationsInSharedMemThreshold);
+	uint waveWideReductionIterations = fullyEfficientWaveWideReductionIterations - performSharedMemOnlyIterations;	//1 iter at start assumed
+
+	uint sharedMemAddr = floor(threadId / (float) waveSize);
+	bool waveLeader = WaveIsFirstLane();
+
 	uint3 originCell = GetCellFromInBoundsKey(key, boundsSize);
 
 	//The third element indicates if we're in-bounds and non-empty. The fourth is the key for this neighbor.
@@ -567,11 +584,11 @@ void CalcBlockNeighborOffsets(uint3 globalId : SV_DispatchThreadID, uint3 thread
 
 		uint neighborKey = curSpannedOffset.z;
 		uint inBounds = curSpannedOffset.w;
-		uint isEmpty = (curSpannedOffset.y - curSpannedOffset.x + 1) > 0;
-		uint nonEmptyInBounds = inBounds * isEmpty;
+		uint isNonEmpty = (curSpannedOffset.y - curSpannedOffset.x + 1) > 0;
+		uint nonEmptyInBounds = inBounds * isNonEmpty;
 
 		//Must do max and min index search within thread
-		int realignedStart = nonEmptyInBounds * localId + !nonEmptyInBounds * NEIGHBOR_SEARCH_NUM_THREADS;
+		int realignedStart = isNonEmpty * localId + !isNonEmpty * NEIGHBOR_SEARCH_NUM_THREADS;
 		int realignedEnd = nonEmptyInBounds * localId + !nonEmptyInBounds * -1;
 
 		minStartIndex[localId] = realignedStart;
@@ -597,26 +614,47 @@ void CalcBlockNeighborOffsets(uint3 globalId : SV_DispatchThreadID, uint3 thread
 			continue;
 		}
 
-		//Must do max and min index search within thread
+		//Must do max and min index search within thread. Start with one (assumed) warp-wide min/max.
 		int curMin = WaveActiveMin(realignedStart);
 		int curMax = WaveActiveMax(realignedEnd);
 
-		//Step 2: Perform Prefix 
-		for (uint prefIter = 1; prefIter < reductionMax; prefIter *= 2)
+		//Warp-wide reductions to do the brunt of the work.
+		for (uint warpWideReductionIter = 0; warpWideReductionIter < waveWideReductionIterations; warpWideReductionIter++)
+		{
+			if (waveLeader)
+			{
+				minStartIndex[sharedMemAddr] = curMin;
+				maxEndIndex[sharedMemAddr] = curMax;
+			}
+
+			GroupMemoryBarrierWithGroupSync();
+
+			curMin = minStartIndex[localId];
+			curMax = maxEndIndex[localId];
+
+			curMin = WaveActiveMin(curMin);
+			curMax = WaveActiveMax(curMax);
+
+			GroupMemoryBarrierWithGroupSync();
+		}
+
+		//Leftovers handled in shared memory since it's rather expensive to do a full WaveActiveMin/Max for just a few leftovers.
+		for (uint leftoverReductionIter = 1; 
+			leftoverReductionIter < leftOversInLastIteration * performSharedMemOnlyIterations; 
+			leftoverReductionIter *= 2)
 		{
 			minStartIndex[localId] = curMin;
 			maxEndIndex[localId] = curMax;
 
-			int pullIndex = localId - prefIter * waveSize;
-			bool shouldPull = pullIndex >= 0;
+			uint pullAddr = max(localId + leftoverReductionIter, NEIGHBOR_SEARCH_NUM_THREADS - 1);
 
 			GroupMemoryBarrierWithGroupSync();
 
-			int otherMinValue = shouldPull ? minStartIndex[pullIndex] : NEIGHBOR_SEARCH_NUM_THREADS;
-			int otherMaxValue = shouldPull ? maxEndIndex[pullIndex] : -1;
+			int otherMin = minStartIndex[pullAddr];
+			int otherMax = maxEndIndex[pullAddr];
 
-			curMin = min(curMin, otherMinValue);
-			curMax = max(curMax, otherMaxValue);
+			curMin = min(curMin, otherMin);
+			curMax = max(curMax, otherMax);
 
 			GroupMemoryBarrierWithGroupSync();
 		}
@@ -626,29 +664,36 @@ void CalcBlockNeighborOffsets(uint3 globalId : SV_DispatchThreadID, uint3 thread
 
 		GroupMemoryBarrierWithGroupSync();
 
-		uint blockMin = minStartIndex[NEIGHBOR_SEARCH_NUM_THREADS - 1];
-		uint blockMax = maxEndIndex[NEIGHBOR_SEARCH_NUM_THREADS - 1];
+		int blockMin = minStartIndex[0];
+		int blockMax = maxEndIndex[0];
 
-		if (localId == blockMin)
+		if (blockMin == NEIGHBOR_SEARCH_NUM_THREADS)
 		{
-			blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].x = curSpannedOffset.x;
-		}
-
-		if (localId == blockMax)
-		{
-			blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].y = curSpannedOffset.y;
-		}
-
-		if (localId == 0)
-		{
-			if ((blockMin < 0) || (blockMin >= NEIGHBOR_SEARCH_NUM_THREADS))
+			if (localId == 0)
 			{
 				blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].x = numParticles + 1;
 			}
+		}
+		else
+		{
+			if (localId == blockMin)
+			{
+				blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].x = curSpannedOffset.x;
+			}
+		}
 
-			if ((blockMax < 0) || (blockMax >= NEIGHBOR_SEARCH_NUM_THREADS))
+		if (blockMax == -1)
+		{
+			if (localId == 0)
 			{
 				blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].y = numParticles;
+			}
+		}
+		else
+		{
+			if (localId == blockMax)
+			{
+				blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].y = curSpannedOffset.y;
 			}
 		}
 	}
@@ -1160,7 +1205,7 @@ void Debug(uint3 globalId : SV_DispatchThreadID, uint3 threadBlockId : SV_GroupT
 
 		blockThingy = blockNeighborIndexBoundaries[9 * groupID.x + i];
 
-		bool myTest = ((blockThingy.y >= spannedOffset.y));// && (blockThingy.y > spannedOffset.y));
+		bool myTest = ((blockThingy.x == numParticles + 1));// && (blockThingy.y > spannedOffset.y));
 		
 		failed = failed || (myTest && !emptyBlock);
 	}
