@@ -14,7 +14,7 @@
 #pragma kernel Debug
 
 #define NUM_THREADS							64
-#define NEIGHBOR_SEARCH_NUM_THREADS			64
+#define NEIGHBOR_SEARCH_NUM_THREADS			128
 #define WIDE_MEM_TRANSACTION_SIZE			128
 
 //Neighbor search defines
@@ -508,31 +508,26 @@ groupshared int maxEndIndex[NEIGHBOR_SEARCH_NUM_THREADS];
 void CalcBlockNeighborOffsets(uint3 globalId : SV_DispatchThreadID, uint3 threadId : SV_GroupThreadID, uint3 blockId : SV_GroupID)
 {
 	uint particleId = (globalId.x >= numParticles) ? numParticles - 1 : globalId.x;
-	uint localId = threadId.x;
 
 	uint key = keys[particleId];
 
 	// Calculate some stuff that will be needed later while waiting for data...
-	uint globalAddrStart = blockId.x * 9;
-
-	uint waveSize = WaveGetLaneCount();
-	uint log2BlockSize = firstbithigh(NEIGHBOR_SEARCH_NUM_THREADS);
-	uint log2WaveSize = firstbithigh(waveSize);
-	float logBaseWaveSizeOfBlockSize = log2BlockSize / (float)log2WaveSize;
-
-	uint fullyEfficientWaveWideReductionIterations = floor(logBaseWaveSizeOfBlockSize);
-	uint fullyEfficientCoverage = 1 << (fullyEfficientWaveWideReductionIterations * log2WaveSize);	//ie finds 32^n as 2^5n
-	uint leftOversInLastIteration = NEIGHBOR_SEARCH_NUM_THREADS / fullyEfficientCoverage;			//ie 128 & 32 -> 4. 2048 & 32 -> 2.
-	uint leftOverIterations = firstbithigh(leftOversInLastIteration);
-
-	float performLeftOverIterationsInSharedMemThreshold = log2WaveSize / 2;							//Experimentally-determined
-	bool performSharedMemOnlyIterations = (leftOverIterations < performLeftOverIterationsInSharedMemThreshold);
-	uint waveWideReductionIterations = fullyEfficientWaveWideReductionIterations - performSharedMemOnlyIterations;	//1 iter at start assumed
-
-	uint sharedMemAddr = floor(threadId / (float) waveSize);
+	uint localId = threadId.x;
+	uint waveSize = WaveGetLaneCount();	
 	bool waveLeader = WaveIsFirstLane();
 
+	uint sharedMemAddr = floor(threadId / (float)waveSize);
+	uint globalAddrStart = blockId.x * 9;
+
 	uint3 originCell = GetCellFromInBoundsKey(key, boundsSize);
+
+	uint waveReductionCostWorthItThreshold = 2;												//Experimentally-determined
+	int individualMinMaxComparisons = NEIGHBOR_SEARCH_NUM_THREADS / waveSize;
+	int individualMinMaxIterationsNeeded = firstbithigh(individualMinMaxComparisons);		//ie log2(block thread size / 32)
+	bool waveWideReductionNeeded = individualMinMaxIterationsNeeded > waveReductionCostWorthItThreshold;
+	int waveWideReductionIterations = waveWideReductionNeeded * ((individualMinMaxComparisons / 32) + ((individualMinMaxComparisons % 32) != 0));
+	individualMinMaxComparisons -= waveWideReductionIterations * waveSize;
+	individualMinMaxComparisons = max(individualMinMaxComparisons, 0);
 
 	//The third element indicates if we're in-bounds and non-empty. The fourth is the key for this neighbor.
 	uint4 spannedOffsetAllNeighbors[9];
@@ -587,9 +582,8 @@ void CalcBlockNeighborOffsets(uint3 globalId : SV_DispatchThreadID, uint3 thread
 		uint isNonEmpty = (curSpannedOffset.y - curSpannedOffset.x + 1) > 0;
 		uint nonEmptyInBounds = inBounds * isNonEmpty;
 
-		//Must do max and min index search within thread
-		int realignedStart = isNonEmpty * localId + !isNonEmpty * NEIGHBOR_SEARCH_NUM_THREADS;
-		int realignedEnd = nonEmptyInBounds * localId + !nonEmptyInBounds * -1;
+		int realignedStart = nonEmptyInBounds * curSpannedOffset.x + !nonEmptyInBounds * (numParticles + 1);
+		int realignedEnd = nonEmptyInBounds * curSpannedOffset.y + !nonEmptyInBounds * -1;
 
 		minStartIndex[localId] = realignedStart;
 		maxEndIndex[localId] = realignedEnd;
@@ -599,16 +593,13 @@ void CalcBlockNeighborOffsets(uint3 globalId : SV_DispatchThreadID, uint3 thread
 		int shortCircuitMin = minStartIndex[0];
 		int shortCircuitMax = maxEndIndex[NEIGHBOR_SEARCH_NUM_THREADS - 1];
 
-		if ((shortCircuitMin < NEIGHBOR_SEARCH_NUM_THREADS) && (shortCircuitMax > -1))
+		//TODO this works but only if the block size is 32. Why???
+		if ((shortCircuitMin < (numParticles + 1)) && (shortCircuitMax > -1))
 		{
-			if (localId == shortCircuitMin)
+			if (localId == 0)
 			{
-				blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].x = curSpannedOffset.x;
-			}
-
-			if (localId == shortCircuitMax)
-			{
-				blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].y = curSpannedOffset.y;
+				blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].x = shortCircuitMin;
+				blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].y = shortCircuitMax;
 			}
 
 			continue;
@@ -617,6 +608,7 @@ void CalcBlockNeighborOffsets(uint3 globalId : SV_DispatchThreadID, uint3 thread
 		//Must do max and min index search within thread. Start with one (assumed) warp-wide min/max.
 		int curMin = WaveActiveMin(realignedStart);
 		int curMax = WaveActiveMax(realignedEnd);
+		uint fullWaveSizeIterations = 1;
 
 		//Warp-wide reductions to do the brunt of the work.
 		for (uint warpWideReductionIter = 0; warpWideReductionIter < waveWideReductionIterations; warpWideReductionIter++)
@@ -634,19 +626,18 @@ void CalcBlockNeighborOffsets(uint3 globalId : SV_DispatchThreadID, uint3 thread
 
 			curMin = WaveActiveMin(curMin);
 			curMax = WaveActiveMax(curMax);
+			fullWaveSizeIterations++;
 
 			GroupMemoryBarrierWithGroupSync();
 		}
 
 		//Leftovers handled in shared memory since it's rather expensive to do a full WaveActiveMin/Max for just a few leftovers.
-		for (uint leftoverReductionIter = 1; 
-			leftoverReductionIter < leftOversInLastIteration * performSharedMemOnlyIterations; 
-			leftoverReductionIter *= 2)
+		for (uint leftoverReductionIter = 1; leftoverReductionIter < individualMinMaxComparisons; leftoverReductionIter *= 2)
 		{
 			minStartIndex[localId] = curMin;
 			maxEndIndex[localId] = curMax;
 
-			uint pullAddr = max(localId + leftoverReductionIter, NEIGHBOR_SEARCH_NUM_THREADS - 1);
+			uint pullAddr = (localId + leftoverReductionIter * fullWaveSizeIterations * waveSize) % NEIGHBOR_SEARCH_NUM_THREADS;
 
 			GroupMemoryBarrierWithGroupSync();
 
@@ -666,35 +657,12 @@ void CalcBlockNeighborOffsets(uint3 globalId : SV_DispatchThreadID, uint3 thread
 
 		int blockMin = minStartIndex[0];
 		int blockMax = maxEndIndex[0];
+		blockMax = (blockMax == -1) ? numParticles : blockMax;
 
-		if (blockMin == NEIGHBOR_SEARCH_NUM_THREADS)
+		if (localId == 0)
 		{
-			if (localId == 0)
-			{
-				blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].x = numParticles + 1;
-			}
-		}
-		else
-		{
-			if (localId == blockMin)
-			{
-				blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].x = curSpannedOffset.x;
-			}
-		}
-
-		if (blockMax == -1)
-		{
-			if (localId == 0)
-			{
-				blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].y = numParticles;
-			}
-		}
-		else
-		{
-			if (localId == blockMax)
-			{
-				blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].y = curSpannedOffset.y;
-			}
+			blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].x = blockMin;
+			blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].y = blockMax;
 		}
 	}
 }
@@ -1135,35 +1103,26 @@ float random(uint seed)
 void Debug(uint3 globalId : SV_DispatchThreadID, uint3 threadBlockId : SV_GroupThreadID, uint3 groupID : SV_GroupID)
 {
 	if (globalId.x >= numParticles) return;
-	/*float2 expectedResult = CalculateDensitiesExperimental(globalId);
-
-	float3 particlePos;
-	uint3 originCell;
-	float3 actualResultFloat3 = performNeighborSearchIterationOriginPostEdgeHandling(globalId.x, threadBlockId.x, particlePos, originCell);
-	float2 actualResult = float2(actualResultFloat3.x, actualResultFloat3.y);
-
-	const float floatingPointPrecisionErrorAvoidanceThreshold = 0.0005;
-	bool failed = (abs(actualResult.x - expectedResult.x) > floatingPointPrecisionErrorAvoidanceThreshold) 
-		|| (abs(actualResult.y - expectedResult.y) > floatingPointPrecisionErrorAvoidanceThreshold);*/
 
 	float3 pos = PredictedPositions[globalId.x];
 	uint3 origin = GetInBoundsCell(pos, cellSize, boundsSize);
 
-	float3 prevPos = PredictedPositions[globalId.x-1 > 0 ? globalId.x - 1 : 0];
-	uint3 prevOrigin = GetInBoundsCell(prevPos, cellSize, boundsSize);
+	//float3 prevPos = PredictedPositions[globalId.x-1 > 0 ? globalId.x - 1 : 0];
+	//uint3 prevOrigin = GetInBoundsCell(prevPos, cellSize, boundsSize);
 
-	uint blockStart = globalId.x - threadBlockId.x;
-	uint blockEnd = blockStart + NEIGHBOR_SEARCH_NUM_THREADS - 1;
+	//uint blockStart = globalId.x - threadBlockId.x;
+	//uint blockEnd = blockStart + NEIGHBOR_SEARCH_NUM_THREADS - 1;
 
-	float3 firstPos = PredictedPositions[blockStart];
-	uint3 firstOrigin = GetInBoundsCell(firstPos, cellSize, boundsSize);
+	//float3 firstPos = PredictedPositions[blockStart];
+	//uint3 firstOrigin = GetInBoundsCell(firstPos, cellSize, boundsSize);
 
-	float3 lastPos = PredictedPositions[blockEnd];
-	uint3 lastOrigin = GetInBoundsCell(lastPos, cellSize, boundsSize);
+	//float3 lastPos = PredictedPositions[blockEnd];
+	//uint3 lastOrigin = GetInBoundsCell(lastPos, cellSize, boundsSize);
 
 	bool failed = false;
 	uint2 blockThingy;
-	for (int i = 0; i < 9; i++)
+	[loop]
+	for (int i = 4; i < 5; i++)
 	{
 		int3 neighborCell = origin + offsets3D[i];
 		bool neighborInBounds = isCellInBounds(neighborCell, boundsSize);
@@ -1171,15 +1130,15 @@ void Debug(uint3 globalId : SV_DispatchThreadID, uint3 threadBlockId : SV_GroupT
 		//int3 prevNeighborOriginCell = prevOrigin + offsets3D[i];
 		//bool prevNeighborInBounds = isCellInBounds(prevNeighborOriginCell, boundsSize);
 
-		int3 firstNeighborOriginCell = firstOrigin + offsets3D[i];
-		bool firstNeighborInBounds = isCellInBounds(firstNeighborOriginCell, boundsSize);
+		//int3 firstNeighborOriginCell = firstOrigin + offsets3D[i];
+		//bool firstNeighborInBounds = isCellInBounds(firstNeighborOriginCell, boundsSize);
 
-		int3 lastNeighborOriginCell = lastOrigin + offsets3D[i];
-		bool lastNeighborInBounds = isCellInBounds(lastNeighborOriginCell, boundsSize);
+		//int3 lastNeighborOriginCell = lastOrigin + offsets3D[i];
+		//bool lastNeighborInBounds = isCellInBounds(lastNeighborOriginCell, boundsSize);
 
 		if (!neighborInBounds) continue;
 		//if (!prevNeighborInBounds) continue;
-		if ((!firstNeighborInBounds) || (!lastNeighborInBounds)) continue;
+		//if ((!firstNeighborInBounds) || (!lastNeighborInBounds)) continue;
 
 		uint key = GetKeyFromInBoundsCell(neighborCell, boundsSize);
 		uint2 spannedOffset = spannedOffsets[key];
@@ -1187,16 +1146,16 @@ void Debug(uint3 globalId : SV_DispatchThreadID, uint3 threadBlockId : SV_GroupT
 		//uint prevKey = GetKeyFromInBoundsCell(prevNeighborOriginCell, boundsSize);
 		//uint2 prevSpannedOffset = spannedOffsets[prevKey];
 
-		uint firstKey = GetKeyFromInBoundsCell(firstNeighborOriginCell, boundsSize);
-		uint2 firstSpannedOffset = spannedOffsets[firstKey];
+		//uint firstKey = GetKeyFromInBoundsCell(firstNeighborOriginCell, boundsSize);
+		//uint2 firstSpannedOffset = spannedOffsets[firstKey];
 
-		uint lastKey = GetKeyFromInBoundsCell(lastNeighborOriginCell, boundsSize);
-		uint2 lastSpannedOffset = spannedOffsets[lastKey];
+		//uint lastKey = GetKeyFromInBoundsCell(lastNeighborOriginCell, boundsSize);
+		//uint2 lastSpannedOffset = spannedOffsets[lastKey];
 
 		//if ((spannedOffset.x == numParticles + 1) && (spannedOffset.y == numParticles)) continue;
-		bool emptyBlock = ((spannedOffset.x == numParticles + 1) && (spannedOffset.y == numParticles));
-		bool firstBlockIsEmpty = ((firstSpannedOffset.x == numParticles + 1) && (firstSpannedOffset.y == numParticles));
-		bool lastBlockIsEmpty = ((lastSpannedOffset.x == numParticles + 1) && (lastSpannedOffset.y == numParticles));
+		bool emptyDirection = ((spannedOffset.x == numParticles + 1) && (spannedOffset.y == numParticles));
+		//bool firstParticleIsEmptyDirection = ((firstSpannedOffset.x == numParticles + 1) && (firstSpannedOffset.y == numParticles));
+		//bool lastParticleIsEmptyDirection = ((lastSpannedOffset.x == numParticles + 1) && (lastSpannedOffset.y == numParticles));
 		//if ((prevSpannedOffset.x == numParticles + 1) && (prevSpannedOffset.y == numParticles)) continue;
 		//if ((firstSpannedOffset.x == numParticles + 1) && (firstSpannedOffset.y == numParticles)) continue;
 		//if ((lastSpannedOffset.x == numParticles + 1) && (lastSpannedOffset.y == numParticles)) continue;
@@ -1205,9 +1164,24 @@ void Debug(uint3 globalId : SV_DispatchThreadID, uint3 threadBlockId : SV_GroupT
 
 		blockThingy = blockNeighborIndexBoundaries[9 * groupID.x + i];
 
-		bool myTest = ((blockThingy.x == numParticles + 1));// && (blockThingy.y > spannedOffset.y));
+		bool blockEmpty = ((blockThingy.x == numParticles + 1) && (blockThingy.y == numParticles));
+
+		bool myTestY = ((blockThingy.y < spannedOffset.y));
+		bool myTestX = ((blockThingy.x > spannedOffset.x));
+		bool myTestBoth = myTestY || myTestX;
 		
-		failed = failed || (myTest && !emptyBlock);
+		//Only block's Y is < particle's Y (x is fine). 
+		//blockThingy.y < numParticles.
+		//spannedOffset.y < numParticles.
+		//Works if I make it based on actual spannedOffset.y VALUE rather than just the last thread ID. Implies my assumption about
+		//later thread IDs having later ranges is false.
+		//Consider a particle p0 and p1 where p0's index < p1's index.
+		//By definition, p0 must belong to a cell origin with a key less than or equal to p1's origin.
+		//Since the same cells will have the same neighbor list, let's discard the case of equality and look at only less than. So:
+		//p0 is in a different origin cell than p1 and p0's origin cell's key is < p1's origin cell's key.
+		//Is it possible for the neighbor list of p0 to start later than p1?	<- apparently not, experimentally
+		//Is it possible for the neighbor list of p0 to end later than p1?		<- apparently so, experimentally
+		failed = failed || (myTestBoth && !emptyDirection && !blockEmpty);
 	}
 
 	//Group ID drill-down
