@@ -502,6 +502,7 @@ void SpanOffsets(uint3 id : SV_DispatchThreadID)
 
 groupshared int minStartIndex[NEIGHBOR_SEARCH_NUM_THREADS];
 groupshared int maxEndIndex[NEIGHBOR_SEARCH_NUM_THREADS];
+groupshared int2 edgesFilledCheck;
 
 //JWB
 [numthreads(NEIGHBOR_SEARCH_NUM_THREADS, 1, 1)]
@@ -573,7 +574,6 @@ void CalcBlockNeighborOffsets(uint3 globalId : SV_DispatchThreadID, uint3 thread
 	[unroll]
 	for (uint curNeighborOffsetIndex = 1; curNeighborOffsetIndex < 9; curNeighborOffsetIndex++)
 	{
-		//Step 1: 0 if out-of-bounds, 1 if in-bounds
 		uint blockNeighborGlobalMemAddr = globalAddrStart + curNeighborOffsetIndex;
 		uint4 curSpannedOffset = spannedOffsetAllNeighbors[curNeighborOffsetIndex];
 
@@ -585,13 +585,23 @@ void CalcBlockNeighborOffsets(uint3 globalId : SV_DispatchThreadID, uint3 thread
 		int realignedStart = nonEmptyInBounds * curSpannedOffset.x + !nonEmptyInBounds * (numParticles + 1);
 		int realignedEnd = nonEmptyInBounds * curSpannedOffset.y + !nonEmptyInBounds * -1;
 
-		minStartIndex[localId] = realignedStart;
-		maxEndIndex[localId] = realignedEnd;
+		GroupMemoryBarrierWithGroupSync();
+
+		if (localId == 0)
+		{
+			edgesFilledCheck.x = realignedStart;
+		}
+
+		if (localId == NEIGHBOR_SEARCH_NUM_THREADS - 1)
+		{
+			edgesFilledCheck.y = realignedEnd;
+		}
+
 		GroupMemoryBarrierWithGroupSync();
 
 		//Short circuit for the fully-filled case
-		int shortCircuitMin = minStartIndex[0];
-		int shortCircuitMax = maxEndIndex[NEIGHBOR_SEARCH_NUM_THREADS - 1];
+		int shortCircuitMin = edgesFilledCheck.x;
+		int shortCircuitMax = edgesFilledCheck.y;
 
 		//TODO this works but only if the block size is 32. Why???
 		if ((shortCircuitMin < (numParticles + 1)) && (shortCircuitMax > -1))
@@ -605,7 +615,7 @@ void CalcBlockNeighborOffsets(uint3 globalId : SV_DispatchThreadID, uint3 thread
 			continue;
 		}
 
-		//Must do max and min index search within thread. Start with one (assumed) warp-wide min/max.
+		//Must do max and min index search within thread block. Start with one (assumed) warp-wide min/max.
 		int curMin = WaveActiveMin(realignedStart);
 		int curMax = WaveActiveMax(realignedEnd);
 		uint fullWaveSizeIterations = 1;
@@ -1122,7 +1132,7 @@ void Debug(uint3 globalId : SV_DispatchThreadID, uint3 threadBlockId : SV_GroupT
 	bool failed = false;
 	uint2 blockThingy;
 	[loop]
-	for (int i = 4; i < 5; i++)
+	for (int i = 0; i < 9; i++)
 	{
 		int3 neighborCell = origin + offsets3D[i];
 		bool neighborInBounds = isCellInBounds(neighborCell, boundsSize);
