@@ -7,10 +7,10 @@
 #pragma kernel CalculateViscosity
 #pragma kernel UpdatePositions
 #pragma kernel CopyBuffer
-#pragma kernel InitOffsets
-#pragma kernel CalcOffsets
-#pragma kernel SpanOffsets
-#pragma kernel CalcBlockNeighborOffsets
+#pragma kernel InitOriginIndices
+#pragma kernel CalcOriginIndices
+#pragma kernel CalcAxisAlignedIndices
+#pragma kernel BuildNeighborListIndices
 #pragma kernel Debug
 
 #define NUM_THREADS							64
@@ -41,12 +41,12 @@ RWStructuredBuffer<float2> Densities; // Density, Near Density
 
 RWStructuredBuffer<float4> DebugValues;
 
-RWStructuredBuffer<uint> keys;							//Sorted key list. Used to construct offsets.
-RWStructuredBuffer<uint> indices;						//Sorted index list. Used to construct offsets.
+RWStructuredBuffer<uint> keys;							//Sorted key list. Used to construct origin indices.
+RWStructuredBuffer<uint> indices;						//Sorted index list. Used to construct origin indices.
 RWStructuredBuffer<float3> tempBuffer;					// Used to copy values for memory coalescing
-RWStructuredBuffer<uint2> offsets;						// Holds the locations (start and end indices) where origin cell indices are located.
-RWStructuredBuffer<uint2> spannedOffsets;				// Holds the locations (start and end indices) where sets of 3 spanned adjascent neighbor indices are located
-RWStructuredBuffer<uint2> blockNeighborIndexBoundaries;	// Holds the locations (start and end indices) where sets of 3 spanned adjascent neighbor indices are located
+RWStructuredBuffer<uint2> originIndices;				// Holds the locations (start and end indices) in the particle list where particles in each origin cell start and end.
+RWStructuredBuffer<uint2> axisAlignedIndices;			// Holds the locations (start and end indices) where sets of 3 axis-aligned neighbor cells have particles in the particle list.
+RWStructuredBuffer<uint2> blockNeighborListIndices;		// Holds the locations (start and end indices) for each of 9 axis-aligned neighbor search directions where neighboring particles can be found in the particle list.
 
 
 // Settings
@@ -166,11 +166,11 @@ void CalculateDensities (uint3 id : SV_DispatchThreadID)
 
 		uint key = GetKeyFromInBoundsCell(neighborOriginCell, boundsSize);
 
-		uint2 keyOffset = spannedOffsets[key];
-		uint keyStartIndex = keyOffset.x;
-		uint keyEndIndex = keyOffset.y;
+		uint2 axisNeighborIndices = axisAlignedIndices[key];
+		uint startIndex = axisNeighborIndices.x;
+		uint endIndex = axisNeighborIndices.y;
 
-		for (uint curIndex = keyStartIndex; curIndex <= keyEndIndex; curIndex++)
+		for (uint curIndex = startIndex; curIndex <= endIndex; curIndex++)
 		{
 			// Dependent Data Retrieval
 			float3 neighbourPos = PredictedPositions[curIndex];
@@ -224,11 +224,11 @@ void CalculatePressureForce (uint3 id : SV_DispatchThreadID)
 
 		uint key = GetKeyFromInBoundsCell(neighborOriginCell, boundsSize);
 
-		uint2 keyOffset = spannedOffsets[key];
-		uint keyStartIndex = keyOffset.x;
-		uint keyEndIndex = keyOffset.y;
+		uint2 axisNeighborIndices = axisAlignedIndices[key];
+		uint startIndex = axisNeighborIndices.x;
+		uint endIndex = axisNeighborIndices.y;
 
-		for (uint curIndex = keyStartIndex; curIndex <= keyEndIndex; curIndex++)
+		for (uint curIndex = startIndex; curIndex <= endIndex; curIndex++)
 		{
 			// Dependent Data Retrieval
 			float3 neighbourPos = PredictedPositions[curIndex];
@@ -293,11 +293,11 @@ void CalculateViscosity (uint3 id : SV_DispatchThreadID)
 
 		uint key = GetKeyFromInBoundsCell(neighborOriginCell, boundsSize);
 
-		uint2 keyOffset = spannedOffsets[key];
-		uint keyStartIndex = keyOffset.x;
-		uint keyEndIndex = keyOffset.y;
+		uint2 axisNeighborIndices = axisAlignedIndices[key];
+		uint startIndex = axisNeighborIndices.x;
+		uint endIndex = axisNeighborIndices.y;
 
-		for (uint curIndex = keyStartIndex; curIndex <= keyEndIndex; curIndex++)
+		for (uint curIndex = startIndex; curIndex <= endIndex; curIndex++)
 		{
 			// Dependent Data Retrieval
 			float3 neighbourPos = PredictedPositions[curIndex];
@@ -392,11 +392,11 @@ void CopyBuffer(uint3 id : SV_DispatchThreadID)
 // We also initialize these to values outside the particle-based buffer's indexable range, so they blow up if 
 // consumers don't properly check them before indexing with them (hopefully making bugs more discoverable).
 [numthreads(NUM_THREADS, 1, 1)]
-void InitOffsets(uint3 id : SV_DispatchThreadID)
+void InitOriginIndices(uint3 id : SV_DispatchThreadID)
 {
 	if (id.x >= numCells) { return; }
 
-	offsets[id.x] = uint2(numParticles + 1, numParticles);
+	originIndices[id.x] = uint2(numParticles + 1, numParticles);
 }
 
 // Calculate offsets into the sorted keys buffer (used for spatial hashing).
@@ -407,7 +407,7 @@ void InitOffsets(uint3 id : SV_DispatchThreadID)
 // Usage example:
 // Say we have a particular particle P, and we want to know which particles are in the same grid cell as it.
 // First we would calculate the Key of P based on its position. Let's say in this example that Key = 9.
-// Next we can look up offsets[Key] to get: offsets[9] = 6
+// Next we can look up originIndices[Key] to get: originIndices[9] = 6
 // This tells us that keys[6] is the first particle that's in the same cell as P.
 // We follow the same process for finding the index of the last particle in the same cell as P, which would be:
 // Given the same keys:                                     {2, 2, 2, 3, 6, 6, 9, 9, 9, 9}
@@ -417,9 +417,9 @@ void InitOffsets(uint3 id : SV_DispatchThreadID)
 // We also know how many particles are in the same cell as P, given by: endIndex - startIndex + 1
 // 
 // NOTE: offsets buffer must filled with that are outside the normal addressable range for this to work properly.
-// So this depends on InitOffsets being run.
+// So this depends on InitOriginIndices being run.
 [numthreads(NUM_THREADS, 1, 1)]
-void CalcOffsets(uint3 id : SV_DispatchThreadID)
+void CalcOriginIndices(uint3 id : SV_DispatchThreadID)
 {
 	if (id.x >= numParticles) { return; }
 
@@ -437,12 +437,12 @@ void CalcOffsets(uint3 id : SV_DispatchThreadID)
 
 	if (!prevKeyMatches)
 	{
-		offsets[key].x = i;
+		originIndices[key].x = i;
 	}
 
 	if (!nextKeyMatches)
 	{
-		offsets[key].y = i;
+		originIndices[key].y = i;
 	}
 }
 
@@ -465,7 +465,7 @@ void CalcOffsets(uint3 id : SV_DispatchThreadID)
 // Note that the special case of an empty cell (initialized to start index = numParticles + 1, end index = numParticles)
 // Also needs to be accounted for. Note that this method may keep things empty if itself and its direct neighbors are empty.
 [numthreads(NUM_THREADS, 1, 1)]
-void SpanOffsets(uint3 id : SV_DispatchThreadID)
+void CalcAxisAlignedIndices(uint3 id : SV_DispatchThreadID)
 {
 	if (id.x >= numCells) { return; }
 
@@ -475,11 +475,11 @@ void SpanOffsets(uint3 id : SV_DispatchThreadID)
 	uint leftBoundaryCell = posInXDim == 0;
 	uint rightBoundaryCell = posInXDim == (boundsSize.x - 1);
 
-	uint2 offsetsArray[3];
+	uint2 originIndicesArray[3];
 
-	offsetsArray[0] = offsets[index - !leftBoundaryCell];
-	offsetsArray[1] = offsets[index];
-	offsetsArray[2] = offsets[index + !rightBoundaryCell];
+	originIndicesArray[0] = originIndices[index - !leftBoundaryCell];
+	originIndicesArray[1] = originIndices[index];
+	originIndicesArray[2] = originIndices[index + !rightBoundaryCell];
 
 	uint startIndex = numParticles + 1;
 	uint endIndex = numParticles;
@@ -492,12 +492,12 @@ void SpanOffsets(uint3 id : SV_DispatchThreadID)
 		startIndexEmpty = startIndex == numParticles + 1;
 		endIndexEmpty = endIndex == numParticles;
 
-		startIndex = startIndex * !startIndexEmpty + startIndexEmpty * offsetsArray[i].x;
-		endIndex = endIndex * !endIndexEmpty + endIndexEmpty * offsetsArray[2 - i].y;
+		startIndex = startIndex * !startIndexEmpty + startIndexEmpty * originIndicesArray[i].x;
+		endIndex = endIndex * !endIndexEmpty + endIndexEmpty * originIndicesArray[2 - i].y;
 	}
 
-	uint2 spannedOffset = uint2(startIndex, endIndex);
-	spannedOffsets[index] = spannedOffset;
+	uint2 indices = uint2(startIndex, endIndex);
+	axisAlignedIndices[index] = indices;
 }
 
 groupshared int minStartIndex[NEIGHBOR_SEARCH_NUM_THREADS];
@@ -506,7 +506,7 @@ groupshared int2 edgesFilledCheck;
 
 //JWB
 [numthreads(NEIGHBOR_SEARCH_NUM_THREADS, 1, 1)]
-void CalcBlockNeighborOffsets(uint3 globalId : SV_DispatchThreadID, uint3 threadId : SV_GroupThreadID, uint3 blockId : SV_GroupID)
+void BuildNeighborListIndices(uint3 globalId : SV_DispatchThreadID, uint3 threadId : SV_GroupThreadID, uint3 blockId : SV_GroupID)
 {
 	uint particleId = (globalId.x >= numParticles) ? numParticles - 1 : globalId.x;
 
@@ -531,43 +531,43 @@ void CalcBlockNeighborOffsets(uint3 globalId : SV_DispatchThreadID, uint3 thread
 	individualMinMaxComparisons = max(individualMinMaxComparisons, 0);
 
 	//The third element indicates if we're in-bounds and non-empty. The fourth is the key for this neighbor.
-	uint4 spannedOffsetAllNeighbors[9];
+	uint4 axisAlignedNeighborIndices[9];
 
 	[unroll]
 	for (uint initIndex = 0; initIndex < 9; initIndex++)
 	{
-		spannedOffsetAllNeighbors[initIndex].x = numParticles + 1;
-		spannedOffsetAllNeighbors[initIndex].y = numParticles;
+		axisAlignedNeighborIndices[initIndex].x = numParticles + 1;
+		axisAlignedNeighborIndices[initIndex].y = numParticles;
 
 		int3 neighborCell = originCell + offsets3D[initIndex];
 		uint inBounds = isCellInBounds(neighborCell, boundsSize);
 		uint neighborKey = GetKeyFromInBoundsCell(neighborCell, boundsSize);
 
-		spannedOffsetAllNeighbors[initIndex].z = neighborKey;
-		spannedOffsetAllNeighbors[initIndex].w = inBounds;
+		axisAlignedNeighborIndices[initIndex].z = neighborKey;
+		axisAlignedNeighborIndices[initIndex].w = inBounds;
 	}
 
 	[unroll]
 	for (uint populateIndex = 0; populateIndex < 9; populateIndex++)
 	{
-		if ((populateIndex != 0) && (spannedOffsetAllNeighbors[populateIndex].w > 0))
+		if ((populateIndex != 0) && (axisAlignedNeighborIndices[populateIndex].w > 0))
 		{
-			uint key = spannedOffsetAllNeighbors[populateIndex].z;
-			uint2 spannedOff = spannedOffsets[key];
-			spannedOffsetAllNeighbors[populateIndex].x = spannedOff.x;
-			spannedOffsetAllNeighbors[populateIndex].y = spannedOff.y;
+			uint key = axisAlignedNeighborIndices[populateIndex].z;
+			uint2 indices = axisAlignedIndices[key];
+			axisAlignedNeighborIndices[populateIndex].x = indices.x;
+			axisAlignedNeighborIndices[populateIndex].y = indices.y;
 		}
 	}
 
 	//origin cells should always be in-bounds
 	if (localId == 0)
 	{
-		blockNeighborIndexBoundaries[globalAddrStart].x = spannedOffsets[key].x;
+		blockNeighborListIndices[globalAddrStart].x = axisAlignedIndices[key].x;
 	}
 
 	if (localId == NEIGHBOR_SEARCH_NUM_THREADS - 1)
 	{
-		blockNeighborIndexBoundaries[globalAddrStart].y = spannedOffsets[key].y;
+		blockNeighborListIndices[globalAddrStart].y = axisAlignedIndices[key].y;
 	}
 
 	//For neighboring cells, determine the first and last in-bounds thread index (if it exists)
@@ -575,7 +575,7 @@ void CalcBlockNeighborOffsets(uint3 globalId : SV_DispatchThreadID, uint3 thread
 	for (uint curNeighborOffsetIndex = 1; curNeighborOffsetIndex < 9; curNeighborOffsetIndex++)
 	{
 		uint blockNeighborGlobalMemAddr = globalAddrStart + curNeighborOffsetIndex;
-		uint4 curSpannedOffset = spannedOffsetAllNeighbors[curNeighborOffsetIndex];
+		uint4 curSpannedOffset = axisAlignedNeighborIndices[curNeighborOffsetIndex];
 
 		uint neighborKey = curSpannedOffset.z;
 		uint inBounds = curSpannedOffset.w;
@@ -608,8 +608,8 @@ void CalcBlockNeighborOffsets(uint3 globalId : SV_DispatchThreadID, uint3 thread
 		{
 			if (localId == 0)
 			{
-				blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].x = shortCircuitMin;
-				blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].y = shortCircuitMax;
+				blockNeighborListIndices[blockNeighborGlobalMemAddr].x = shortCircuitMin;
+				blockNeighborListIndices[blockNeighborGlobalMemAddr].y = shortCircuitMax;
 			}
 
 			continue;
@@ -671,8 +671,8 @@ void CalcBlockNeighborOffsets(uint3 globalId : SV_DispatchThreadID, uint3 thread
 
 		if (localId == 0)
 		{
-			blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].x = blockMin;
-			blockNeighborIndexBoundaries[blockNeighborGlobalMemAddr].y = blockMax;
+			blockNeighborListIndices[blockNeighborGlobalMemAddr].x = blockMin;
+			blockNeighborListIndices[blockNeighborGlobalMemAddr].y = blockMax;
 		}
 	}
 }
@@ -697,11 +697,11 @@ float2 CalculateDensitiesExperimental(uint3 id)
 
 		uint key = GetKeyFromInBoundsCell(neighborOriginCell, boundsSize);
 
-		uint2 keyOffset = spannedOffsets[key];
-		uint keyStartIndex = keyOffset.x;
-		uint keyEndIndex = keyOffset.y;
+		uint2 indices = axisAlignedIndices[key];
+		uint startIndex = indices.x;
+		uint endIndex = indices.y;
 
-		for (uint curIndex = keyStartIndex; curIndex <= keyEndIndex; curIndex++)
+		for (uint curIndex = startIndex; curIndex <= endIndex; curIndex++)
 		{
 			// Dependent Data Retrieval
 			float3 neighbourPos = PredictedPositions[curIndex];
@@ -750,11 +750,11 @@ float2 CalculateDensitiesParallel(uint3 id)
 
 	uint key = GetKeyFromInBoundsCell(neighborOriginCell, boundsSize);
 
-	uint2 keyOffset = spannedOffsets[key];
-	uint keyStartIndex = keyOffset.x;
-	uint keyEndIndex = keyOffset.y;
+	uint2 indices = axisAlignedIndices[key];
+	uint startIndex = indices.x;
+	uint endIndex = indices.y;
 
-	for (uint curIndex = keyStartIndex; curIndex <= keyEndIndex; curIndex++)
+	for (uint curIndex = startIndex; curIndex <= endIndex; curIndex++)
 	{
 		// Dependent Data Retrieval
 		float3 neighbourPos = PredictedPositions[curIndex];
@@ -819,7 +819,7 @@ groupshared float3 positionCache[WIDE_MEM_TRANSACTION_SIZE * 2];
 
 	uint key = GetKeyFromInBoundsCell(originCell, boundsSize);
 
-	uint2 keyOffset = spannedOffsets[key];
+	uint2 keyOffset = axisAlignedIndices[key];
 	uint keyStartIndex = keyOffset.x;
 	uint keyEndIndex = keyOffset.y;
 
@@ -910,7 +910,7 @@ float3 performNeighborSearchIterationOriginPostEdgeHandling(uint globalId, uint 
 
 	uint key = GetKeyFromInBoundsCell(originCell, boundsSize);
 
-	uint2 keyOffset = spannedOffsets[key];
+	uint2 keyOffset = axisAlignedIndices[key];
 	uint keyStartIndex = keyOffset.x;
 	uint keyEndIndex = keyOffset.y;
 
@@ -978,7 +978,7 @@ float3 performNeighborSearchIterationOriginPostEdgeHandlingUncoalesced(uint glob
 
 	uint key = GetKeyFromInBoundsCell(originCell, boundsSize);
 
-	uint2 keyOffset = spannedOffsets[key];
+	uint2 keyOffset = axisAlignedIndices[key];
 	uint keyStartIndex = keyOffset.x;
 	uint keyEndIndex = keyOffset.y;
 
@@ -1026,7 +1026,7 @@ float3 performNeighborSearchIterationOriginPostEdgeHandling(uint globalId, uint 
 
 	uint key = GetKeyFromInBoundsCell(originCell, boundsSize);
 
-	uint2 keyOffset = spannedOffsets[key];
+	uint2 keyOffset = axisAlignedIndices[key];
 	uint keyStartIndex = keyOffset.x;
 	uint keyEndIndex = keyOffset.y;
 
@@ -1058,7 +1058,7 @@ float3 performNeighborSearchIterationOrigin(uint globalId, uint threadBlockId, o
 
 	uint key = GetKeyFromInBoundsCell(originCell, boundsSize);
 
-	uint2 keyOffset = spannedOffsets[key];
+	uint2 keyOffset = axisAlignedIndices[key];
 	uint keyStartIndex = keyOffset.x;
 	uint keyEndIndex = keyOffset.y;
 
@@ -1117,87 +1117,32 @@ void Debug(uint3 globalId : SV_DispatchThreadID, uint3 threadBlockId : SV_GroupT
 	float3 pos = PredictedPositions[globalId.x];
 	uint3 origin = GetInBoundsCell(pos, cellSize, boundsSize);
 
-	//float3 prevPos = PredictedPositions[globalId.x-1 > 0 ? globalId.x - 1 : 0];
-	//uint3 prevOrigin = GetInBoundsCell(prevPos, cellSize, boundsSize);
-
-	//uint blockStart = globalId.x - threadBlockId.x;
-	//uint blockEnd = blockStart + NEIGHBOR_SEARCH_NUM_THREADS - 1;
-
-	//float3 firstPos = PredictedPositions[blockStart];
-	//uint3 firstOrigin = GetInBoundsCell(firstPos, cellSize, boundsSize);
-
-	//float3 lastPos = PredictedPositions[blockEnd];
-	//uint3 lastOrigin = GetInBoundsCell(lastPos, cellSize, boundsSize);
-
 	bool failed = false;
-	uint2 blockThingy;
+	uint2 blockIndices;
 	[loop]
 	for (int i = 0; i < 9; i++)
 	{
 		int3 neighborCell = origin + offsets3D[i];
 		bool neighborInBounds = isCellInBounds(neighborCell, boundsSize);
 
-		//int3 prevNeighborOriginCell = prevOrigin + offsets3D[i];
-		//bool prevNeighborInBounds = isCellInBounds(prevNeighborOriginCell, boundsSize);
-
-		//int3 firstNeighborOriginCell = firstOrigin + offsets3D[i];
-		//bool firstNeighborInBounds = isCellInBounds(firstNeighborOriginCell, boundsSize);
-
-		//int3 lastNeighborOriginCell = lastOrigin + offsets3D[i];
-		//bool lastNeighborInBounds = isCellInBounds(lastNeighborOriginCell, boundsSize);
-
 		if (!neighborInBounds) continue;
-		//if (!prevNeighborInBounds) continue;
-		//if ((!firstNeighborInBounds) || (!lastNeighborInBounds)) continue;
 
 		uint key = GetKeyFromInBoundsCell(neighborCell, boundsSize);
-		uint2 spannedOffset = spannedOffsets[key];
+		uint2 particleIndices = axisAlignedIndices[key];
 
-		//uint prevKey = GetKeyFromInBoundsCell(prevNeighborOriginCell, boundsSize);
-		//uint2 prevSpannedOffset = spannedOffsets[prevKey];
+		blockIndices = blockNeighborListIndices[9 * groupID.x + i];
 
-		//uint firstKey = GetKeyFromInBoundsCell(firstNeighborOriginCell, boundsSize);
-		//uint2 firstSpannedOffset = spannedOffsets[firstKey];
+		bool emptyDirection = ((particleIndices.x == numParticles + 1) && (particleIndices.y == numParticles));
+		bool blockEmpty = ((blockIndices.x == numParticles + 1) && (blockIndices.y == numParticles));
 
-		//uint lastKey = GetKeyFromInBoundsCell(lastNeighborOriginCell, boundsSize);
-		//uint2 lastSpannedOffset = spannedOffsets[lastKey];
+		bool thisParticleWithinRangeY = ((blockIndices.y < particleIndices.y));
+		bool thisParticleWithinRangeX = ((blockIndices.x > particleIndices.x));
+		bool withinRange = thisParticleWithinRangeY || thisParticleWithinRangeX;
 
-		//if ((spannedOffset.x == numParticles + 1) && (spannedOffset.y == numParticles)) continue;
-		bool emptyDirection = ((spannedOffset.x == numParticles + 1) && (spannedOffset.y == numParticles));
-		//bool firstParticleIsEmptyDirection = ((firstSpannedOffset.x == numParticles + 1) && (firstSpannedOffset.y == numParticles));
-		//bool lastParticleIsEmptyDirection = ((lastSpannedOffset.x == numParticles + 1) && (lastSpannedOffset.y == numParticles));
-		//if ((prevSpannedOffset.x == numParticles + 1) && (prevSpannedOffset.y == numParticles)) continue;
-		//if ((firstSpannedOffset.x == numParticles + 1) && (firstSpannedOffset.y == numParticles)) continue;
-		//if ((lastSpannedOffset.x == numParticles + 1) && (lastSpannedOffset.y == numParticles)) continue;
-
-		//All failures go away if I uncomment out the line checking if firstSpannedOffset is empty.
-
-		blockThingy = blockNeighborIndexBoundaries[9 * groupID.x + i];
-
-		bool blockEmpty = ((blockThingy.x == numParticles + 1) && (blockThingy.y == numParticles));
-
-		bool myTestY = ((blockThingy.y < spannedOffset.y));
-		bool myTestX = ((blockThingy.x > spannedOffset.x));
-		bool myTestBoth = myTestY || myTestX;
-		
-		//Only block's Y is < particle's Y (x is fine). 
-		//blockThingy.y < numParticles.
-		//spannedOffset.y < numParticles.
-		//Works if I make it based on actual spannedOffset.y VALUE rather than just the last thread ID. Implies my assumption about
-		//later thread IDs having later ranges is false.
-		//Consider a particle p0 and p1 where p0's index < p1's index.
-		//By definition, p0 must belong to a cell origin with a key less than or equal to p1's origin.
-		//Since the same cells will have the same neighbor list, let's discard the case of equality and look at only less than. So:
-		//p0 is in a different origin cell than p1 and p0's origin cell's key is < p1's origin cell's key.
-		//Is it possible for the neighbor list of p0 to start later than p1?	<- apparently not, experimentally
-		//Is it possible for the neighbor list of p0 to end later than p1?		<- apparently so, experimentally
-		failed = failed || (myTestBoth && !emptyDirection && !blockEmpty);
+		failed = failed || (withinRange && !emptyDirection);
+		failed = failed || (!emptyDirection && blockEmpty);
 	}
 
-	//Group ID drill-down
-	//failed = failed && (groupID.x < 515) && (groupID.x > 510);
-
-	//Block thingy here was never set/initialized property. It's reading inconsistent values.
 	uint totalGroups = ceil(numParticles / NEIGHBOR_SEARCH_NUM_THREADS);
 	uint maxGroupId = totalGroups - 1;
 	float3 randoms;
