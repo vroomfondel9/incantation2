@@ -14,8 +14,15 @@
 #pragma kernel Debug
 
 #define NUM_THREADS							64
-#define NEIGHBOR_SEARCH_NUM_THREADS			128
-#define WIDE_MEM_TRANSACTION_SIZE			128
+
+//Neighbor search tweakables
+#define NEIGHBOR_SEARCH_NUM_THREADS			1024
+#define NEIGHBOR_SEARCH_SHARED_CACHE_SIZE	(NEIGHBOR_SEARCH_NUM_THREADS)
+#define NEIGHBOR_SEARCH_REGISTER_CACHE_SIZE	0	//A multiple of the number of items this thread is responsible for populating shared mem with
+
+//Neighbor search derived values
+#define NS_REGISTER_CACHE_MAX_ARRAY_SIZE	(((NEIGHBOR_SEARCH_SHARED_CACHE_SIZE / NEIGHBOR_SEARCH_NUM_THREADS) + 1) * 2)
+#define NS_NUM_READ_PER_GLOBAL_MEM_ROUND	(NEIGHBOR_SEARCH_SHARED_CACHE_SIZE + NEIGHBOR_SEARCH_REGISTER_CACHE_SIZE * NEIGHBOR_SEARCH_SHARED_CACHE_SIZE)
 
 //Neighbor search defines
 //The max number of threads that will coordinate to calculate values for a given origin cell
@@ -504,12 +511,23 @@ groupshared int minStartIndex[NEIGHBOR_SEARCH_NUM_THREADS];
 groupshared int maxEndIndex[NEIGHBOR_SEARCH_NUM_THREADS];
 groupshared int2 edgesFilledCheck;
 
-//JWB
+// Pre-calculates start & end indices into the particle array for all 9 axis-aligned neighbor directions at the level of a 
+// neighbor search thread block.
+//
+// This enables thread blocks to know in advance the range of particles that need to be searched by all particles within the block,
+// which enables them to load particle positions and dependent values in shared memory in parallel to be shared among particles that
+// are close by, maximizing use of available bandwidth.
+//
+// The layout of blockNeighborListIndices in memory is an array of 9 uint2s stored continuously. Each index is a neighbor direction
+// (so an index into offsets3D). The x value is the start index and the y value is the end index. If all particles are either 
+// out-of-bounds or empty for a block in a given direction, then the x and y values will be set to (numParticles + 1) and numParticles
+// respectively, indicating an empty block (just like at the particle-level).
 [numthreads(NEIGHBOR_SEARCH_NUM_THREADS, 1, 1)]
 void BuildNeighborListIndices(uint3 globalId : SV_DispatchThreadID, uint3 threadId : SV_GroupThreadID, uint3 blockId : SV_GroupID)
 {
 	uint particleId = (globalId.x >= numParticles) ? numParticles - 1 : globalId.x;
 
+	//SERIALIZED DATA 1: Get key values for each particle.
 	uint key = keys[particleId];
 
 	// Calculate some stuff that will be needed later while waiting for data...
@@ -531,6 +549,7 @@ void BuildNeighborListIndices(uint3 globalId : SV_DispatchThreadID, uint3 thread
 	individualMinMaxComparisons = max(individualMinMaxComparisons, 0);
 
 	//The third element indicates if we're in-bounds and non-empty. The fourth is the key for this neighbor.
+	//The whole point of this variable and the subsequent 2 loops is to ensure near-parallel requests for axisAlignedIndices data.
 	uint4 axisAlignedNeighborIndices[9];
 
 	[unroll]
@@ -547,10 +566,11 @@ void BuildNeighborListIndices(uint3 globalId : SV_DispatchThreadID, uint3 thread
 		axisAlignedNeighborIndices[initIndex].w = inBounds;
 	}
 
+	//SERIALIZED DATA 2: Get axis-aligned indices in all 9 neighbor directions (if in-bounds) in parallel
 	[unroll]
 	for (uint populateIndex = 0; populateIndex < 9; populateIndex++)
 	{
-		if ((populateIndex != 0) && (axisAlignedNeighborIndices[populateIndex].w > 0))
+		if ((axisAlignedNeighborIndices[populateIndex].w > 0))
 		{
 			uint key = axisAlignedNeighborIndices[populateIndex].z;
 			uint2 indices = axisAlignedIndices[key];
@@ -562,12 +582,12 @@ void BuildNeighborListIndices(uint3 globalId : SV_DispatchThreadID, uint3 thread
 	//origin cells should always be in-bounds
 	if (localId == 0)
 	{
-		blockNeighborListIndices[globalAddrStart].x = axisAlignedIndices[key].x;
+		blockNeighborListIndices[globalAddrStart].x = axisAlignedNeighborIndices[0].x;
 	}
 
 	if (localId == NEIGHBOR_SEARCH_NUM_THREADS - 1)
 	{
-		blockNeighborListIndices[globalAddrStart].y = axisAlignedIndices[key].y;
+		blockNeighborListIndices[globalAddrStart].y = axisAlignedNeighborIndices[0].y;
 	}
 
 	//For neighboring cells, determine the first and last in-bounds thread index (if it exists)
@@ -746,7 +766,7 @@ float2 CalculateDensitiesParallel(uint3 id)
 	int3 neighborOriginCell = originCell + offsets3D[neighborIndex];
 	bool neighborInBounds = isCellInBounds(neighborOriginCell, boundsSize);
 
-	if (!neighborInBounds) return float2(-1, -1);
+	if (!neighborInBounds) return float2(0, 0);
 
 	uint key = GetKeyFromInBoundsCell(neighborOriginCell, boundsSize);
 
@@ -803,296 +823,182 @@ float3 calculateDensityPairwise(float3 pos, float3 neighbourPos)
 	return float3(influenceFactor * densityStrength, influenceFactorNear * densityStrength, 0.0f);
 }
 
-//groupshared float3 positionCache[WIDE_MEM_TRANSACTION_SIZE];
-groupshared float3 positionCache[WIDE_MEM_TRANSACTION_SIZE * 2];
+groupshared float3 positionsCache[NEIGHBOR_SEARCH_SHARED_CACHE_SIZE];
+groupshared float3 depValuesCache[NEIGHBOR_SEARCH_SHARED_CACHE_SIZE];
 
-/*float3 performNeighborSearchIterationOriginSharedMemShenanigans(uint globalId, uint threadBlockId, out float3 particlePos, out uint3 originCell)
+float3 searchNeighborsInDirectionSharedMemChunk(uint globalId, uint threadBlockId, uint neighborId,
+	float3 particlePos, float3 particleDepValue, uint2 sharedMemGlobalIndexRange, uint2 particleGlobalIndexRange)
 {
-	float3 accumulatedDensities = float3(0.0f, 0.0f, 0.0f);
+	float3 sum = float3(0, 0, 0);
 
-	uint indexInBoundsGlobalId = globalId < numParticles ? globalId : numParticles - 1;
-	uint threadBlockGlobalStartIndex = globalId - threadBlockId;
-
-	particlePos = PredictedPositions[indexInBoundsGlobalId];
-	positionCache[threadBlockId] = particlePos;
-	originCell = GetInBoundsCell(particlePos, cellSize, boundsSize);
-
-	uint key = GetKeyFromInBoundsCell(originCell, boundsSize);
-
-	uint2 keyOffset = axisAlignedIndices[key];
-	uint keyStartIndex = keyOffset.x;
-	uint keyEndIndex = keyOffset.y;
-
-	uint keyStartIndexThisBlock = max(keyStartIndex, threadBlockGlobalStartIndex);
-	uint keyEndIndexThisBlock = min(keyEndIndex, threadBlockGlobalStartIndex + WIDE_MEM_TRANSACTION_SIZE - 1);
-
-	GroupMemoryBarrierWithGroupSync();
-
-	float3 neighborPos;
-	for (uint curIndex = keyStartIndexThisBlock; curIndex <= keyEndIndexThisBlock; curIndex++)
+	//Early exit if no neighbors in this direction
+	uint particleNumNeighborsTotal = particleGlobalIndexRange.y - particleGlobalIndexRange.x + 1;
+	if (particleNumNeighborsTotal == 0)
 	{
-		//int curLocalIndex = curIndex - threadBlockGlobalStartIndex;
-		//bool inSharedMem = (curLocalIndex >= 0) && (curLocalIndex < WIDE_MEM_TRANSACTION_SIZE);
-		
-		//uint unconditionalIndex = inSharedMem * curLocalIndex;
-
-		//float3 neighborPos = inSharedMem ? positionCache[curLocalIndex] : PredictedPositions[curIndex];	//Line A
-		//float3 neighborPos = PredictedPositions[curIndex];												//Line B
-		float3 neighborPos = positionCache[curIndex];												//Line C
-		accumulatedDensities += calculateDensityPairwise(particlePos, neighborPos);	
+		return sum;
 	}
 
-	GroupMemoryBarrierWithGroupSync();
-
-	uint prevIndexInBounds = globalId - WIDE_MEM_TRANSACTION_SIZE >= 0 ? globalId - WIDE_MEM_TRANSACTION_SIZE : indexInBoundsGlobalId;
-	float3 transferParticlePos = PredictedPositions[prevIndexInBounds];
-	positionCache[threadBlockId] = transferParticlePos;
-
-	threadBlockGlobalStartIndex = threadBlockGlobalStartIndex - WIDE_MEM_TRANSACTION_SIZE >= 0 ? threadBlockGlobalStartIndex - WIDE_MEM_TRANSACTION_SIZE : threadBlockGlobalStartIndex;
-	keyStartIndexThisBlock = max(keyStartIndex, threadBlockGlobalStartIndex);
-	keyEndIndexThisBlock = min(keyEndIndex, threadBlockGlobalStartIndex + WIDE_MEM_TRANSACTION_SIZE - 1);
-
-	GroupMemoryBarrierWithGroupSync();
-
-	for (uint prevIndex = keyStartIndexThisBlock; prevIndex <= keyEndIndexThisBlock; prevIndex++)
+	//Early exit if no neighbors in bounds of current section of memory we're checking
+	bool2 startIndexOutOfBounds = bool2(particleGlobalIndexRange.x < sharedMemGlobalIndexRange.x, 
+		particleGlobalIndexRange.x > sharedMemGlobalIndexRange.y);
+	bool2 endIndexOutOfBounds = bool2(particleGlobalIndexRange.y < sharedMemGlobalIndexRange.x,
+		particleGlobalIndexRange.y > sharedMemGlobalIndexRange.y);
+	bool2 outOfBoundsSameSide = bool2(startIndexOutOfBounds.x && endIndexOutOfBounds.x,
+		startIndexOutOfBounds.y && endIndexOutOfBounds.y);
+	if (outOfBoundsSameSide.x || outOfBoundsSameSide.y)
 	{
-		//int curLocalIndex = curIndex - threadBlockGlobalStartIndex;
-		//bool inSharedMem = (curLocalIndex >= 0) && (curLocalIndex < WIDE_MEM_TRANSACTION_SIZE);
-
-		//uint unconditionalIndex = inSharedMem * curLocalIndex;
-
-		//float3 neighborPos = inSharedMem ? positionCache[curLocalIndex] : PredictedPositions[curIndex];	//Line A
-		//float3 neighborPos = PredictedPositions[curIndex];												//Line B
-		float3 neighborPos = positionCache[prevIndex];												//Line C
-		accumulatedDensities += calculateDensityPairwise(particlePos, neighborPos);
+		return sum;
 	}
 
-	GroupMemoryBarrierWithGroupSync();
+	particleGlobalIndexRange.x = clamp(particleGlobalIndexRange.x, sharedMemGlobalIndexRange.x, sharedMemGlobalIndexRange.y);
+	particleGlobalIndexRange.y = clamp(particleGlobalIndexRange.y, sharedMemGlobalIndexRange.x, sharedMemGlobalIndexRange.y);
 
-	uint nextIndexInBounds = globalId + WIDE_MEM_TRANSACTION_SIZE < numParticles ? globalId + WIDE_MEM_TRANSACTION_SIZE : numParticles - 1;
-	transferParticlePos = PredictedPositions[nextIndexInBounds];
-	positionCache[threadBlockId] = transferParticlePos;
-
-	threadBlockGlobalStartIndex = threadBlockGlobalStartIndex + WIDE_MEM_TRANSACTION_SIZE >= 0 ? threadBlockGlobalStartIndex + WIDE_MEM_TRANSACTION_SIZE : threadBlockGlobalStartIndex;
-	keyStartIndexThisBlock = max(keyStartIndex, threadBlockGlobalStartIndex);
-	keyEndIndexThisBlock = min(keyEndIndex, threadBlockGlobalStartIndex + WIDE_MEM_TRANSACTION_SIZE - 1);
-
-	GroupMemoryBarrierWithGroupSync();
-
-	for (uint nextIndex = keyStartIndexThisBlock; nextIndex <= keyEndIndexThisBlock; nextIndex++)
+	uint localStartIndex = particleGlobalIndexRange.x - sharedMemGlobalIndexRange.x;
+	uint numToCheckInclusive = particleGlobalIndexRange.y - particleGlobalIndexRange.x;
+	uint localEndIndex = localStartIndex + numToCheckInclusive;
+	
+	for (int curIndex = localStartIndex; curIndex <= localEndIndex; curIndex++)
 	{
-		//int curLocalIndex = curIndex - threadBlockGlobalStartIndex;
-		//bool inSharedMem = (curLocalIndex >= 0) && (curLocalIndex < WIDE_MEM_TRANSACTION_SIZE);
-
-		//uint unconditionalIndex = inSharedMem * curLocalIndex;
-
-		//float3 neighborPos = inSharedMem ? positionCache[curLocalIndex] : PredictedPositions[curIndex];	//Line A
-		//float3 neighborPos = PredictedPositions[curIndex];												//Line B
-		float3 neighborPos = positionCache[nextIndex];												//Line C
-		accumulatedDensities += calculateDensityPairwise(particlePos, neighborPos);
+		float3 neighborPos = positionsCache[curIndex];
+		sum += calculateDensityPairwise(particlePos, neighborPos);
 	}
 
-	GroupMemoryBarrierWithGroupSync();
-
-	return accumulatedDensities;
+	return sum;
 }
 
-float3 performNeighborSearchIterationOriginPostEdgeHandling(uint globalId, uint threadBlockId, out float3 particlePos, out uint3 originCell)
+float3 searchNeighborsInDirection(uint globalId, uint threadBlockId, uint neighborId, float3 particlePos,
+	float3 particleDepValue, uint2 blockIndices)
 {
-	float3 accumulatedDensities = float3(0.0f, 0.0f, 0.0f);
+	float3 sum = 0;
+	uint blockParticleNum = blockIndices.y - blockIndices.x + 1;
 
-	uint indexInBoundsGlobalId = globalId < numParticles ? globalId : numParticles - 1;
-	uint threadBlockGlobalStartIndex = globalId - threadBlockId;
-
-	particlePos = PredictedPositions[indexInBoundsGlobalId];
-	positionCache[threadBlockId] = particlePos;
-	originCell = GetInBoundsCell(particlePos, cellSize, boundsSize);
-
-	uint key = GetKeyFromInBoundsCell(originCell, boundsSize);
-
-	uint2 keyOffset = axisAlignedIndices[key];
-	uint keyStartIndex = keyOffset.x;
-	uint keyEndIndex = keyOffset.y;
-
-	uint keyStartIndexThisBlock = max(keyStartIndex, threadBlockGlobalStartIndex);
-	uint keyEndIndexThisBlock = min(keyEndIndex, threadBlockGlobalStartIndex + WIDE_MEM_TRANSACTION_SIZE - 1);
-
-	GroupMemoryBarrierWithGroupSync();
-
-	float3 neighborPos;
-	for (uint curIndex = keyStartIndexThisBlock; curIndex <= keyEndIndexThisBlock; curIndex++)
+	if (blockParticleNum == 0)
 	{
-		//int curLocalIndex = curIndex - threadBlockGlobalStartIndex;
-		//bool inSharedMem = (curLocalIndex >= 0) && (curLocalIndex < WIDE_MEM_TRANSACTION_SIZE);
-
-		//uint unconditionalIndex = inSharedMem * curLocalIndex;
-
-		//float3 neighborPos = inSharedMem ? positionCache[curLocalIndex] : PredictedPositions[curIndex];	//Line A
-		//float3 neighborPos = PredictedPositions[curIndex];												//Line B
-		float3 neighborPos = positionCache[curIndex];												//Line C
-		accumulatedDensities += calculateDensityPairwise(particlePos, neighborPos);
+		return sum;
 	}
 
-	for (uint leftEdgeIndex = keyStartIndex; leftEdgeIndex < threadBlockGlobalStartIndex; leftEdgeIndex++)
+	uint2 particleNeighborIndices = uint2(numParticles + 1, numParticles);
+	int3 particleOrigin = GetInBoundsCell(particlePos, cellSize, boundsSize);
+	int3 particleNeighborCell = particleOrigin + offsets3D[neighborId];
+	bool particleNeighborCellInBounds = isCellInBounds(particleNeighborCell, boundsSize);
+	uint particleNeighborCellKey = GetKeyFromInBoundsCell(particleNeighborCell, boundsSize);
+
+	if (particleNeighborCellInBounds)
 	{
-		float3 neighborPos = PredictedPositions[leftEdgeIndex];
-		accumulatedDensities += calculateDensityPairwise(particlePos, neighborPos);
+		particleNeighborIndices = axisAlignedIndices[particleNeighborCellKey];
 	}
 
-	for (uint rightEdgeIndex = threadBlockGlobalStartIndex + WIDE_MEM_TRANSACTION_SIZE; rightEdgeIndex <= keyEndIndex; rightEdgeIndex++)
+	float3 posRegisterCache[NS_REGISTER_CACHE_MAX_ARRAY_SIZE];
+	float3 depValuesRegisterCache[NS_REGISTER_CACHE_MAX_ARRAY_SIZE];
+
+	uint maxNumElementsToPopulateSharedMem = (NEIGHBOR_SEARCH_SHARED_CACHE_SIZE / NEIGHBOR_SEARCH_NUM_THREADS) +
+		((NEIGHBOR_SEARCH_SHARED_CACHE_SIZE % NEIGHBOR_SEARCH_NUM_THREADS) > threadBlockId);
+	uint maxNumElementsToPopulateRegisters = maxNumElementsToPopulateSharedMem * NEIGHBOR_SEARCH_REGISTER_CACHE_SIZE;
+	uint maxNumElementToRequestPerGlobalMemRound = maxNumElementsToPopulateRegisters + maxNumElementsToPopulateSharedMem;
+
+	uint globalMemReads = 0;
+	for (int globalMemRound = 0; globalMemRound * NS_NUM_READ_PER_GLOBAL_MEM_ROUND < blockParticleNum; globalMemRound++)
 	{
-		float3 neighborPos = PredictedPositions[rightEdgeIndex];
-		accumulatedDensities += calculateDensityPairwise(particlePos, neighborPos);
+		uint writtenToSharedMem = 0;
+		uint writtenToRegisters = 0;
+		uint globalMemRoundOffset = blockIndices.x + globalMemRound * NS_NUM_READ_PER_GLOBAL_MEM_ROUND;
+
+		GroupMemoryBarrierWithGroupSync();
+		for (int sharedMemWriteIndex = 0; sharedMemWriteIndex < maxNumElementsToPopulateSharedMem; sharedMemWriteIndex++)
+		{
+			uint localAddrOffset = sharedMemWriteIndex * NEIGHBOR_SEARCH_NUM_THREADS + threadBlockId;
+			uint globalAddr = globalMemRoundOffset + localAddrOffset;
+			uint sharedMemAddr = localAddrOffset;
+
+			if ((globalAddr <= blockIndices.y) && (globalAddr < numParticles))
+			{
+				positionsCache[sharedMemAddr] = PredictedPositions[globalAddr];
+				//TODO dep values
+				writtenToSharedMem++;
+			}
+		}
+
+		uint sharedMemOffset = NEIGHBOR_SEARCH_SHARED_CACHE_SIZE;
+
+		for (int registerWriteIndex = 0; registerWriteIndex < maxNumElementsToPopulateRegisters; registerWriteIndex++)
+		{
+			uint iterationOffset = registerWriteIndex * NEIGHBOR_SEARCH_NUM_THREADS + threadBlockId;
+			uint globalAddr = globalMemRoundOffset + sharedMemOffset + iterationOffset;
+
+			if ((globalAddr <= blockIndices.y) && (globalAddr < numParticles))
+			{
+				posRegisterCache[registerWriteIndex] = PredictedPositions[globalAddr];
+				//TODO dep values
+				writtenToRegisters++;
+			}
+		}
+
+		globalMemReads += writtenToSharedMem + writtenToRegisters;
+
+		for (int registerCycleRound = 0; registerCycleRound < NEIGHBOR_SEARCH_REGISTER_CACHE_SIZE + 1; registerCycleRound++)
+		{
+			uint sharedMemGlobalAddrRangeStart = globalMemRoundOffset + registerCycleRound * NEIGHBOR_SEARCH_SHARED_CACHE_SIZE;
+			uint sharedMemGlobalAddrRangeEnd = sharedMemGlobalAddrRangeStart + NEIGHBOR_SEARCH_SHARED_CACHE_SIZE - 1;
+			sharedMemGlobalAddrRangeEnd = (sharedMemGlobalAddrRangeEnd > numParticles) ? numParticles - 1 : sharedMemGlobalAddrRangeEnd;
+			uint2 sharedMemGlobalAddrRange = uint2(sharedMemGlobalAddrRangeStart, sharedMemGlobalAddrRangeEnd);
+
+			GroupMemoryBarrierWithGroupSync();
+
+			//Shared memory ready. Do calculations.
+			sum += searchNeighborsInDirectionSharedMemChunk(globalId, threadBlockId, neighborId, particlePos, 
+				particleDepValue, sharedMemGlobalAddrRange, particleNeighborIndices);
+
+			GroupMemoryBarrierWithGroupSync();
+
+			for (int registerTransferIndex = 0; registerTransferIndex < maxNumElementsToPopulateSharedMem; registerTransferIndex++)
+			{
+				uint regIndex = registerCycleRound * maxNumElementsToPopulateSharedMem + registerTransferIndex;
+				uint sharedMemAddr = registerTransferIndex * NEIGHBOR_SEARCH_NUM_THREADS + threadBlockId;
+
+				bool shouldTransfer = (regIndex < writtenToRegisters);
+				if (shouldTransfer)
+				{
+					positionsCache[sharedMemAddr] = posRegisterCache[regIndex];
+					//TODO dep values
+				}
+			}
+		}
 	}
 
-	return accumulatedDensities;
-}*/
 
-float3 performNeighborSearchIterationOriginPostEdgeHandlingUncoalesced(uint globalId, uint threadBlockId, out float3 particlePos, out uint3 originCell)
-{
-	const uint paddingSize = WIDE_MEM_TRANSACTION_SIZE / 2;
-
-	float3 accumulatedDensities = float3(0.0f, 0.0f, 0.0f);
-
-	uint threadBlockGlobalStartIndex = globalId - threadBlockId;
-
-	bool rightSidePadder = threadBlockId >= paddingSize;
-	int paddingOffset = (rightSidePadder * 2 - 1) * paddingSize;
-	int particleRelativeThreadBlockId = threadBlockId + paddingOffset;
-	uint paddedThreadBlockId = paddingSize + particleRelativeThreadBlockId;
-
-	int paddedGlobalId = threadBlockGlobalStartIndex + particleRelativeThreadBlockId;
-	bool firstBlock = (paddedGlobalId < 0);
-	uint curIndexPadding = !firstBlock * paddingSize;
-	uint paddedInBoundsGlobalId = (paddedGlobalId < 0) ? 0 : (uint) paddedGlobalId;
-	paddedInBoundsGlobalId = (paddedInBoundsGlobalId >= numParticles) ? numParticles - 1 : paddedInBoundsGlobalId;
-
-	uint nonPaddedInBoundsGlobalId = globalId < numParticles ? globalId : numParticles - 1;
-
-	particlePos = PredictedPositions[nonPaddedInBoundsGlobalId];
-	float3 paddingParticle = PredictedPositions[paddedInBoundsGlobalId];
-	positionCache[threadBlockId] = particlePos;
-	positionCache[paddedThreadBlockId] = paddingParticle;
-
-	originCell = GetInBoundsCell(particlePos, cellSize, boundsSize);
-
-	uint key = GetKeyFromInBoundsCell(originCell, boundsSize);
-
-	uint2 keyOffset = axisAlignedIndices[key];
-	uint keyStartIndex = keyOffset.x;
-	uint keyEndIndex = keyOffset.y;
-
-	GroupMemoryBarrierWithGroupSync();
-
-	float3 neighborPos;
-	for (uint curIndex = keyStartIndex; curIndex <= keyEndIndex; curIndex++)
-	{
-		int curLocalIndex = curIndex - threadBlockGlobalStartIndex + curIndexPadding;
-		bool inSharedMem = (curLocalIndex >= 0) && (curLocalIndex < WIDE_MEM_TRANSACTION_SIZE * 2);
-
-		float3 neighborPos = positionCache[curIndex];
-		accumulatedDensities += calculateDensityPairwise(particlePos, neighborPos);
-	}
-
-	return accumulatedDensities;
+	return sum;
 }
 
-float3 performNeighborSearchIterationOriginPostEdgeHandling(uint globalId, uint threadBlockId, out float3 particlePos, out uint3 originCell)
+groupshared uint2 blockIndicesList[9];
+
+float3 searchNeighbors(uint globalId, uint threadId, uint blockId)
 {
-	const uint paddingSize = WIDE_MEM_TRANSACTION_SIZE / 2;
-
-	float3 accumulatedDensities = float3(0.0f, 0.0f, 0.0f);
-
-	uint threadBlockGlobalStartIndex = globalId - threadBlockId;
-	bool firstBlock = threadBlockGlobalStartIndex == 0;
-
-	int leftReadGlobalIndex = globalId - (int)paddingSize;
-	uint leftReadInBoundsGlobalIndex = (leftReadGlobalIndex < 0) ? 0 : (uint) leftReadGlobalIndex;
-
-	uint rightReadGlobalIndex = globalId + paddingSize;
-	uint rightReadInBoundsGlobalIndex = (rightReadGlobalIndex >= numParticles) ? numParticles - 1 : rightReadGlobalIndex;
-
-	float3 transferPosLeft = PredictedPositions[leftReadGlobalIndex];
-	float3 transferPosRight = PredictedPositions[rightReadGlobalIndex];
-	positionCache[threadBlockId] = transferPosLeft;
-	positionCache[threadBlockId + WIDE_MEM_TRANSACTION_SIZE] = transferPosRight;
-
-	uint paddedLocalId = threadBlockId + paddingSize;
-
-	GroupMemoryBarrierWithGroupSync();
-
-	particlePos = positionCache[paddedLocalId];
-	originCell = GetInBoundsCell(particlePos, cellSize, boundsSize);
-
-	uint key = GetKeyFromInBoundsCell(originCell, boundsSize);
-
-	uint2 keyOffset = axisAlignedIndices[key];
-	uint keyStartIndex = keyOffset.x;
-	uint keyEndIndex = keyOffset.y;
-
-	int globalOffsets = -1 * (int) threadBlockGlobalStartIndex + paddingSize;
-	uint localKeyStartIndex = keyStartIndex + globalOffsets;
-	uint localKeyEndIndex = keyEndIndex + globalOffsets;
-	uint iterations = localKeyEndIndex - localKeyStartIndex + 1;
-
-	for (uint curLocalIndex = localKeyStartIndex; curLocalIndex <= localKeyEndIndex; curLocalIndex++)
+	uint particleId = (globalId > numParticles) ? numParticles - 1 : globalId;
+	uint blockIndicesListStartAddr = blockId * 9;
+	
+	//Serialized Global IO 1:
+	//		Block-level: Neighbor list indices (all directions)
+	//		Particle-level: Position, Dependent Values
+	if (threadId < 9)
 	{
-		//bool inSharedMem = (curLocalIndex >= 0) && (curLocalIndex < WIDE_MEM_TRANSACTION_SIZE * 2);
+		blockIndicesList[threadId] = blockIndicesList[blockIndicesListStartAddr + threadId];
+	}
+	float3 particlePos = PredictedPositions[particleId];
+	//TODO read dependent values from global mem
+	float3 particleDepValue = float3(0, 0, 0);
 
-		float3 neighborPos = positionCache[curLocalIndex];
-		accumulatedDensities += calculateDensityPairwise(particlePos, neighborPos);
+	//Serialized Global IO 2-10:
+	//		Block-level: All particle positions & dependent values to be shared for this entire block in this direction
+	//		Particle-level: Global neighbor list indices for neighbors in this direction
+	float3 sum = 0;
+	for (uint curNeighborDir = 0; curNeighborDir < 9; curNeighborDir++)
+	{
+		sum += searchNeighborsInDirection(globalId, threadId, curNeighborDir,
+			particlePos, particleDepValue, blockIndicesList[curNeighborDir]);
 	}
 
-	return accumulatedDensities;
-}
+	return sum;
 
-float3 performNeighborSearchIterationOrigin(uint globalId, uint threadBlockId, out float3 particlePos, out uint3 originCell)
-{
-	float3 accumulatedDensities = float3(0.0f, 0.0f, 0.0f);
-
-	uint indexInBoundsGlobalId = globalId < numParticles ? globalId : numParticles - 1;
-	uint threadBlockGlobalStartIndex = globalId - threadBlockId;
-
-	particlePos = PredictedPositions[indexInBoundsGlobalId];
-	originCell = GetInBoundsCell(particlePos, cellSize, boundsSize);
-
-	uint key = GetKeyFromInBoundsCell(originCell, boundsSize);
-
-	uint2 keyOffset = axisAlignedIndices[key];
-	uint keyStartIndex = keyOffset.x;
-	uint keyEndIndex = keyOffset.y;
-
-	float3 neighborPos;
-	for (uint curIndex = keyStartIndex; curIndex <= keyEndIndex; curIndex++)
-	{
-		float3 neighborPos = PredictedPositions[curIndex];												//Line B
-		accumulatedDensities += calculateDensityPairwise(particlePos, neighborPos);
-	}
-
-	return accumulatedDensities;
-}
-
-// This assumes it's been called after the origin search iteration has already been performed and therefore
-// this particle's position, origin cell, and the origin cells of the first and last particles in the thread
-// block are known.
-//
-// This method differs from origin search in the following ways:
-//
-// First, it can't assume it's in-bounds. But it also can't assume if one thread is out of bounds then all
-// must be out of bounds, as a thread block could cross an X boundary and increment Y or Z (for example, 
-// from Y = 0 to Y = 1) which would bring out-of-bounds into in-bounds at some unpredictable point. Therefore,
-// each thread checks if its offset neighbor cell is in-bounds or not and writes it to shared memory. We then
-// search shared memory for the first and last instance of an in-bounds cell and use that as the basis for
-// the start and end indices of the neighbor list to search. These indices are retrieved in chunks aligned to
-// WIDE_MEM_TRANSACTION_SIZE in order to maximize cache hits. If all cells are out-of-bounds, this returns (0,0,0).
-//
-// Secondly, the method of search is from left to right, as we don't know which particles to center on for a neighbor
-// (this operates starting at the cell-level rather than the particle-level, after all, and each particle maps to
-// a neighboring cell but not a neighboring particle). Again, this is aligned to WIDE_MEM_TRANSACTION_SIZE chunks.
-float3 performNeighborSearchIterationZYOriginNeighbor(uint globalId, uint threadBlockId, float3 particlePos,
-	uint3 originCell, int3 curIterationCellOffset)
-{
-	return float3(0, 0, 0);
 }
 
 float random(uint seed)
@@ -1112,9 +1018,9 @@ float random(uint seed)
 [numthreads(NEIGHBOR_SEARCH_NUM_THREADS, 1, 1)]
 void Debug(uint3 globalId : SV_DispatchThreadID, uint3 threadBlockId : SV_GroupThreadID, uint3 groupID : SV_GroupID)
 {
-	if (globalId.x >= numParticles) return;
+	//if (globalId.x >= numParticles) return;
 
-	float3 pos = PredictedPositions[globalId.x];
+	float3 pos = PredictedPositions[globalId.x >= numParticles ? numParticles - 1 : globalId.x];
 	uint3 origin = GetInBoundsCell(pos, cellSize, boundsSize);
 
 	bool failed = false;
@@ -1125,22 +1031,35 @@ void Debug(uint3 globalId : SV_DispatchThreadID, uint3 threadBlockId : SV_GroupT
 		int3 neighborCell = origin + offsets3D[i];
 		bool neighborInBounds = isCellInBounds(neighborCell, boundsSize);
 
-		if (!neighborInBounds) continue;
+		//if (!neighborInBounds) continue;
 
-		uint key = GetKeyFromInBoundsCell(neighborCell, boundsSize);
-		uint2 particleIndices = axisAlignedIndices[key];
+		//uint key = GetKeyFromInBoundsCell(neighborCell, boundsSize);
+		//uint2 particleIndices = axisAlignedIndices[key];
 
 		blockIndices = blockNeighborListIndices[9 * groupID.x + i];
 
-		bool emptyDirection = ((particleIndices.x == numParticles + 1) && (particleIndices.y == numParticles));
-		bool blockEmpty = ((blockIndices.x == numParticles + 1) && (blockIndices.y == numParticles));
+		//bool emptyDirection = ((particleIndices.x == numParticles + 1) && (particleIndices.y == numParticles));
+		//bool blockEmpty = ((blockIndices.x == numParticles + 1) && (blockIndices.y == numParticles));
 
-		bool thisParticleWithinRangeY = ((blockIndices.y < particleIndices.y));
-		bool thisParticleWithinRangeX = ((blockIndices.x > particleIndices.x));
-		bool withinRange = thisParticleWithinRangeY || thisParticleWithinRangeX;
+		//bool thisParticleWithinRangeY = ((blockIndices.y < particleIndices.y));
+		//bool thisParticleWithinRangeX = ((blockIndices.x > particleIndices.x));
+		//bool withinRange = thisParticleWithinRangeY || thisParticleWithinRangeX;
 
-		failed = failed || (withinRange && !emptyDirection);
-		failed = failed || (!emptyDirection && blockEmpty);
+		//BuildNeighborListIndices kernel tests
+		//failed = failed || (withinRange && !emptyDirection);
+		//failed = failed || (!emptyDirection && blockEmpty);
+
+		float2 actualResult = searchNeighborsInDirection(globalId.x, threadBlockId.x, i, pos, float3(0, 0, 0), blockIndices).xy;
+
+		if (globalId.x > numParticles) continue;
+
+		float2 expectedResult = CalculateDensitiesParallel(uint3(globalId.x * 9 + i, 0, 0));
+
+		float floatingPointErrorAllowance = 0.0001;
+		bool resultsMatchish = (abs(expectedResult.x - actualResult.x) <= floatingPointErrorAllowance) ||
+			(abs(expectedResult.y - actualResult.y) <= floatingPointErrorAllowance);
+
+		failed = failed || !resultsMatchish;
 	}
 
 	uint totalGroups = ceil(numParticles / NEIGHBOR_SEARCH_NUM_THREADS);
