@@ -16,7 +16,7 @@
 #define NUM_THREADS							64
 
 //Neighbor search tweakables
-#define NEIGHBOR_SEARCH_NUM_THREADS			1024
+#define NEIGHBOR_SEARCH_NUM_THREADS			128
 #define NEIGHBOR_SEARCH_SHARED_CACHE_SIZE	(NEIGHBOR_SEARCH_NUM_THREADS)
 #define NEIGHBOR_SEARCH_REGISTER_CACHE_SIZE	0	//A multiple of the number of items this thread is responsible for populating shared mem with
 
@@ -708,7 +708,7 @@ float2 CalculateDensitiesExperimental(uint3 id)
 	float nearDensity = 0;
 
 	// Neighbour search
-	for (int i = 0; i < 1; i++)
+	for (int i = 0; i < 9; i++)
 	{
 		int3 neighborOriginCell = originCell + offsets3D[i];
 		bool neighborInBounds = isCellInBounds(neighborOriginCell, boundsSize);
@@ -973,7 +973,7 @@ groupshared uint2 blockIndicesList[9];
 
 float3 searchNeighbors(uint globalId, uint threadId, uint blockId)
 {
-	uint particleId = (globalId > numParticles) ? numParticles - 1 : globalId;
+	uint particleId = min(globalId, numParticles - 1);
 	uint blockIndicesListStartAddr = blockId * 9;
 	
 	//Serialized Global IO 1:
@@ -981,24 +981,27 @@ float3 searchNeighbors(uint globalId, uint threadId, uint blockId)
 	//		Particle-level: Position, Dependent Values
 	if (threadId < 9)
 	{
-		blockIndicesList[threadId] = blockIndicesList[blockIndicesListStartAddr + threadId];
+		blockIndicesList[threadId] = blockNeighborListIndices[blockIndicesListStartAddr + threadId];
 	}
+
 	float3 particlePos = PredictedPositions[particleId];
 	//TODO read dependent values from global mem
 	float3 particleDepValue = float3(0, 0, 0);
 
+	GroupMemoryBarrierWithGroupSync();
+
 	//Serialized Global IO 2-10:
 	//		Block-level: All particle positions & dependent values to be shared for this entire block in this direction
 	//		Particle-level: Global neighbor list indices for neighbors in this direction
-	float3 sum = 0;
+	float3 sum = float3(0, 0, 0);
 	for (uint curNeighborDir = 0; curNeighborDir < 9; curNeighborDir++)
 	{
+		uint2 blockIndicesForDir = blockIndicesList[curNeighborDir];
 		sum += searchNeighborsInDirection(globalId, threadId, curNeighborDir,
-			particlePos, particleDepValue, blockIndicesList[curNeighborDir]);
+			particlePos, particleDepValue, blockIndicesForDir);
 	}
 
 	return sum;
-
 }
 
 float random(uint seed)
@@ -1018,49 +1021,18 @@ float random(uint seed)
 [numthreads(NEIGHBOR_SEARCH_NUM_THREADS, 1, 1)]
 void Debug(uint3 globalId : SV_DispatchThreadID, uint3 threadBlockId : SV_GroupThreadID, uint3 groupID : SV_GroupID)
 {
-	//if (globalId.x >= numParticles) return;
-
-	float3 pos = PredictedPositions[globalId.x >= numParticles ? numParticles - 1 : globalId.x];
-	uint3 origin = GetInBoundsCell(pos, cellSize, boundsSize);
-
 	bool failed = false;
-	uint2 blockIndices;
-	[loop]
-	for (int i = 0; i < 9; i++)
-	{
-		int3 neighborCell = origin + offsets3D[i];
-		bool neighborInBounds = isCellInBounds(neighborCell, boundsSize);
 
-		//if (!neighborInBounds) continue;
+	float2 actualResult = searchNeighbors(globalId.x, threadBlockId.x, groupID.x).xy;
 
-		//uint key = GetKeyFromInBoundsCell(neighborCell, boundsSize);
-		//uint2 particleIndices = axisAlignedIndices[key];
+	if (globalId.x >= numParticles) return;
 
-		blockIndices = blockNeighborListIndices[9 * groupID.x + i];
+	//float2 expectedResult = CalculateDensitiesExperimental(globalId);
 
-		//bool emptyDirection = ((particleIndices.x == numParticles + 1) && (particleIndices.y == numParticles));
-		//bool blockEmpty = ((blockIndices.x == numParticles + 1) && (blockIndices.y == numParticles));
-
-		//bool thisParticleWithinRangeY = ((blockIndices.y < particleIndices.y));
-		//bool thisParticleWithinRangeX = ((blockIndices.x > particleIndices.x));
-		//bool withinRange = thisParticleWithinRangeY || thisParticleWithinRangeX;
-
-		//BuildNeighborListIndices kernel tests
-		//failed = failed || (withinRange && !emptyDirection);
-		//failed = failed || (!emptyDirection && blockEmpty);
-
-		float2 actualResult = searchNeighborsInDirection(globalId.x, threadBlockId.x, i, pos, float3(0, 0, 0), blockIndices).xy;
-
-		if (globalId.x > numParticles) continue;
-
-		float2 expectedResult = CalculateDensitiesParallel(uint3(globalId.x * 9 + i, 0, 0));
-
-		float floatingPointErrorAllowance = 0.0001;
-		bool resultsMatchish = (abs(expectedResult.x - actualResult.x) <= floatingPointErrorAllowance) ||
-			(abs(expectedResult.y - actualResult.y) <= floatingPointErrorAllowance);
-
-		failed = failed || !resultsMatchish;
-	}
+	float floatingPointErrorTolerance = 0.001f;
+	//bool resultsMatchish = (abs(actualResult.x - expectedResult.x) <= floatingPointErrorTolerance) &&
+	//	(abs(actualResult.y - expectedResult.y) <= floatingPointErrorTolerance);
+	//failed = !resultsMatchish;
 
 	uint totalGroups = ceil(numParticles / NEIGHBOR_SEARCH_NUM_THREADS);
 	uint maxGroupId = totalGroups - 1;
@@ -1073,6 +1045,6 @@ void Debug(uint3 globalId : SV_DispatchThreadID, uint3 threadBlockId : SV_GroupT
 	next = round(maxGroupId * randoms.y);
 	randoms.z = random(next) * failed;
 
-	DebugValues[globalId.x] = float4(randoms.x, randoms.y, randoms.z, 0.0);
-	//Densities[globalId.x] = actualResult;
+	//DebugValues[globalId.x] = float4(randoms.x, randoms.y, randoms.z, 0.0);
+	Densities[globalId.x] = actualResult;
 }
