@@ -18,23 +18,9 @@
 //Neighbor search tweakables
 #define NEIGHBOR_SEARCH_NUM_THREADS			128
 #define NEIGHBOR_SEARCH_SHARED_CACHE_SIZE	(NEIGHBOR_SEARCH_NUM_THREADS)
-#define NEIGHBOR_SEARCH_REGISTER_CACHE_SIZE	0	//A multiple of the number of items this thread is responsible for populating shared mem with
 
 //Neighbor search derived values
-#define NS_REGISTER_CACHE_MAX_ARRAY_SIZE	(((NEIGHBOR_SEARCH_SHARED_CACHE_SIZE / NEIGHBOR_SEARCH_NUM_THREADS) + 1) * 2)
-#define NS_NUM_READ_PER_GLOBAL_MEM_ROUND	(NEIGHBOR_SEARCH_SHARED_CACHE_SIZE + NEIGHBOR_SEARCH_REGISTER_CACHE_SIZE * NEIGHBOR_SEARCH_SHARED_CACHE_SIZE)
-
-//Neighbor search defines
-//The max number of threads that will coordinate to calculate values for a given origin cell
-//A value of 1 should yield identical behavior to the naiive implementation, since there's no coordination
-//Any value over 27 would be meaningless because you'd be computing more neighbors than exist simultanously
-#define NS_MAX_COORD_BLOCK_SIZE				3		
-#define NS_USE_REGISTER_CACHE_POS			1
-#define NS_USE_REGISTER_CACHE_SUMS			1
-
-//All of these diagnostic or debug should be commented out in prod
-#define NS_DEBUG_ASSISTANCE							//Generally makes debugging easier by doing things like strictly unnecessary cleanup of values
-//#define NS_ADDITIONAL_COORDINATOR_CONTEXT			//Adds more data that rides with NSCoordBlock which can help with debugging, but increases register pressure
+#define NS_MAX_SHARED_MEM_POPULATE_ELEMS	(NEIGHBOR_SEARCH_SHARED_CACHE_SIZE / NEIGHBOR_SEARCH_NUM_THREADS) + ((NEIGHBOR_SEARCH_SHARED_CACHE_SIZE% NEIGHBOR_SEARCH_NUM_THREADS) > 0)
 
 // Includes
 #include "./FluidMaths3D.hlsl"
@@ -869,7 +855,7 @@ float3 searchNeighborsInDirectionSharedMemChunk(uint globalId, uint threadBlockI
 float3 searchNeighborsInDirection(uint globalId, uint threadBlockId, uint neighborId, float3 particlePos,
 	float3 particleDepValue, uint2 blockIndices)
 {
-	float3 sum = 0;
+	float3 sum = float3(0, 0, 0);
 	uint blockParticleNum = blockIndices.y - blockIndices.x + 1;
 
 	if (blockParticleNum == 0)
@@ -888,29 +874,27 @@ float3 searchNeighborsInDirection(uint globalId, uint threadBlockId, uint neighb
 		particleNeighborIndices = axisAlignedIndices[particleNeighborCellKey];
 	}
 
-	float3 posRegisterCache[NS_REGISTER_CACHE_MAX_ARRAY_SIZE];
-	float3 depValuesRegisterCache[NS_REGISTER_CACHE_MAX_ARRAY_SIZE];
-
 	uint maxNumElementsToPopulateSharedMem = (NEIGHBOR_SEARCH_SHARED_CACHE_SIZE / NEIGHBOR_SEARCH_NUM_THREADS) +
 		((NEIGHBOR_SEARCH_SHARED_CACHE_SIZE % NEIGHBOR_SEARCH_NUM_THREADS) > threadBlockId);
-	uint maxNumElementsToPopulateRegisters = maxNumElementsToPopulateSharedMem * NEIGHBOR_SEARCH_REGISTER_CACHE_SIZE;
-	uint maxNumElementToRequestPerGlobalMemRound = maxNumElementsToPopulateRegisters + maxNumElementsToPopulateSharedMem;
 
 	uint globalMemReads = 0;
-	for (int globalMemRound = 0; globalMemRound * NS_NUM_READ_PER_GLOBAL_MEM_ROUND < blockParticleNum; globalMemRound++)
+	for (int globalMemRound = 0; globalMemRound * NEIGHBOR_SEARCH_SHARED_CACHE_SIZE < blockParticleNum; globalMemRound++)
 	{
 		uint writtenToSharedMem = 0;
-		uint writtenToRegisters = 0;
-		uint globalMemRoundOffset = blockIndices.x + globalMemRound * NS_NUM_READ_PER_GLOBAL_MEM_ROUND;
+		uint globalMemRoundOffset = blockIndices.x + globalMemRound * NEIGHBOR_SEARCH_SHARED_CACHE_SIZE;
 
 		GroupMemoryBarrierWithGroupSync();
-		for (int sharedMemWriteIndex = 0; sharedMemWriteIndex < maxNumElementsToPopulateSharedMem; sharedMemWriteIndex++)
+
+		[unroll]
+		for (int sharedMemWriteIndex = 0; sharedMemWriteIndex < NS_MAX_SHARED_MEM_POPULATE_ELEMS; sharedMemWriteIndex++)
 		{
 			uint localAddrOffset = sharedMemWriteIndex * NEIGHBOR_SEARCH_NUM_THREADS + threadBlockId;
 			uint globalAddr = globalMemRoundOffset + localAddrOffset;
 			uint sharedMemAddr = localAddrOffset;
+			bool shouldPopulate = (globalAddr <= blockIndices.y) && (globalAddr < numParticles) 
+				&& (sharedMemWriteIndex <= maxNumElementsToPopulateSharedMem);
 
-			if ((globalAddr <= blockIndices.y) && (globalAddr < numParticles))
+			if (shouldPopulate)
 			{
 				positionsCache[sharedMemAddr] = PredictedPositions[globalAddr];
 				//TODO dep values
@@ -918,51 +902,18 @@ float3 searchNeighborsInDirection(uint globalId, uint threadBlockId, uint neighb
 			}
 		}
 
-		uint sharedMemOffset = NEIGHBOR_SEARCH_SHARED_CACHE_SIZE;
+		globalMemReads += writtenToSharedMem;
 
-		for (int registerWriteIndex = 0; registerWriteIndex < maxNumElementsToPopulateRegisters; registerWriteIndex++)
-		{
-			uint iterationOffset = registerWriteIndex * NEIGHBOR_SEARCH_NUM_THREADS + threadBlockId;
-			uint globalAddr = globalMemRoundOffset + sharedMemOffset + iterationOffset;
+		uint sharedMemGlobalAddrRangeStart = globalMemRoundOffset;
+		uint sharedMemGlobalAddrRangeEnd = sharedMemGlobalAddrRangeStart + NEIGHBOR_SEARCH_SHARED_CACHE_SIZE - 1;
+		sharedMemGlobalAddrRangeEnd = min(sharedMemGlobalAddrRangeEnd, numParticles - 1);
+		uint2 sharedMemGlobalAddrRange = uint2(sharedMemGlobalAddrRangeStart, sharedMemGlobalAddrRangeEnd);
 
-			if ((globalAddr <= blockIndices.y) && (globalAddr < numParticles))
-			{
-				posRegisterCache[registerWriteIndex] = PredictedPositions[globalAddr];
-				//TODO dep values
-				writtenToRegisters++;
-			}
-		}
+		GroupMemoryBarrierWithGroupSync();
 
-		globalMemReads += writtenToSharedMem + writtenToRegisters;
-
-		for (int registerCycleRound = 0; registerCycleRound < NEIGHBOR_SEARCH_REGISTER_CACHE_SIZE + 1; registerCycleRound++)
-		{
-			uint sharedMemGlobalAddrRangeStart = globalMemRoundOffset + registerCycleRound * NEIGHBOR_SEARCH_SHARED_CACHE_SIZE;
-			uint sharedMemGlobalAddrRangeEnd = sharedMemGlobalAddrRangeStart + NEIGHBOR_SEARCH_SHARED_CACHE_SIZE - 1;
-			sharedMemGlobalAddrRangeEnd = (sharedMemGlobalAddrRangeEnd > numParticles) ? numParticles - 1 : sharedMemGlobalAddrRangeEnd;
-			uint2 sharedMemGlobalAddrRange = uint2(sharedMemGlobalAddrRangeStart, sharedMemGlobalAddrRangeEnd);
-
-			GroupMemoryBarrierWithGroupSync();
-
-			//Shared memory ready. Do calculations.
-			sum += searchNeighborsInDirectionSharedMemChunk(globalId, threadBlockId, neighborId, particlePos, 
-				particleDepValue, sharedMemGlobalAddrRange, particleNeighborIndices);
-
-			GroupMemoryBarrierWithGroupSync();
-
-			for (int registerTransferIndex = 0; registerTransferIndex < maxNumElementsToPopulateSharedMem; registerTransferIndex++)
-			{
-				uint regIndex = registerCycleRound * maxNumElementsToPopulateSharedMem + registerTransferIndex;
-				uint sharedMemAddr = registerTransferIndex * NEIGHBOR_SEARCH_NUM_THREADS + threadBlockId;
-
-				bool shouldTransfer = (regIndex < writtenToRegisters);
-				if (shouldTransfer)
-				{
-					positionsCache[sharedMemAddr] = posRegisterCache[regIndex];
-					//TODO dep values
-				}
-			}
-		}
+		//Shared memory ready. Do calculations.
+		sum += searchNeighborsInDirectionSharedMemChunk(globalId, threadBlockId, neighborId, particlePos,
+			particleDepValue, sharedMemGlobalAddrRange, particleNeighborIndices);
 	}
 
 

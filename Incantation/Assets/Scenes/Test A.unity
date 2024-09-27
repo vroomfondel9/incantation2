@@ -265,7 +265,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   timeScale: 0.9
-  fixedTimeStep: 0
+  fixedTimeStep: 1
   iterationsPerFrame: 3
   gravity: -10
   collisionDamping: 0.95
@@ -354,7 +354,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f99a384512b94654fbeb7c06c43f81ba, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  numParticlesPerAxis: 35
+  numParticlesPerAxis: 55
   centre: {x: 0, y: 0.14, z: 0}
   size: 3.7
   initialVel:
@@ -363,7 +363,7 @@ MonoBehaviour:
     z: 0
   jitterStrength: 0.035
   showSpawnBounds: 1
-  debug_numParticles: 42875
+  debug_numParticles: 166375
 --- !u!1 &620375867
 GameObject:
   m_ObjectHideFlags: 0
