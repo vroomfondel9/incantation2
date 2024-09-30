@@ -50,7 +50,7 @@ Shader "Instanced/Particle3DSurf" {
 				float speedT = saturate(speed / velocityMax);
 				float colT = speedT;
 				o.colour = tex2Dlod(ColourMap, float4(colT, 0.5,0,0));
-				if (debugMode == 1)
+				if ((debugMode == 1) && true)
 				{
 					o.colour = DebugValues[unity_InstanceID];
 				}

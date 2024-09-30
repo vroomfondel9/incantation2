@@ -17,10 +17,10 @@
 
 //Neighbor search tweakables
 #define NEIGHBOR_SEARCH_NUM_THREADS			128
-#define NEIGHBOR_SEARCH_SHARED_CACHE_SIZE	(NEIGHBOR_SEARCH_NUM_THREADS)
+#define NEIGHBOR_SEARCH_SHARED_CACHE_SIZE	(NEIGHBOR_SEARCH_NUM_THREADS + 64)
 
 //Neighbor search derived values
-#define NS_MAX_SHARED_MEM_POPULATE_ELEMS	(NEIGHBOR_SEARCH_SHARED_CACHE_SIZE / NEIGHBOR_SEARCH_NUM_THREADS) + ((NEIGHBOR_SEARCH_SHARED_CACHE_SIZE% NEIGHBOR_SEARCH_NUM_THREADS) > 0)
+#define NS_MAX_SHARED_MEM_POPULATE_ELEMS	(NEIGHBOR_SEARCH_SHARED_CACHE_SIZE / NEIGHBOR_SEARCH_NUM_THREADS) + ((NEIGHBOR_SEARCH_SHARED_CACHE_SIZE % NEIGHBOR_SEARCH_NUM_THREADS) > 0)
 
 // Includes
 #include "./FluidMaths3D.hlsl"
@@ -683,18 +683,19 @@ void BuildNeighborListIndices(uint3 globalId : SV_DispatchThreadID, uint3 thread
 	}
 }
 
-float2 CalculateDensitiesExperimental(uint3 id)
+float3 CalculateDensitiesExperimental(uint3 id)
 {
-	if (id.x >= numParticles) return float2(-1, -1);
+	if (id.x >= numParticles) return float3(0, 0, 0);
 
 	float3 pos = PredictedPositions[id.x];
 	int3 originCell = GetInBoundsCell(pos, cellSize, boundsSize);
 	float sqrRadius = smoothingRadius * smoothingRadius;
 	float density = 0;
 	float nearDensity = 0;
+	float numCalcs = 0;
 
 	// Neighbour search
-	for (int i = 0; i < 9; i++)
+	for (int i = 0; i < 1; i++)
 	{
 		int3 neighborOriginCell = originCell + offsets3D[i];
 		bool neighborInBounds = isCellInBounds(neighborOriginCell, boundsSize);
@@ -729,10 +730,11 @@ float2 CalculateDensitiesExperimental(uint3 id)
 			// Accumulation
 			density += influenceFactor * densityStrength;
 			nearDensity += influenceFactorNear * densityStrength;
+			numCalcs += 1.0f;
 		}
 	}
 
-	return float2(density, nearDensity);
+	return float3(density, nearDensity, numCalcs);
 }
 
 float2 CalculateDensitiesParallel(uint3 id)
@@ -797,23 +799,26 @@ float3 calculateDensityPairwise(float3 pos, float3 neighbourPos)
 
 	bool withinRadius = (sqrDstToNeighbour <= sqrRadius);
 
+	if (!withinRadius) return float3(0, 0, 0);
+
 	float dst = sqrt(sqrDstToNeighbour);
 
-	float influenceFactor = withinRadius * DensityKernel(dst, smoothingRadius);
-	float influenceFactorNear = withinRadius * NearDensityKernel(dst, smoothingRadius);
+	float influenceFactor = DensityKernel(dst, smoothingRadius);
+	float influenceFactorNear = NearDensityKernel(dst, smoothingRadius);
 
 	// Density Calculation
 	float densityStrength = 1.0;			//Each particle has an assumed mass of 1 (for now)
 
 	//Density for this pair of particles
-	return float3(influenceFactor * densityStrength, influenceFactorNear * densityStrength, 0.0f);
+	return float3(influenceFactor * densityStrength, influenceFactorNear * densityStrength, 0);
 }
 
-groupshared float3 positionsCache[NEIGHBOR_SEARCH_SHARED_CACHE_SIZE];
-groupshared float3 depValuesCache[NEIGHBOR_SEARCH_SHARED_CACHE_SIZE];
+groupshared float3 positionsCache[NEIGHBOR_SEARCH_SHARED_CACHE_SIZE * 2];
+groupshared float3 depValuesCache[NEIGHBOR_SEARCH_SHARED_CACHE_SIZE * 2];
 
 float3 searchNeighborsInDirectionSharedMemChunk(uint globalId, uint threadBlockId, uint neighborId,
-	float3 particlePos, float3 particleDepValue, uint2 sharedMemGlobalIndexRange, uint2 particleGlobalIndexRange)
+	float3 particlePos, float3 particleDepValue, uint2 sharedMemGlobalIndexRange, uint2 particleGlobalIndexRange, 
+	uint sharedMemReadOffset)
 {
 	float3 sum = float3(0, 0, 0);
 
@@ -839,7 +844,7 @@ float3 searchNeighborsInDirectionSharedMemChunk(uint globalId, uint threadBlockI
 	particleGlobalIndexRange.x = clamp(particleGlobalIndexRange.x, sharedMemGlobalIndexRange.x, sharedMemGlobalIndexRange.y);
 	particleGlobalIndexRange.y = clamp(particleGlobalIndexRange.y, sharedMemGlobalIndexRange.x, sharedMemGlobalIndexRange.y);
 
-	uint localStartIndex = particleGlobalIndexRange.x - sharedMemGlobalIndexRange.x;
+	uint localStartIndex = sharedMemReadOffset + (particleGlobalIndexRange.x - sharedMemGlobalIndexRange.x);
 	uint numToCheckInclusive = particleGlobalIndexRange.y - particleGlobalIndexRange.x;
 	uint localEndIndex = localStartIndex + numToCheckInclusive;
 	
@@ -852,7 +857,162 @@ float3 searchNeighborsInDirectionSharedMemChunk(uint globalId, uint threadBlockI
 	return sum;
 }
 
-float3 searchNeighborsInDirection(uint globalId, uint threadBlockId, uint neighborId, float3 particlePos,
+float3 searchNeighborsStaggered(uint globalId, uint threadId, uint blockId)
+{
+	//Serialized Global IO 1:
+	//		Block-level: Neighbor list indices (all directions)
+	//		Particle-level: Position, Dependent Values
+	uint2 blockIndicesPrefetched[9];
+	[unroll]
+	for (uint directionalInitIndex = 0; directionalInitIndex < 9; directionalInitIndex++)
+	{
+		blockIndicesPrefetched[directionalInitIndex] = blockNeighborListIndices[blockId * 9 + directionalInitIndex];
+	}
+	uint particleId = min(globalId, numParticles - 1);
+	float3 particlePos = PredictedPositions[particleId];
+	float3 particleDepValue = float3(0, 0, 0);								//TODO read dependent values from global mem
+
+	//Initialization/calculation space while waiting for Global IO 1 to come back. Everything done here is "free" performance-wise.
+	float3 sum = float3(0, 0, 0);
+	uint totalGlobalMemReads = 0;
+	uint totalWriteSteps = 0;
+
+	uint maxNumElementsToPopulateSharedMem = (NEIGHBOR_SEARCH_SHARED_CACHE_SIZE / NEIGHBOR_SEARCH_NUM_THREADS) +
+		((NEIGHBOR_SEARCH_SHARED_CACHE_SIZE % NEIGHBOR_SEARCH_NUM_THREADS) > threadId);
+
+	//Vars reused in loop
+	uint3 curRequestAddrs[NS_MAX_SHARED_MEM_POPULATE_ELEMS];
+	uint2 sharedMemGlobalAddrRange;
+	uint writtenToSharedMem;
+
+	//Loop control and flow of control variables. For this iteration (read) and next iteration (write).
+	//For uint2 or int2: x = this iteration. y = next iteration.
+	//For uint4: xy = this iteration. zw = next iteration.
+	uint2 readWriteOffsets = uint2(NEIGHBOR_SEARCH_SHARED_CACHE_SIZE, 0);	
+	uint2 readWriteDirections = uint2(0, 0);
+	uint2 readWriteIterations = uint2(0, 0);
+	uint2 readWriteMaxIterations;
+	
+	uint4 particleAxisAlignedIndices;
+	uint4 blockIndices;
+
+	//Initialization Dependent on Global IO 1
+	int3 particleOrigin = GetInBoundsCell(particlePos, cellSize, boundsSize);
+	uint particleOriginKey = GetKeyFromInBoundsCell(particleOrigin, boundsSize);
+	uint2 particleOriginIndices = axisAlignedIndices[particleOriginKey];
+
+	uint2 originBlockIndices = blockIndicesPrefetched[0];
+	uint originBlockParticleNum = originBlockIndices.y - originBlockIndices.x + 1;
+	uint originBlockIterationsNeeded = ceil(originBlockParticleNum / (float) NEIGHBOR_SEARCH_SHARED_CACHE_SIZE);
+
+	readWriteMaxIterations = uint2(0, originBlockIterationsNeeded);
+	blockIndices = uint4(0, 0, originBlockIndices.x, originBlockIndices.y);
+	particleAxisAlignedIndices = uint4(0, 0, particleOriginIndices.x, particleOriginIndices.y);
+
+	while (true)
+	{
+		//STEP 1 - INIT STEP: Calculate all values needed by the next read and write steps in advance of syncing
+		bool isLastIteration = (readWriteDirections.y >= 9);
+		bool nextWriteFromDifferentDir = (readWriteDirections.x != readWriteDirections.y) && !isLastIteration;
+		writtenToSharedMem = 0;
+		
+		//Write values
+		//Calculate address indices for next Global->Shared transfer
+		if (!isLastIteration)
+		{
+			uint globalMemRoundOffsetWrite = blockIndices.z + readWriteIterations.y * NEIGHBOR_SEARCH_SHARED_CACHE_SIZE;
+
+			[unroll]
+			for (int sharedMemCalcAddrIndex = 0; sharedMemCalcAddrIndex < NS_MAX_SHARED_MEM_POPULATE_ELEMS; sharedMemCalcAddrIndex++)
+			{
+				uint localAddrOffset = sharedMemCalcAddrIndex * NEIGHBOR_SEARCH_NUM_THREADS + threadId;
+				uint globalAddr = globalMemRoundOffsetWrite + localAddrOffset;
+				uint sharedMemAddr = localAddrOffset + readWriteOffsets.y;
+				bool shouldPopulate = (globalAddr <= blockIndices.w) && (globalAddr < numParticles)
+					&& (sharedMemCalcAddrIndex <= maxNumElementsToPopulateSharedMem);
+				writtenToSharedMem += shouldPopulate;
+
+				curRequestAddrs[sharedMemCalcAddrIndex].x = sharedMemAddr;
+				curRequestAddrs[sharedMemCalcAddrIndex].y = globalAddr;
+				curRequestAddrs[sharedMemCalcAddrIndex].z = shouldPopulate;
+			}
+
+			totalWriteSteps += writtenToSharedMem > 0;
+		}
+
+		//Read values
+		//Calculate address indices needed at particle-level to check if in-bounds of current shared mem chunk
+		if (totalGlobalMemReads > 0)
+		{
+			uint globalMemRoundOffsetRead = blockIndices.x + readWriteIterations.x * NEIGHBOR_SEARCH_SHARED_CACHE_SIZE;
+			uint sharedMemGlobalAddrRangeStart = globalMemRoundOffsetRead;
+			uint sharedMemGlobalAddrRangeEnd = sharedMemGlobalAddrRangeStart + NEIGHBOR_SEARCH_SHARED_CACHE_SIZE - 1;
+			sharedMemGlobalAddrRangeEnd = min(sharedMemGlobalAddrRangeEnd, blockIndices.y);
+			sharedMemGlobalAddrRange = uint2(sharedMemGlobalAddrRangeStart, sharedMemGlobalAddrRangeEnd);
+		}
+
+		//STEP 2 - SYNC STEP: Sync on the boundary between a load of calculation and global mem access for max interweaving potential
+		GroupMemoryBarrierWithGroupSync();
+
+		//STEP 3 - WRITE STEP: Read from global -> write to shared memory.
+		if (!isLastIteration)
+		{
+			[unroll]
+			for (int sharedMemWriteIndex = 0; sharedMemWriteIndex < NS_MAX_SHARED_MEM_POPULATE_ELEMS; sharedMemWriteIndex++)
+			{
+				uint3 curAddr = curRequestAddrs[sharedMemWriteIndex];
+				if (curAddr.z)
+				{
+					positionsCache[curAddr.x] = PredictedPositions[curAddr.y];
+					//TODO dep values
+				}
+			}
+		}
+
+		//TODO try switching global->register stores to before sync
+		if (nextWriteFromDifferentDir)
+		{
+			int3 particleNeighborCell = particleOrigin + offsets3D[readWriteDirections.y];
+			bool particleNeighborCellInBounds = isCellInBounds(particleNeighborCell, boundsSize);
+			uint particleNeighborCellKey = GetKeyFromInBoundsCell(particleNeighborCell, boundsSize);
+
+			particleAxisAlignedIndices.zw = axisAlignedIndices[particleNeighborCellKey];
+
+			blockIndices.zw = blockIndicesPrefetched[readWriteDirections.y];
+		}
+
+		//STEP 4 - READ STEP: Read from shared memory -> Do calculations -> Accumulate results in sum
+		//(Skip this step on the first iteration because we haven't read any data from global mem yet...)
+		if (totalGlobalMemReads > 0)
+		{
+			sum += searchNeighborsInDirectionSharedMemChunk(globalId, threadId, readWriteDirections.x, particlePos,
+				particleDepValue, sharedMemGlobalAddrRange, particleAxisAlignedIndices.xy, readWriteOffsets.x);
+		}
+
+		//STEP 5 - UPDATE FLOW OF CONTROL VARS: Swap read/write banks and look ahead to next iteration
+		totalGlobalMemReads += writtenToSharedMem;
+
+		readWriteDirections.x = readWriteDirections.y;
+		if (readWriteDirections.x >= 9) break;
+
+		readWriteOffsets = readWriteOffsets.yx;
+		blockIndices.xy = blockIndices.zw;
+		particleAxisAlignedIndices.xy = particleAxisAlignedIndices.zw;
+
+		uint nextBlockNumParticles = blockIndices.w - blockIndices.z + 1;
+		uint nextBlockIterationsNeeded = ceil(nextBlockNumParticles / (float) NEIGHBOR_SEARCH_SHARED_CACHE_SIZE);
+		
+		readWriteMaxIterations = uint2(readWriteMaxIterations.y, nextBlockIterationsNeeded);
+		readWriteIterations = uint2(readWriteIterations.y, readWriteIterations.y + 1);
+
+		readWriteDirections.y += readWriteIterations.y >= readWriteMaxIterations.y;
+		readWriteIterations.y *= readWriteIterations.y < readWriteMaxIterations.y;
+	}
+
+	return sum;
+}
+
+/*float3 searchNeighborsInDirection(uint globalId, uint threadBlockId, uint neighborId, float3 particlePos,
 	float3 particleDepValue, uint2 blockIndices)
 {
 	float3 sum = float3(0, 0, 0);
@@ -863,12 +1023,13 @@ float3 searchNeighborsInDirection(uint globalId, uint threadBlockId, uint neighb
 		return sum;
 	}
 
-	uint2 particleNeighborIndices = uint2(numParticles + 1, numParticles);
 	int3 particleOrigin = GetInBoundsCell(particlePos, cellSize, boundsSize);
+
 	int3 particleNeighborCell = particleOrigin + offsets3D[neighborId];
 	bool particleNeighborCellInBounds = isCellInBounds(particleNeighborCell, boundsSize);
 	uint particleNeighborCellKey = GetKeyFromInBoundsCell(particleNeighborCell, boundsSize);
 
+	uint2 particleNeighborIndices = uint2(numParticles + 1, numParticles);
 	if (particleNeighborCellInBounds)
 	{
 		particleNeighborIndices = axisAlignedIndices[particleNeighborCellKey];
@@ -880,28 +1041,27 @@ float3 searchNeighborsInDirection(uint globalId, uint threadBlockId, uint neighb
 	uint globalMemReads = 0;
 	for (int globalMemRound = 0; globalMemRound * NEIGHBOR_SEARCH_SHARED_CACHE_SIZE < blockParticleNum; globalMemRound++)
 	{
+		//Calculate address indices for Global->Shared read
 		uint writtenToSharedMem = 0;
+		uint3 curRequestAddrs[NS_MAX_SHARED_MEM_POPULATE_ELEMS];
 		uint globalMemRoundOffset = blockIndices.x + globalMemRound * NEIGHBOR_SEARCH_SHARED_CACHE_SIZE;
 
-		GroupMemoryBarrierWithGroupSync();
-
 		[unroll]
-		for (int sharedMemWriteIndex = 0; sharedMemWriteIndex < NS_MAX_SHARED_MEM_POPULATE_ELEMS; sharedMemWriteIndex++)
+		for (int sharedMemCalcAddrIndex = 0; sharedMemCalcAddrIndex < NS_MAX_SHARED_MEM_POPULATE_ELEMS; sharedMemCalcAddrIndex++)
 		{
-			uint localAddrOffset = sharedMemWriteIndex * NEIGHBOR_SEARCH_NUM_THREADS + threadBlockId;
+			uint localAddrOffset = sharedMemCalcAddrIndex * NEIGHBOR_SEARCH_NUM_THREADS + threadBlockId;
 			uint globalAddr = globalMemRoundOffset + localAddrOffset;
 			uint sharedMemAddr = localAddrOffset;
 			bool shouldPopulate = (globalAddr <= blockIndices.y) && (globalAddr < numParticles) 
-				&& (sharedMemWriteIndex <= maxNumElementsToPopulateSharedMem);
+				&& (sharedMemCalcAddrIndex <= maxNumElementsToPopulateSharedMem);
+			writtenToSharedMem += shouldPopulate;
 
-			if (shouldPopulate)
-			{
-				positionsCache[sharedMemAddr] = PredictedPositions[globalAddr];
-				//TODO dep values
-				writtenToSharedMem++;
-			}
+			curRequestAddrs[sharedMemCalcAddrIndex].x = sharedMemAddr;
+			curRequestAddrs[sharedMemCalcAddrIndex].y = globalAddr;
+			curRequestAddrs[sharedMemCalcAddrIndex].z = shouldPopulate;
 		}
 
+		//Calculate address indices needed at particle-level to check if in-bounds of current chunk
 		globalMemReads += writtenToSharedMem;
 
 		uint sharedMemGlobalAddrRangeStart = globalMemRoundOffset;
@@ -909,9 +1069,23 @@ float3 searchNeighborsInDirection(uint globalId, uint threadBlockId, uint neighb
 		sharedMemGlobalAddrRangeEnd = min(sharedMemGlobalAddrRangeEnd, numParticles - 1);
 		uint2 sharedMemGlobalAddrRange = uint2(sharedMemGlobalAddrRangeStart, sharedMemGlobalAddrRangeEnd);
 
+		//Read from global memory to shared memory
 		GroupMemoryBarrierWithGroupSync();
 
-		//Shared memory ready. Do calculations.
+		[unroll]
+		for (int sharedMemWriteIndex = 0; sharedMemWriteIndex < NS_MAX_SHARED_MEM_POPULATE_ELEMS; sharedMemWriteIndex++)
+		{
+			uint3 curAddr = curRequestAddrs[sharedMemWriteIndex];
+			if (curAddr.z)
+			{
+				positionsCache[curAddr.x] = PredictedPositions[curAddr.y];
+				//TODO dep values
+			}
+		}
+
+		//Do calculations based on shared memory
+		GroupMemoryBarrierWithGroupSync();
+
 		sum += searchNeighborsInDirectionSharedMemChunk(globalId, threadBlockId, neighborId, particlePos,
 			particleDepValue, sharedMemGlobalAddrRange, particleNeighborIndices);
 	}
@@ -920,9 +1094,7 @@ float3 searchNeighborsInDirection(uint globalId, uint threadBlockId, uint neighb
 	return sum;
 }
 
-groupshared uint2 blockIndicesList[9];
-
-float3 searchNeighbors(uint globalId, uint threadId, uint blockId)
+float3 searchNeighborsIterative(uint globalId, uint threadId, uint blockId)
 {
 	uint particleId = min(globalId, numParticles - 1);
 	uint blockIndicesListStartAddr = blockId * 9;
@@ -930,16 +1102,16 @@ float3 searchNeighbors(uint globalId, uint threadId, uint blockId)
 	//Serialized Global IO 1:
 	//		Block-level: Neighbor list indices (all directions)
 	//		Particle-level: Position, Dependent Values
-	if (threadId < 9)
+	uint2 blockIndicesList[9];
+	[unroll]
+	for (int blockIndicesIndex = 0; blockIndicesIndex < 9; blockIndicesIndex++)
 	{
-		blockIndicesList[threadId] = blockNeighborListIndices[blockIndicesListStartAddr + threadId];
+		blockIndicesList[blockIndicesIndex] = blockNeighborListIndices[blockIndicesListStartAddr + blockIndicesIndex];
 	}
 
 	float3 particlePos = PredictedPositions[particleId];
 	//TODO read dependent values from global mem
 	float3 particleDepValue = float3(0, 0, 0);
-
-	GroupMemoryBarrierWithGroupSync();
 
 	//Serialized Global IO 2-10:
 	//		Block-level: All particle positions & dependent values to be shared for this entire block in this direction
@@ -954,6 +1126,37 @@ float3 searchNeighbors(uint globalId, uint threadId, uint blockId)
 
 	return sum;
 }
+
+float3 searchNeighborsParallel(uint globalId, uint threadId, uint blockId)
+{
+	uint threadBlocksPerNeighborDirection = ceil(numParticles / (float)NEIGHBOR_SEARCH_NUM_THREADS);
+	uint threadsPerNeighborDirection = threadBlocksPerNeighborDirection * NEIGHBOR_SEARCH_NUM_THREADS;
+
+	uint blockIdWithinDir = blockId % threadBlocksPerNeighborDirection;
+	uint globalIdWithinDir = globalId % threadsPerNeighborDirection;
+
+	uint neighborDir = globalId / threadsPerNeighborDirection;
+	uint particleId = min(globalIdWithinDir, numParticles - 1);
+
+	uint blockIndicesListStartAddr = blockIdWithinDir * 9;
+
+	//Serialized Global IO 1:
+	//		Block-level: Neighbor list indices (one direction only)
+	//		Particle-level: Position, Dependent Values
+	uint2 blockIndices = blockNeighborListIndices[blockIdWithinDir * 9 + neighborDir];
+	float3 particlePos = PredictedPositions[particleId];
+	//TODO read dependent values from global mem
+	float3 particleDepValue = float3(0, 0, 0);
+
+	//Serialized Global IO 2:
+	//		Block-level: All particle positions & dependent values to be shared for this entire block in this direction
+	//		Particle-level: Global neighbor list indices for neighbors in this direction
+	float3 sum = float3(0, 0, 0);
+	sum += searchNeighborsInDirection(globalIdWithinDir, threadId, neighborDir,
+		particlePos, particleDepValue, blockIndices);
+
+	return sum;
+}*/
 
 float random(uint seed)
 {
@@ -974,16 +1177,42 @@ void Debug(uint3 globalId : SV_DispatchThreadID, uint3 threadBlockId : SV_GroupT
 {
 	bool failed = false;
 
-	float2 actualResult = searchNeighbors(globalId.x, threadBlockId.x, groupID.x).xy;
+	//float3 actualResultMetadataIncl = searchNeighborsStaggered(globalId.x, threadBlockId.x, groupID.x);
+	//float2 actualResult = actualResultMetadataIncl.xy;
+	//uint actualResultMetadata = actualResultMetadataIncl.z;
 
 	if (globalId.x >= numParticles) return;
 
-	//float2 expectedResult = CalculateDensitiesExperimental(globalId);
 
-	float floatingPointErrorTolerance = 0.001f;
+	//float3 expectedResultMetadataIncl = CalculateDensitiesExperimental(globalId);
+	//float2 expectedResult = expectedResultMetadataIncl.xy;
+	//uint expectedResultMetadata = expectedResultMetadataIncl.z;
+
+	//float floatingPointErrorTolerance = 0.001f;
 	//bool resultsMatchish = (abs(actualResult.x - expectedResult.x) <= floatingPointErrorTolerance) &&
 	//	(abs(actualResult.y - expectedResult.y) <= floatingPointErrorTolerance);
 	//failed = !resultsMatchish;
+
+	float3 pos = PredictedPositions[globalId.x];
+	int3 originCell = GetInBoundsCell(pos, cellSize, boundsSize);
+	uint originKey = GetKeyFromInBoundsCell(originCell, boundsSize);
+	float3 actualResult = float3(0, 0, 0);
+	uint prevSeed = originKey;
+	for (int i = 0; i < 140; i++)
+	{
+		float x = (3 * smoothingRadius * random(prevSeed)) - (1.5 * smoothingRadius);
+		prevSeed = (uint) abs(round(x));
+		float y = (3 * smoothingRadius * random(prevSeed)) - (1.5 * smoothingRadius);
+		prevSeed = (uint) abs(round(y));
+		float z = (3 * smoothingRadius * random(prevSeed)) - (1.5 * smoothingRadius);
+		prevSeed = (uint) abs(round(z));
+
+		float3 neighborPos = float3(x, y, z);
+
+		//actualResult += calculateDensityPairwise(pos, neighborPos);
+		actualResult += (x + y + z);
+	}
+	failed = (actualResult.x > 0) && (actualResult.y > 0);
 
 	uint totalGroups = ceil(numParticles / NEIGHBOR_SEARCH_NUM_THREADS);
 	uint maxGroupId = totalGroups - 1;
@@ -996,6 +1225,6 @@ void Debug(uint3 globalId : SV_DispatchThreadID, uint3 threadBlockId : SV_GroupT
 	next = round(maxGroupId * randoms.y);
 	randoms.z = random(next) * failed;
 
-	//DebugValues[globalId.x] = float4(randoms.x, randoms.y, randoms.z, 0.0);
-	Densities[globalId.x] = actualResult;
+	DebugValues[globalId.x] = float4(randoms.x, randoms.y, randoms.z, 0.0);
+	//Densities[globalId.x] = actualResult;
 }
