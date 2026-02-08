@@ -12,6 +12,7 @@ public static class ComputeHelper
 
     public const FilterMode defaultFilterMode = FilterMode.Bilinear;
     public const GraphicsFormat defaultGraphicsFormat = GraphicsFormat.R32G32B32A32_SFloat;
+    static readonly uint[] argsBufferArray = new uint[5];
 
 
 
@@ -335,6 +336,31 @@ public static class ComputeHelper
         var buffer = CreateArgsBuffer(mesh, 0);
         ComputeBuffer.CopyCount(appendBuffer, buffer, sizeof(uint));
         return buffer;
+    }
+
+    public static void CreateArgsBuffer(ref ComputeBuffer argsBuffer, Mesh mesh, int numInstances)
+    {
+        const int stride = sizeof(uint);
+        const int numArgs = 5;
+        const int subMeshIndex = 0;
+
+        bool createNewBuffer = argsBuffer == null || !argsBuffer.IsValid() || argsBuffer.count != argsBufferArray.Length || argsBuffer.stride != stride;
+        if (createNewBuffer)
+        {
+            Release(argsBuffer);
+            argsBuffer = new ComputeBuffer(numArgs, stride, ComputeBufferType.IndirectArguments);
+        }
+
+        lock (argsBufferArray)
+        {
+            argsBufferArray[0] = (uint)mesh.GetIndexCount(subMeshIndex);
+            argsBufferArray[1] = (uint)numInstances;
+            argsBufferArray[2] = (uint)mesh.GetIndexStart(subMeshIndex);
+            argsBufferArray[3] = (uint)mesh.GetBaseVertex(subMeshIndex);
+            argsBufferArray[4] = 0; // offset
+
+            argsBuffer.SetData(argsBufferArray);
+        }
     }
 
     // Read number of elements in append buffer

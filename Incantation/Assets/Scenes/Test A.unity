@@ -246,7 +246,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 12.8, y: 6.4, z: 6.4}
+  m_LocalScale: {x: 12.8, y: 12.8, z: 12.8}
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 620375868}
@@ -273,9 +273,9 @@ MonoBehaviour:
   gridCellSize: 0.2
   gridDimensions:
     x: 64
-    y: 32
-    z: 32
-  totalGridCells: 65536
+    y: 64
+    z: 64
+  totalGridCells: 262144
   targetDensity: 630
   pressureMultiplier: 288
   nearPressureMultiplier: 2.25
@@ -297,9 +297,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: bdfe3008efbf29745879ab1d40574478, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  shader: {fileID: 4800000, guid: 638bb1bdb9b8e374e8a5cbcd595e3973, type: 3}
-  scale: 0.05
-  col: {r: 0.27803493, g: 0.49487686, b: 0.8301887, a: 1}
+  mode: 2
+  scale: 5
   colourMap:
     serializedVersion: 2
     key0: {r: 0.13363299, g: 0.34235913, b: 0.7264151, a: 1}
@@ -333,7 +332,9 @@ MonoBehaviour:
   gradientResolution: 50
   velocityDisplayMax: 6
   meshResolution: 3
-  debug_MeshTriCount: 2
+  sim: {fileID: 271053319}
+  shaderShaded: {fileID: 4800000, guid: 638bb1bdb9b8e374e8a5cbcd595e3973, type: 3}
+  shaderBillboard: {fileID: 4800000, guid: f6cd7caa85b9258469b1549d66d66281, type: 3}
 --- !u!33 &271053322
 MeshFilter:
   m_ObjectHideFlags: 0
@@ -354,16 +355,16 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f99a384512b94654fbeb7c06c43f81ba, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  numParticlesPerAxis: 35
+  numParticlesPerAxis: 90
   centre: {x: 0, y: 0.14, z: 0}
-  size: 3.7
+  size: 9.89
   initialVel:
     x: 0
     y: 0
     z: 0
   jitterStrength: 0.035
   showSpawnBounds: 1
-  debug_numParticles: 42875
+  debug_numParticles: 729000
 --- !u!1 &620375867
 GameObject:
   m_ObjectHideFlags: 0
@@ -533,7 +534,7 @@ Transform:
   m_GameObject: {fileID: 963194225}
   serializedVersion: 2
   m_LocalRotation: {x: 0.040845454, y: -0, z: -0, w: 0.9991655}
-  m_LocalPosition: {x: 0, y: 0.76, z: -8.244}
+  m_LocalPosition: {x: 0, y: 1.57, z: -18.2}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
