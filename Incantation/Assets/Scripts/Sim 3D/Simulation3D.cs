@@ -4,6 +4,7 @@ using Unity.Mathematics;
 using System.Collections.Generic;
 
 using static UnityEngine.Mathf;
+using System;
 
 public class Simulation3D : MonoBehaviour
 {
@@ -11,10 +12,13 @@ public class Simulation3D : MonoBehaviour
 
     public event System.Action SimulationStepCompleted;
 
-    [Header("Settings")]
-    public float timeScale = 1;
-    public bool fixedTimeStep;
-    public int iterationsPerFrame;
+    [Header("Time Step")]
+    public float normalTimeScale = 1;
+    public float slowTimeScale = 0.1f;
+    public float maxTimestepFPS = 60; // if time-step dips lower than this fps, simulation will run slower (set to 0 to disable)
+    public int iterationsPerFrame = 3;
+
+    [Header("Simulation Settings")]
     public float gravity = -10;
     [Range(0, 1)] public float collisionDamping = 0.05f;
     public float smoothingRadius = 0.2f;
@@ -87,6 +91,7 @@ public class Simulation3D : MonoBehaviour
 
     // State
     bool isPaused;
+    bool inSlowMode;
     bool pauseNextFrame;
     Spawner3D.SpawnData spawnData;
     public SimulationBounds simBounds;
@@ -99,8 +104,7 @@ public class Simulation3D : MonoBehaviour
     protected void Initialize()
     {
         ValidateKernels();
-        Debug.Log("Controls: Space = Play/Pause, R = Reset");
-        Debug.Log("Use transform tool in scene to scale/rotate simulation bounding box.");
+        Debug.Log("Controls: Space = Play/Pause, Q = SlowMode, R = Reset, Right Arrow = Next Frame");
 
         float deltaTime = 1 / 60f;
         Time.fixedDeltaTime = deltaTime;
@@ -210,23 +214,12 @@ public class Simulation3D : MonoBehaviour
         Assert.IsTrue(valid);
     }
 
-    void FixedUpdate()
-    {
-        // Run simulation if in fixed timestep mode
-        if (fixedTimeStep)
-        {
-            RunSimulationFrame(Time.fixedDeltaTime);
-        }
-    }
-
     void Update()
     {
-        // Run simulation if not in fixed timestep mode
-        // (skip running for first few frames as timestep can be a lot higher than usual)
-        if (!fixedTimeStep && Time.frameCount > 10)
-        {
-            RunSimulationFrame(Time.deltaTime);
-        }
+        float maxDeltaTime = maxTimestepFPS > 0 ? 1 / maxTimestepFPS : float.PositiveInfinity; // If framerate dips too low, run the simulation slower than real-time
+        float dt = Mathf.Min(Time.deltaTime * ActiveTimeScale, maxDeltaTime);
+
+        RunSimulationFrame(dt);
 
         if (pauseNextFrame)
         {
@@ -242,9 +235,9 @@ public class Simulation3D : MonoBehaviour
     {
         if (!isPaused)
         {
-            float timeStep = frameTime / iterationsPerFrame * timeScale;
+            float timeStep = frameTime / iterationsPerFrame;
 
-            UpdateSettings(timeStep);
+            UpdateSettings(timeStep, frameTime);
 
             for (int i = 0; i < iterationsPerFrame; i++)
             {
@@ -280,9 +273,10 @@ public class Simulation3D : MonoBehaviour
         ComputeHelper.Dispatch(compute, positionBuffer.count, kernelIndex: kernelNameToId[updatePositionsKernel]);
     }
 
-    void UpdateSettings(float deltaTime)
+    void UpdateSettings(float stepDeltaTime, float frameDeltaTime)
     {
-        compute.SetFloat("deltaTime", deltaTime);
+        compute.SetFloat("deltaTime", stepDeltaTime);
+        compute.SetFloat("deltaTimeOverAllIterations", frameDeltaTime);
         compute.SetFloat("gravity", gravity);
         compute.SetFloat("collisionDamping", collisionDamping);
         compute.SetFloat("smoothingRadius", smoothingRadius);
@@ -336,7 +330,14 @@ public class Simulation3D : MonoBehaviour
             isPaused = true;
             SetInitialBufferData(spawnData);
         }
+
+        if (Input.GetKeyDown(KeyCode.Q))
+        {
+            inSlowMode = !inSlowMode;
+        }
     }
+
+    private float ActiveTimeScale => inSlowMode ? slowTimeScale : normalTimeScale;
 
     void OnDestroy()
     {
