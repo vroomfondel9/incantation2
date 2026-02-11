@@ -6,7 +6,7 @@
 #pragma kernel CalculatePressureForce
 #pragma kernel CalculateViscosity
 #pragma kernel UpdatePositions
-#pragma kernel ScatterToSortedIndices
+#pragma kernel CopyBuffer
 #pragma kernel InitOffsets
 #pragma kernel CalcOffsets
 #pragma kernel SpanOffsets
@@ -31,24 +31,19 @@
 #include "./FluidMaths3D.hlsl"
 #include "./SpatialHash3D.hlsl"
 
-// Principal SPH Buffers
+// Buffers
 RWStructuredBuffer<float3> Positions;
 RWStructuredBuffer<float3> PredictedPositions;
 RWStructuredBuffer<float3> Velocities;
 RWStructuredBuffer<float2> Densities; // Density, Near Density
 
-//These double buffers should only be used for scattering to sorted indices. See ScatterToSortedIndices kernel.
-RWStructuredBuffer<float3> PositionsSrc;
-RWStructuredBuffer<float3> PredictedPositionsSrc;
-RWStructuredBuffer<float3> VelocitiesSrc;
-RWStructuredBuffer<float2> DensitiesSrc;
-
 RWStructuredBuffer<float3> DebugValues;
 
-RWStructuredBuffer<uint> keys;				//Sorted key list. Used to construct offsets.
-RWStructuredBuffer<uint> indices;			//Sorted index list. Used to construct offsets.
-RWStructuredBuffer<uint2> offsets;			// Holds the locations (start and end indices) where origin cell indices are located.
-RWStructuredBuffer<uint2> spannedOffsets;	// Holds the locations (start and end indices) where sets of 3 spanned adjascent neighbor indices are located
+RWStructuredBuffer<uint> keys; //Sorted key list. Used to construct offsets.
+RWStructuredBuffer<uint> indices; //Sorted index list. Used to construct offsets.
+RWStructuredBuffer<float3> tempBuffer; // Used to copy values for memory coalescing
+RWStructuredBuffer<uint2> offsets; // Holds the locations (start and end indices) where origin cell indices are located.
+RWStructuredBuffer<uint2> spannedOffsets; // Holds the locations (start and end indices) where sets of 3 spanned adjascent neighbor indices are located
 
 // Settings
 const uint numParticles;
@@ -67,6 +62,8 @@ const float edgeForce;
 const float edgeForceDst;
 const int3 boundsSize;
 const float cellSize;
+const int copyBufferId; //Position = 0, PredictedPosition = 1, Velocity = 2, Density = 3
+const int copyDirection; //0 = real buffer to temp buffer, 1 = temp buffer to real buffer
 
 const float4x4 localToWorld;
 const float4x4 worldToLocal;
@@ -77,273 +74,320 @@ const float interactionInputRadius;
 
 float PressureFromDensity(float density)
 {
-	return (density - targetDensity) * pressureMultiplier;
+    return (density - targetDensity) * pressureMultiplier;
 }
 
 float NearPressureFromDensity(float nearDensity)
 {
-	return nearDensity * nearPressureMultiplier;
+    return nearDensity * nearPressureMultiplier;
 }
 
 void ResolveCollisions(uint particleIndex)
 {
 	// Transform position/velocity to the local space of the bounding box (scale not included)
-	float3 posLocal = mul(worldToLocal, float4(Positions[particleIndex], 1)).xyz;
-	float3 velocityLocal = mul(worldToLocal, float4(Velocities[particleIndex], 0)).xyz;
+    float3 posLocal = mul(worldToLocal, float4(Positions[particleIndex], 1)).xyz;
+    float3 velocityLocal = mul(worldToLocal, float4(Velocities[particleIndex], 0)).xyz;
 
 	// Calculate distance from box on each axis (negative values are inside box)
-	const float3 halfSize = 0.5;
-	const float3 edgeDst = halfSize - abs(posLocal);
+    const float3 halfSize = 0.5;
+    const float3 edgeDst = halfSize - abs(posLocal);
 
 	// Resolve collisions
-	if (edgeDst.x <= 0)
-	{
-		posLocal.x = halfSize.x * sign(posLocal.x);
-		velocityLocal.x *= -1 * collisionDamping;
-	}
-	if (edgeDst.y <= 0)
-	{
-		posLocal.y = halfSize.y * sign(posLocal.y);
-		velocityLocal.y *= -1 * collisionDamping;
-	}
-	if (edgeDst.z <= 0)
-	{
-		posLocal.z = halfSize.z * sign(posLocal.z);
-		velocityLocal.z *= -1 * collisionDamping;
-	}
+    if (edgeDst.x <= 0)
+    {
+        posLocal.x = halfSize.x * sign(posLocal.x);
+        velocityLocal.x *= -1 * collisionDamping;
+    }
+    if (edgeDst.y <= 0)
+    {
+        posLocal.y = halfSize.y * sign(posLocal.y);
+        velocityLocal.y *= -1 * collisionDamping;
+    }
+    if (edgeDst.z <= 0)
+    {
+        posLocal.z = halfSize.z * sign(posLocal.z);
+        velocityLocal.z *= -1 * collisionDamping;
+    }
 
 	// Transform resolved position/velocity back to world space
-	Positions[particleIndex] = mul(localToWorld, float4(posLocal, 1)).xyz;
-	Velocities[particleIndex] = mul(localToWorld, float4(velocityLocal, 0)).xyz;
+    Positions[particleIndex] = mul(localToWorld, float4(posLocal, 1)).xyz;
+    Velocities[particleIndex] = mul(localToWorld, float4(velocityLocal, 0)).xyz;
 
 }
 
-[numthreads(NUM_THREADS,1,1)]
-void ExternalForces (uint3 id : SV_DispatchThreadID)
+[numthreads(NUM_THREADS, 1, 1)]
+void ExternalForces(uint3 id : SV_DispatchThreadID)
 {
-	if (id.x >= numParticles) return;
+    if (id.x >= numParticles)
+        return;
 
 	// External forces (gravity)
-	Velocities[id.x] += float3(0, gravity, 0) * deltaTime;
+    Velocities[id.x] += float3(0, gravity, 0) * deltaTime;
 
 	// Predict
-	PredictedPositions[id.x] = Positions[id.x] + Velocities[id.x] * 1 / 120.0;
+    PredictedPositions[id.x] = Positions[id.x] + Velocities[id.x] * 1 / 120.0;
 }
 
-[numthreads(NUM_THREADS,1,1)]
-void InitializeSpacialPartitionBuffers (uint3 id : SV_DispatchThreadID)
+[numthreads(NUM_THREADS, 1, 1)]
+void InitializeSpacialPartitionBuffers(uint3 id : SV_DispatchThreadID)
 {
-	if (id.x >= numParticles) return;
+    if (id.x >= numParticles)
+        return;
 
-	uint index = id.x;
+    uint index = id.x;
 
 	// Update index buffer
-	int3 cell = GetInBoundsCell(PredictedPositions[index], cellSize, boundsSize);
-	uint key = GetKeyFromInBoundsCell(cell, boundsSize);
+    int3 cell = GetInBoundsCell(PredictedPositions[index], cellSize, boundsSize);
+    uint key = GetKeyFromInBoundsCell(cell, boundsSize);
 
-	keys[index] = key;
-	indices[index] = index;
+    keys[index] = key;
+    indices[index] = index;
 }
 
-[numthreads(NUM_THREADS,1,1)]
-void CalculateDensities (uint3 id : SV_DispatchThreadID)
+[numthreads(NUM_THREADS, 1, 1)]
+void CalculateDensities(uint3 id : SV_DispatchThreadID)
 {
-	if (id.x >= numParticles) return;
+    if (id.x >= numParticles)
+        return;
 
-	float3 pos = PredictedPositions[id.x];
-	int3 originCell = GetInBoundsCell(pos, cellSize, boundsSize);
-	float sqrRadius = smoothingRadius * smoothingRadius;
-	float density = 0;
-	float nearDensity = 0;
+    float3 pos = PredictedPositions[id.x];
+    int3 originCell = GetInBoundsCell(pos, cellSize, boundsSize);
+    float sqrRadius = smoothingRadius * smoothingRadius;
+    float density = 0;
+    float nearDensity = 0;
 
 	// Neighbour search
-	for (int i = 0; i < 9; i++)
-	{
-		int3 neighborOriginCell = originCell + offsets3D[i];
-		bool neighborInBounds = isCellInBounds(neighborOriginCell, boundsSize);
+    for (int i = 0; i < 9; i++)
+    {
+        int3 neighborOriginCell = originCell + offsets3D[i];
+        bool neighborInBounds = isCellInBounds(neighborOriginCell, boundsSize);
 
-		if (!neighborInBounds) continue;
+        if (!neighborInBounds)
+            continue;
 
-		uint key = GetKeyFromInBoundsCell(neighborOriginCell, boundsSize);
+        uint key = GetKeyFromInBoundsCell(neighborOriginCell, boundsSize);
 
-		uint2 keyOffset = spannedOffsets[key];
-		uint keyStartIndex = keyOffset.x;
-		uint keyEndIndex = keyOffset.y;
+        uint2 keyOffset = spannedOffsets[key];
+        uint keyStartIndex = keyOffset.x;
+        uint keyEndIndex = keyOffset.y;
 
-		for (uint curIndex = keyStartIndex; curIndex <= keyEndIndex; curIndex++)
-		{
+        for (uint curIndex = keyStartIndex; curIndex <= keyEndIndex; curIndex++)
+        {
 			// Dependent Data Retrieval
-			float3 neighbourPos = PredictedPositions[curIndex];
+            float3 neighbourPos = PredictedPositions[curIndex];
 
 			// Influence Calculation
-			float3 offsetToNeighbour = neighbourPos - pos;
-			float sqrDstToNeighbour = dot(offsetToNeighbour, offsetToNeighbour);
+            float3 offsetToNeighbour = neighbourPos - pos;
+            float sqrDstToNeighbour = dot(offsetToNeighbour, offsetToNeighbour);
 
-			bool withinRadius = (sqrDstToNeighbour <= sqrRadius);
+            bool withinRadius = (sqrDstToNeighbour <= sqrRadius);
 
-			float dst = sqrt(sqrDstToNeighbour);
+            float dst = sqrt(sqrDstToNeighbour);
 
-			float influenceFactor = withinRadius * DensityKernel(dst, smoothingRadius);
-			float influenceFactorNear = withinRadius * NearDensityKernel(dst, smoothingRadius);
+            float influenceFactor = withinRadius * DensityKernel(dst, smoothingRadius);
+            float influenceFactorNear = withinRadius * NearDensityKernel(dst, smoothingRadius);
 
 			// Density Calculation
-			float densityStrength = 1.0;			//Each particle has an assumed mass of 1 (for now)
+            float densityStrength = 1.0; //Each particle has an assumed mass of 1 (for now)
 
 			// Accumulation
-			density += influenceFactor * densityStrength;
-			nearDensity += influenceFactorNear * densityStrength;
-		}
-	}
+            density += influenceFactor * densityStrength;
+            nearDensity += influenceFactorNear * densityStrength;
+        }
+    }
 	
-	Densities[id.x] = float2(density, nearDensity);
+    Densities[id.x] = float2(density, nearDensity);
 }
 
-[numthreads(NUM_THREADS,1,1)]
-void CalculatePressureForce (uint3 id : SV_DispatchThreadID)
+[numthreads(NUM_THREADS, 1, 1)]
+void CalculatePressureForce(uint3 id : SV_DispatchThreadID)
 {
-	if (id.x >= numParticles) return;
+    if (id.x >= numParticles)
+        return;
 
 	// Calculate pressure
-	float density = Densities[id.x][0];
-	float densityNear = Densities[id.x][1];
-	float pressure = PressureFromDensity(density);
-	float nearPressure = NearPressureFromDensity(densityNear);
-	float3 pressureForce = 0;
+    float density = Densities[id.x][0];
+    float densityNear = Densities[id.x][1];
+    float pressure = PressureFromDensity(density);
+    float nearPressure = NearPressureFromDensity(densityNear);
+    float3 pressureForce = 0;
 	
-	float3 pos = PredictedPositions[id.x];
-	int3 originCell = GetInBoundsCell(pos, cellSize, boundsSize);
-	float sqrRadius = smoothingRadius * smoothingRadius;
+    float3 pos = PredictedPositions[id.x];
+    int3 originCell = GetInBoundsCell(pos, cellSize, boundsSize);
+    float sqrRadius = smoothingRadius * smoothingRadius;
 
 	// Neighbour search
-	for (int i = 0; i < 9; i ++)
-	{
-		int3 neighborOriginCell = originCell + offsets3D[i];
-		bool neighborInBounds = isCellInBounds(neighborOriginCell, boundsSize);
+    for (int i = 0; i < 9; i++)
+    {
+        int3 neighborOriginCell = originCell + offsets3D[i];
+        bool neighborInBounds = isCellInBounds(neighborOriginCell, boundsSize);
 
-		if (!neighborInBounds) continue;
+        if (!neighborInBounds)
+            continue;
 
-		uint key = GetKeyFromInBoundsCell(neighborOriginCell, boundsSize);
+        uint key = GetKeyFromInBoundsCell(neighborOriginCell, boundsSize);
 
-		uint2 keyOffset = spannedOffsets[key];
-		uint keyStartIndex = keyOffset.x;
-		uint keyEndIndex = keyOffset.y;
+        uint2 keyOffset = spannedOffsets[key];
+        uint keyStartIndex = keyOffset.x;
+        uint keyEndIndex = keyOffset.y;
 
-		for (uint curIndex = keyStartIndex; curIndex <= keyEndIndex; curIndex++)
-		{
+        for (uint curIndex = keyStartIndex; curIndex <= keyEndIndex; curIndex++)
+        {
 			// Dependent Data Retrieval
-			float3 neighbourPos = PredictedPositions[curIndex];
-			float2 neighborDens = Densities[curIndex];
+            float3 neighbourPos = PredictedPositions[curIndex];
+            float2 neighborDens = Densities[curIndex];
 
 			// Influence Calculation
-			float3 offsetToNeighbour = neighbourPos - pos;
-			float sqrDstToNeighbour = dot(offsetToNeighbour, offsetToNeighbour);
+            float3 offsetToNeighbour = neighbourPos - pos;
+            float sqrDstToNeighbour = dot(offsetToNeighbour, offsetToNeighbour);
 
-			bool withinRadius = (sqrDstToNeighbour <= sqrRadius);
-			bool neighborIsNotSelf = (curIndex != id.x);
+            bool withinRadius = (sqrDstToNeighbour <= sqrRadius);
+            bool neighborIsNotSelf = (curIndex != id.x);
 
-			float dst = sqrt(sqrDstToNeighbour);
-			float3 dir = dst > 0 ? offsetToNeighbour / dst : float3(0, 1, 0);
+            float dst = sqrt(sqrDstToNeighbour);
+            float3 dir = dst > 0 ? offsetToNeighbour / dst : float3(0, 1, 0);
 
-			float influenceFactor = withinRadius * neighborIsNotSelf * DensityDerivative(dst, smoothingRadius);
-			float influenceFactorNear = withinRadius * neighborIsNotSelf * NearDensityDerivative(dst, smoothingRadius);
+            float influenceFactor = withinRadius * neighborIsNotSelf * DensityDerivative(dst, smoothingRadius);
+            float influenceFactorNear = withinRadius * neighborIsNotSelf * NearDensityDerivative(dst, smoothingRadius);
 
 			// Pressure Calculation
-			float densityNeighbour = neighborDens[0];
-			float nearDensityNeighbour = neighborDens[1];
+            float densityNeighbour = neighborDens[0];
+            float nearDensityNeighbour = neighborDens[1];
 
-			float neighbourPressure = PressureFromDensity(densityNeighbour);
-			float neighbourPressureNear = NearPressureFromDensity(nearDensityNeighbour);
+            float neighbourPressure = PressureFromDensity(densityNeighbour);
+            float neighbourPressureNear = NearPressureFromDensity(nearDensityNeighbour);
 
-			float sharedPressure = (pressure + neighbourPressure) / 2;
-			float sharedNearPressure = (nearPressure + neighbourPressureNear) / 2;
+            float sharedPressure = (pressure + neighbourPressure) / 2;
+            float sharedNearPressure = (nearPressure + neighbourPressureNear) / 2;
 
-			float pressureStrength = sharedPressure / densityNeighbour;
-			float nearPressureStrength = sharedNearPressure / nearDensityNeighbour;
+            float pressureStrength = sharedPressure / densityNeighbour;
+            float nearPressureStrength = sharedNearPressure / nearDensityNeighbour;
 
 			// Accumulation
-			pressureForce += dir * influenceFactor * pressureStrength;
-			pressureForce += dir * influenceFactorNear * nearPressureStrength;
-		}
-	}
+            pressureForce += dir * influenceFactor * pressureStrength;
+            pressureForce += dir * influenceFactorNear * nearPressureStrength;
+        }
+    }
 
-	float3 acceleration = pressureForce / density;
-	Velocities[id.x] += acceleration * deltaTime;
+    float3 acceleration = pressureForce / density;
+    Velocities[id.x] += acceleration * deltaTime;
 }
 
 
-[numthreads(NUM_THREADS,1,1)]
-void CalculateViscosity (uint3 id : SV_DispatchThreadID)
+[numthreads(NUM_THREADS, 1, 1)]
+void CalculateViscosity(uint3 id : SV_DispatchThreadID)
 {
-	if (id.x >= numParticles) return;
+    if (id.x >= numParticles)
+        return;
 		
-	float3 pos = PredictedPositions[id.x];
-	int3 originCell = GetInBoundsCell(pos, cellSize, boundsSize);
-	float sqrRadius = smoothingRadius * smoothingRadius;
+    float3 pos = PredictedPositions[id.x];
+    int3 originCell = GetInBoundsCell(pos, cellSize, boundsSize);
+    float sqrRadius = smoothingRadius * smoothingRadius;
 
-	float3 viscosityForce = 0;
-	float3 velocity = Velocities[id.x];
+    float3 viscosityForce = 0;
+    float3 velocity = Velocities[id.x];
 
 	// Neighbour search
-	for (int i = 0; i < 9; i ++)
-	{
-		int3 neighborOriginCell = originCell + offsets3D[i];
-		bool neighborInBounds = isCellInBounds(neighborOriginCell, boundsSize);
+    for (int i = 0; i < 9; i++)
+    {
+        int3 neighborOriginCell = originCell + offsets3D[i];
+        bool neighborInBounds = isCellInBounds(neighborOriginCell, boundsSize);
 
-		if (!neighborInBounds) continue;
+        if (!neighborInBounds)
+            continue;
 
-		uint key = GetKeyFromInBoundsCell(neighborOriginCell, boundsSize);
+        uint key = GetKeyFromInBoundsCell(neighborOriginCell, boundsSize);
 
-		uint2 keyOffset = spannedOffsets[key];
-		uint keyStartIndex = keyOffset.x;
-		uint keyEndIndex = keyOffset.y;
+        uint2 keyOffset = spannedOffsets[key];
+        uint keyStartIndex = keyOffset.x;
+        uint keyEndIndex = keyOffset.y;
 
-		for (uint curIndex = keyStartIndex; curIndex <= keyEndIndex; curIndex++)
-		{
+        for (uint curIndex = keyStartIndex; curIndex <= keyEndIndex; curIndex++)
+        {
 			// Dependent Data Retrieval
-			float3 neighbourPos = PredictedPositions[curIndex];
-			float3 neighbourVelocity = Velocities[curIndex];
+            float3 neighbourPos = PredictedPositions[curIndex];
+            float3 neighbourVelocity = Velocities[curIndex];
 
 			// Influence Calculation
-			float3 offsetToNeighbour = neighbourPos - pos;
-			float sqrDstToNeighbour = dot(offsetToNeighbour, offsetToNeighbour);
+            float3 offsetToNeighbour = neighbourPos - pos;
+            float sqrDstToNeighbour = dot(offsetToNeighbour, offsetToNeighbour);
 
-			bool withinRadius = (sqrDstToNeighbour <= sqrRadius);
-			bool neighborIsNotSelf = (curIndex != id.x);
+            bool withinRadius = (sqrDstToNeighbour <= sqrRadius);
+            bool neighborIsNotSelf = (curIndex != id.x);
 
-			float dst = sqrt(sqrDstToNeighbour);
-			float influenceFactor = withinRadius * neighborIsNotSelf * SmoothingKernelPoly6(dst, smoothingRadius);
+            float dst = sqrt(sqrDstToNeighbour);
+            float influenceFactor = withinRadius * neighborIsNotSelf * SmoothingKernelPoly6(dst, smoothingRadius);
 
 			// Viscosity Calculation
-			float3 viscosityStrength = (neighbourVelocity - velocity);
+            float3 viscosityStrength = (neighbourVelocity - velocity);
 
 			// Accumulation
-			viscosityForce += influenceFactor * viscosityStrength;
-		}
-	}
-	Velocities[id.x] += viscosityForce * viscosityStrength * deltaTime;
+            viscosityForce += influenceFactor * viscosityStrength;
+        }
+    }
+    Velocities[id.x] += viscosityForce * viscosityStrength * deltaTime;
 }
 
 [numthreads(NUM_THREADS, 1, 1)]
 void UpdatePositions(uint3 id : SV_DispatchThreadID)
 {
-	if (id.x >= numParticles) return;
+    if (id.x >= numParticles)
+        return;
 
-	Positions[id.x] += Velocities[id.x] * deltaTime;
-	ResolveCollisions(id.x);
+    Positions[id.x] += Velocities[id.x] * deltaTime;
+    ResolveCollisions(id.x);
 }
 
+// The branchiness of this kernel is okay because all threads will follow the same branches on a given Dispatch so there will be no divergence
 [numthreads(NUM_THREADS, 1, 1)]
-void ScatterToSortedIndices(uint3 id : SV_DispatchThreadID)
+void CopyBuffer(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= numParticles)
         return;
-	
-    uint uncoalescedIndex = indices[id.x];
-	
-    Positions[id.x] = PositionsSrc[uncoalescedIndex];
-    PredictedPositions[id.x] = PredictedPositionsSrc[uncoalescedIndex];
-    Velocities[id.x] = VelocitiesSrc[uncoalescedIndex];
-    Densities[id.x] = DensitiesSrc[uncoalescedIndex];
+
+    if (copyDirection == 0)
+    {
+		// Copy to temp buffer
+        uint uncoalescedIndex = indices[id.x];
+        if (copyBufferId == 0)
+        {
+            tempBuffer[id.x] = Positions[uncoalescedIndex];
+        }
+        else if (copyBufferId == 1)
+        {
+            tempBuffer[id.x] = PredictedPositions[uncoalescedIndex];
+        }
+        else if (copyBufferId == 2)
+        {
+            tempBuffer[id.x] = Velocities[uncoalescedIndex];
+        }
+        else if (copyBufferId == 3)
+        {
+            float2 density = Densities[uncoalescedIndex];
+            tempBuffer[id.x] = float3(density[0], density[1], 0.0);
+        }
+    }
+    else
+    {
+		// Copy from temp buffer
+        if (copyBufferId == 0)
+        {
+            Positions[id.x] = tempBuffer[id.x];
+        }
+        else if (copyBufferId == 1)
+        {
+            PredictedPositions[id.x] = tempBuffer[id.x];
+        }
+        else if (copyBufferId == 2)
+        {
+            Velocities[id.x] = tempBuffer[id.x];
+        }
+        else if (copyBufferId == 3)
+        {
+            float3 density = tempBuffer[id.x];
+            Densities[id.x] = float2(density[0], density[1]);
+        }
+    }
 }
 
 // Reinitialized the array formerly used to store scatter indices for sorting to be the key offset array.
@@ -357,9 +401,12 @@ void ScatterToSortedIndices(uint3 id : SV_DispatchThreadID)
 [numthreads(NUM_THREADS, 1, 1)]
 void InitOffsets(uint3 id : SV_DispatchThreadID)
 {
-	if (id.x >= numCells) { return; }
+    if (id.x >= numCells)
+    {
+        return;
+    }
 
-	offsets[id.x] = uint2(numParticles + 1, numParticles);
+    offsets[id.x] = uint2(numParticles + 1, numParticles);
 }
 
 // Calculate offsets into the sorted keys buffer (used for spatial hashing).
@@ -384,29 +431,32 @@ void InitOffsets(uint3 id : SV_DispatchThreadID)
 [numthreads(NUM_THREADS, 1, 1)]
 void CalcOffsets(uint3 id : SV_DispatchThreadID)
 {
-	if (id.x >= numParticles) { return; }
+    if (id.x >= numParticles)
+    {
+        return;
+    }
 
-	uint i = id.x;
+    uint i = id.x;
 
-	uint firstParticle = i == 0;
-	uint lastParticle = i == (numParticles - 1);
+    uint firstParticle = i == 0;
+    uint lastParticle = i == (numParticles - 1);
 
-	uint key = keys[i];
-	uint keyPrev = keys[i - !firstParticle];
-	uint keyNext = keys[i + !lastParticle];
+    uint key = keys[i];
+    uint keyPrev = keys[i - !firstParticle];
+    uint keyNext = keys[i + !lastParticle];
 
-	uint prevKeyMatches = keyPrev == key && !firstParticle;
-	uint nextKeyMatches = keyNext == key && !lastParticle;
+    uint prevKeyMatches = keyPrev == key && !firstParticle;
+    uint nextKeyMatches = keyNext == key && !lastParticle;
 
-	if (!prevKeyMatches)
-	{
-		offsets[key].x = i;
-	}
+    if (!prevKeyMatches)
+    {
+        offsets[key].x = i;
+    }
 
-	if (!nextKeyMatches)
-	{
-		offsets[key].y = i;
-	}
+    if (!nextKeyMatches)
+    {
+        offsets[key].y = i;
+    }
 }
 
 // Takes advantage of the fact that keys are numbered from with increasing x, then increasing y, then increasing z.
@@ -430,104 +480,110 @@ void CalcOffsets(uint3 id : SV_DispatchThreadID)
 [numthreads(NUM_THREADS, 1, 1)]
 void SpanOffsets(uint3 id : SV_DispatchThreadID)
 {
-	if (id.x >= numCells) { return; }
+    if (id.x >= numCells)
+    {
+        return;
+    }
 
-	uint index = id.x;
+    uint index = id.x;
 
-	int posInXDim = index % boundsSize.x;
-	uint leftBoundaryCell = posInXDim == 0;
-	uint rightBoundaryCell = posInXDim == (boundsSize.x - 1);
+    int posInXDim = index % boundsSize.x;
+    uint leftBoundaryCell = posInXDim == 0;
+    uint rightBoundaryCell = posInXDim == (boundsSize.x - 1);
 
-	uint2 offsetsArray[3];
+    uint2 offsetsArray[3];
 
-	offsetsArray[0] = offsets[index - !leftBoundaryCell];
-	offsetsArray[1] = offsets[index];
-	offsetsArray[2] = offsets[index + !rightBoundaryCell];
+    offsetsArray[0] = offsets[index - !leftBoundaryCell];
+    offsetsArray[1] = offsets[index];
+    offsetsArray[2] = offsets[index + !rightBoundaryCell];
 
-	uint startIndex = numParticles + 1;
-	uint endIndex = numParticles;
-	uint startIndexEmpty;
-	uint endIndexEmpty;
+    uint startIndex = numParticles + 1;
+    uint endIndex = numParticles;
+    uint startIndexEmpty;
+    uint endIndexEmpty;
 
 	[unroll]
-	for (uint i = 0; i < 3; i++)
-	{
-		startIndexEmpty = startIndex == numParticles + 1;
-		endIndexEmpty = endIndex == numParticles;
+    for (uint i = 0; i < 3; i++)
+    {
+        startIndexEmpty = startIndex == numParticles + 1;
+        endIndexEmpty = endIndex == numParticles;
 
-		startIndex = startIndex * !startIndexEmpty + startIndexEmpty * offsetsArray[i].x;
-		endIndex = endIndex * !endIndexEmpty + endIndexEmpty * offsetsArray[2 - i].y;
-	}
+        startIndex = startIndex * !startIndexEmpty + startIndexEmpty * offsetsArray[i].x;
+        endIndex = endIndex * !endIndexEmpty + endIndexEmpty * offsetsArray[2 - i].y;
+    }
 
-	spannedOffsets[index].x = startIndex;
-	spannedOffsets[index].y = endIndex;
+    spannedOffsets[index].x = startIndex;
+    spannedOffsets[index].y = endIndex;
 }
 
 float2 CalculateDensitiesExperimental(uint3 id)
 {
-	if (id.x >= numParticles) return float2(-1, -1);
+    if (id.x >= numParticles)
+        return float2(-1, -1);
 
-	float3 pos = PredictedPositions[id.x];
-	int3 originCell = GetInBoundsCell(pos, cellSize, boundsSize);
-	float sqrRadius = smoothingRadius * smoothingRadius;
-	float density = 0;
-	float nearDensity = 0;
+    float3 pos = PredictedPositions[id.x];
+    int3 originCell = GetInBoundsCell(pos, cellSize, boundsSize);
+    float sqrRadius = smoothingRadius * smoothingRadius;
+    float density = 0;
+    float nearDensity = 0;
 
 	// Neighbour search
-	for (int i = 0; i < 9; i++)
-	{
-		int3 neighborOriginCell = originCell + offsets3D[i];
-		bool neighborInBounds = isCellInBounds(neighborOriginCell, boundsSize);
+    for (int i = 0; i < 9; i++)
+    {
+        int3 neighborOriginCell = originCell + offsets3D[i];
+        bool neighborInBounds = isCellInBounds(neighborOriginCell, boundsSize);
 
-		if (!neighborInBounds) continue;
+        if (!neighborInBounds)
+            continue;
 
-		uint key = GetKeyFromInBoundsCell(neighborOriginCell, boundsSize);
+        uint key = GetKeyFromInBoundsCell(neighborOriginCell, boundsSize);
 
-		uint2 keyOffset = spannedOffsets[key];
-		uint keyStartIndex = keyOffset.x;
-		uint keyEndIndex = keyOffset.y;
+        uint2 keyOffset = spannedOffsets[key];
+        uint keyStartIndex = keyOffset.x;
+        uint keyEndIndex = keyOffset.y;
 
-		for (uint curIndex = keyStartIndex; curIndex <= keyEndIndex; curIndex++)
-		{
+        for (uint curIndex = keyStartIndex; curIndex <= keyEndIndex; curIndex++)
+        {
 			// Dependent Data Retrieval
-			float3 neighbourPos = PredictedPositions[curIndex];
+            float3 neighbourPos = PredictedPositions[curIndex];
 
 			// Influence Calculation
-			float3 offsetToNeighbour = neighbourPos - pos;
-			float sqrDstToNeighbour = dot(offsetToNeighbour, offsetToNeighbour);
+            float3 offsetToNeighbour = neighbourPos - pos;
+            float sqrDstToNeighbour = dot(offsetToNeighbour, offsetToNeighbour);
 
-			bool withinRadius = (sqrDstToNeighbour <= sqrRadius);
+            bool withinRadius = (sqrDstToNeighbour <= sqrRadius);
 
-			float dst = sqrt(sqrDstToNeighbour);
+            float dst = sqrt(sqrDstToNeighbour);
 
-			float influenceFactor = withinRadius * DensityKernel(dst, smoothingRadius);
-			float influenceFactorNear = withinRadius * NearDensityKernel(dst, smoothingRadius);
+            float influenceFactor = withinRadius * DensityKernel(dst, smoothingRadius);
+            float influenceFactorNear = withinRadius * NearDensityKernel(dst, smoothingRadius);
 
 			// Density Calculation
-			float densityStrength = 1.0;			//Each particle has an assumed mass of 1 (for now)
+            float densityStrength = 1.0; //Each particle has an assumed mass of 1 (for now)
 
 			// Accumulation
-			density += influenceFactor * densityStrength;
-			nearDensity += influenceFactorNear * densityStrength;
-		}
-	}
+            density += influenceFactor * densityStrength;
+            nearDensity += influenceFactorNear * densityStrength;
+        }
+    }
 
-	return float2(density, nearDensity);
+    return float2(density, nearDensity);
 }
 
 [numthreads(NEIGHBOR_SEARCH_NUM_THREADS, 1, 1)]
 void Debug(uint3 globalId : SV_DispatchThreadID, uint3 threadBlockId : SV_GroupThreadID)
 {
-	if (globalId.x >= numParticles) return;
+    if (globalId.x >= numParticles)
+        return;
 
-	float2 actualResult = CalculateDensitiesExperimental(globalId);
-	float2 expectedResult = Densities[globalId.x];
+    float2 actualResult = CalculateDensitiesExperimental(globalId);
+    float2 expectedResult = Densities[globalId.x];
 
-	const float floatingPointPrecisionErrorAvoidanceThreshold = 0.0005;
-	bool failed = (abs(actualResult.x - expectedResult.x) > floatingPointPrecisionErrorAvoidanceThreshold) 
+    const float floatingPointPrecisionErrorAvoidanceThreshold = 0.0005;
+    bool failed = (abs(actualResult.x - expectedResult.x) > floatingPointPrecisionErrorAvoidanceThreshold)
 		|| (abs(actualResult.y - expectedResult.y) > floatingPointPrecisionErrorAvoidanceThreshold);
 
-	float testResultFloat = failed;
-	DebugValues[globalId.x] = float3(testResultFloat, testResultFloat, testResultFloat);
+    float testResultFloat = failed;
+    DebugValues[globalId.x] = float3(testResultFloat, testResultFloat, testResultFloat);
 	//Densities[globalId.x] = actualResult;
 }
