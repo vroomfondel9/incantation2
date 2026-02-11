@@ -6,7 +6,7 @@
 #pragma kernel CalculatePressureForce
 #pragma kernel CalculateViscosity
 #pragma kernel UpdatePositions
-#pragma kernel CopyBuffer
+#pragma kernel ScatterToSortedIndices
 #pragma kernel InitOffsets
 #pragma kernel CalcOffsets
 #pragma kernel SpanOffsets
@@ -31,17 +31,22 @@
 #include "./FluidMaths3D.hlsl"
 #include "./SpatialHash3D.hlsl"
 
-// Buffers
+// Principal SPH Buffers
 RWStructuredBuffer<float3> Positions;
 RWStructuredBuffer<float3> PredictedPositions;
 RWStructuredBuffer<float3> Velocities;
 RWStructuredBuffer<float2> Densities; // Density, Near Density
 
+//These double buffers should only be used for scattering to sorted indices. See ScatterToSortedIndices kernel.
+RWStructuredBuffer<float3> PositionsSrc;
+RWStructuredBuffer<float3> PredictedPositionsSrc;
+RWStructuredBuffer<float3> VelocitiesSrc;
+RWStructuredBuffer<float2> DensitiesSrc;
+
 RWStructuredBuffer<float3> DebugValues;
 
 RWStructuredBuffer<uint> keys;				//Sorted key list. Used to construct offsets.
 RWStructuredBuffer<uint> indices;			//Sorted index list. Used to construct offsets.
-RWStructuredBuffer<float3> tempBuffer;		// Used to copy values for memory coalescing
 RWStructuredBuffer<uint2> offsets;			// Holds the locations (start and end indices) where origin cell indices are located.
 RWStructuredBuffer<uint2> spannedOffsets;	// Holds the locations (start and end indices) where sets of 3 spanned adjascent neighbor indices are located
 
@@ -62,8 +67,6 @@ const float edgeForce;
 const float edgeForceDst;
 const int3 boundsSize;
 const float cellSize;
-const int copyBufferId;			//Position = 0, PredictedPosition = 1, Velocity = 2, Density = 3
-const int copyDirection;		//0 = real buffer to temp buffer, 1 = temp buffer to real buffer
 
 const float4x4 localToWorld;
 const float4x4 worldToLocal;
@@ -329,55 +332,18 @@ void UpdatePositions(uint3 id : SV_DispatchThreadID)
 	ResolveCollisions(id.x);
 }
 
-// The branchiness of this kernel is okay because all threads will follow the same branches on a given Dispatch so there will be no divergence
 [numthreads(NUM_THREADS, 1, 1)]
-void CopyBuffer(uint3 id : SV_DispatchThreadID)
+void ScatterToSortedIndices(uint3 id : SV_DispatchThreadID)
 {
-	if (id.x >= numParticles) return;
-
-	if (copyDirection == 0)
-	{
-		// Copy to temp buffer
-		uint uncoalescedIndex = indices[id.x];
-		if (copyBufferId == 0)
-		{
-			tempBuffer[id.x] = Positions[uncoalescedIndex];
-		} 
-		else if (copyBufferId == 1)
-		{
-			tempBuffer[id.x] = PredictedPositions[uncoalescedIndex];
-		}
-		else if (copyBufferId == 2)
-		{
-			tempBuffer[id.x] = Velocities[uncoalescedIndex];
-		}
-		else if (copyBufferId == 3)
-		{
-			float2 density = Densities[uncoalescedIndex];
-			tempBuffer[id.x] = float3(density[0], density[1], 0.0);
-		}
-	}
-	else
-	{
-		// Copy from temp buffer
-		if (copyBufferId == 0)
-		{
-			Positions[id.x] = tempBuffer[id.x];
-		} 
-		else if (copyBufferId == 1)
-		{
-			PredictedPositions[id.x] = tempBuffer[id.x];
-		}
-		else if (copyBufferId == 2)
-		{
-			Velocities[id.x] = tempBuffer[id.x];
-		}
-		else if (copyBufferId == 3)
-		{
-			float3 density = tempBuffer[id.x];
-			Densities[id.x] = float2(density[0], density[1]);
-		}
-	}
+    if (id.x >= numParticles)
+        return;
+	
+    uint uncoalescedIndex = indices[id.x];
+	
+    Positions[id.x] = PositionsSrc[uncoalescedIndex];
+    PredictedPositions[id.x] = PredictedPositionsSrc[uncoalescedIndex];
+    Velocities[id.x] = VelocitiesSrc[uncoalescedIndex];
+    Densities[id.x] = DensitiesSrc[uncoalescedIndex];
 }
 
 // Reinitialized the array formerly used to store scatter indices for sorting to be the key offset array.
