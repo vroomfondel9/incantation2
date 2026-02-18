@@ -14,12 +14,13 @@ void VoxelDDA_float(
     float3 RayDirObj,
     float3 GridResolutionObj,
     out float Hit,
-    out float3 UV
+    out float3 UV,
+	out float3 Normals
 )
 {
-    Hit = false;
+    Hit = 0.0;
     UV = float3(0,0,0);
-
+	
     float3 rayDir = RayDirObj;
     float3 pos = EntryPointObj;
 
@@ -65,6 +66,18 @@ void VoxelDDA_float(
 		tMax.z = 1e30;
 		tDelta.z = 1e30;
 	}
+	
+	// Track last-crossed axis for normals
+	int3 faceMask = int3(
+		abs(abs(pos.x) - VOLUME_MAX.x) < EPSILON ? 1 : 0,
+		abs(abs(pos.y) - VOLUME_MAX.y) < EPSILON ? 1 : 0,
+		abs(abs(pos.z) - VOLUME_MAX.z) < EPSILON ? 1 : 0
+	);
+
+	int3 weighted = faceMask * int3(1, 2, 3);
+
+	int lastAxis = weighted.x + weighted.y + weighted.z - 1;
+
 
     // Maximum traversal steps safeguard
     const int MAX_STEPS = 512;
@@ -89,40 +102,58 @@ void VoxelDDA_float(
 
 		float4 sample = SAMPLE_TEXTURE3D(Texture, Texture.samplerstate, uv);
 
-        if (sample.a > 0.5) // occupancy threshold
-        {
-            Hit = true;
-            UV = uv;
-            return;
-        }
+        if (sample.a > 0.5)
+		{
+			Hit = 1.0;
+			UV = uv;
+
+			float3 normal = float3(0,0,0);
+
+			if (lastAxis == 0)
+				normal = float3(-stepDir.x, 0, 0);
+			else if (lastAxis == 1)
+				normal = float3(0, -stepDir.y, 0);
+			else if (lastAxis == 2)
+				normal = float3(0, 0, -stepDir.z);
+
+			Normals = normal;
+
+			return;
+		}
+
 
         // Advance voxel
-        if (tMax.x < tMax.y)
-        {
-            if (tMax.x < tMax.z)
-            {
-                voxel.x += stepDir.x;
-                tMax.x += tDelta.x;
-            }
-            else
-            {
-                voxel.z += stepDir.z;
-                tMax.z += tDelta.z;
-            }
-        }
-        else
-        {
-            if (tMax.y < tMax.z)
-            {
-                voxel.y += stepDir.y;
-                tMax.y += tDelta.y;
-            }
-            else
-            {
-                voxel.z += stepDir.z;
-                tMax.z += tDelta.z;
-            }
-        }
+		if (tMax.x < tMax.y)
+		{
+			if (tMax.x < tMax.z)
+			{
+				voxel.x += stepDir.x;
+				tMax.x += tDelta.x;
+				lastAxis = 0;
+			}
+			else
+			{
+				voxel.z += stepDir.z;
+				tMax.z += tDelta.z;
+				lastAxis = 2;
+			}
+		}
+		else
+		{
+			if (tMax.y < tMax.z)
+			{
+				voxel.y += stepDir.y;
+				tMax.y += tDelta.y;
+				lastAxis = 1;
+			}
+			else
+			{
+				voxel.z += stepDir.z;
+				tMax.z += tDelta.z;
+				lastAxis = 2;
+			}
+		}
+
     }
 }
 
