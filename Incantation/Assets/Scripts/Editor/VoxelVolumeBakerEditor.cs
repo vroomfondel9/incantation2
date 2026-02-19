@@ -1,7 +1,8 @@
-﻿using UnityEngine;
-using UnityEditor;
-using System.IO;
+﻿using System.IO;
 using System.Text.RegularExpressions;
+using UnityEditor;
+using UnityEngine;
+using UnityEngine.Experimental.Rendering;
 
 [CustomEditor(typeof(VoxelVolumeBaker))]
 public class VoxelVolumeBakerEditor : Editor
@@ -142,6 +143,34 @@ public class VoxelVolumeBakerEditor : Editor
         );
 
         mat.SetVector("_GridDimensions", gridDims);
+
+        // --- Create _HitTexture (R8_UInt, all values = 1) ---
+        Texture3D hitTex = new Texture3D(
+            width,
+            totalHeight,
+            rows,
+            GraphicsFormat.R8_UNorm,
+            TextureCreationFlags.None
+        );
+
+        hitTex.filterMode = FilterMode.Point;
+        hitTex.wrapMode = TextureWrapMode.Clamp;
+
+        // Fill with value = 1
+        int voxelCount = width * totalHeight * rows;
+        byte[] data = new byte[voxelCount];
+
+        for (int i = 0; i < voxelCount; i++)
+        {
+            data[i] = 42;
+        }
+
+        hitTex.SetPixelData(data, 0);
+        hitTex.Apply(false, false);
+
+        // Assign to material
+        mat.SetTexture("_HitTexture", hitTex);
+
 
         // Assign to renderer
         Renderer renderer = baker.GetComponent<Renderer>();
