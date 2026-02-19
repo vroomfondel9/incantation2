@@ -106,9 +106,9 @@ public class VoxelVolumeBakerEditor : Editor
         Transform t = baker.transform;
 
         t.localScale = new Vector3(
-            width,
-            totalHeight,
-            rows
+            width * GlobalConstants.VOXEL_SCALE,
+            totalHeight * GlobalConstants.VOXEL_SCALE,
+            rows * GlobalConstants.VOXEL_SCALE
         );
 
         // --- Rotate 90° on X ---
