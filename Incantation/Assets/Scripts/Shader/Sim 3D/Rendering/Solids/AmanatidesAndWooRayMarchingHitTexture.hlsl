@@ -37,7 +37,7 @@ void VoxelDDA_float(
 	
 	float normalizedValue = LOAD_TEXTURE3D(_HitTexture, voxel);
 	uint value = (uint)round(normalizedValue * 255.0);
-	Hit = (value == 42);
+	Hit = min(value / 50.0, 1.0);
 }
 
 #endif

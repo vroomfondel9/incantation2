@@ -72,17 +72,24 @@ void VoxelDDA_float(
     [loop]
     for (int i = 0; i < MAX_STEPS; i++)
     {
-		// Texture Sampling
-		float normalizedValue = LOAD_TEXTURE3D(_HitTexture, voxel);
-		uint value = (uint)round(normalizedValue * 255.0);
+        // Integer bounds check (stable)
+        if (voxel.x < 0 || voxel.y < 0 || voxel.z < 0 ||
+            voxel.x >= gridDims.x ||
+            voxel.y >= gridDims.y ||
+            voxel.z >= gridDims.z)
+        {
+            return;
+        }
 
-        if (value == 0)
+        // Compute UV from voxel center for sampling
+        float3 voxelCenter = (voxel + 0.5) * voxelSize;
+        float3 uv = voxelCenter / (VOLUME_MAX - VOLUME_MIN);
+
+        float4 sample = SAMPLE_TEXTURE3D_LOD(Texture, Texture.samplerstate, uv, 0);
+
+        if (sample.a > 0.5)
         {
             Hit = 1.0;
-			
-			// Compute UV from voxel center for sampling
-			float3 voxelCenter = (voxel + 0.5) * voxelSize;
-			float3 uv = voxelCenter / (VOLUME_MAX - VOLUME_MIN);
             UV = uv;
 
             if (lastAxis == 0)
@@ -95,53 +102,41 @@ void VoxelDDA_float(
             return;
         }
 
-        // Advance DDA using SDF acceleration structure
-		for (int j = value; j > 0; j--)
-		{
-			if (tMax.x < tMax.y)
-			{
-				if (tMax.x < tMax.z)
-				{
-					t = tMax.x;
-					voxel.x += stepDir.x;
-					tMax.x += tDelta.x;
-					lastAxis = 0;
-				}
-				else
-				{
-					t = tMax.z;
-					voxel.z += stepDir.z;
-					tMax.z += tDelta.z;
-					lastAxis = 2;
-				}
-			}
-			else
-			{
-				if (tMax.y < tMax.z)
-				{
-					t = tMax.y;
-					voxel.y += stepDir.y;
-					tMax.y += tDelta.y;
-					lastAxis = 1;
-				}
-				else
-				{
-					t = tMax.z;
-					voxel.z += stepDir.z;
-					tMax.z += tDelta.z;
-					lastAxis = 2;
-				}
-			}
-			
-			// Integer bounds check (stable)
-			if (voxel.x < 0 || voxel.y < 0 || voxel.z < 0 ||
-				voxel.x >= gridDims.x ||
-				voxel.y >= gridDims.y ||
-				voxel.z >= gridDims.z)
-			{
-				return;
-			}
-		}
+        // Advance DDA
+        if (tMax.x < tMax.y)
+        {
+            if (tMax.x < tMax.z)
+            {
+                t = tMax.x;
+                voxel.x += stepDir.x;
+                tMax.x += tDelta.x;
+                lastAxis = 0;
+            }
+            else
+            {
+                t = tMax.z;
+                voxel.z += stepDir.z;
+                tMax.z += tDelta.z;
+                lastAxis = 2;
+            }
+        }
+        else
+        {
+            if (tMax.y < tMax.z)
+            {
+                t = tMax.y;
+                voxel.y += stepDir.y;
+                tMax.y += tDelta.y;
+                lastAxis = 1;
+            }
+            else
+            {
+                t = tMax.z;
+                voxel.z += stepDir.z;
+                tMax.z += tDelta.z;
+                lastAxis = 2;
+            }
+        }
     }
 }
 

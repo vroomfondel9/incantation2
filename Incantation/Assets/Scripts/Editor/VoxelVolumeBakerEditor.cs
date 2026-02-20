@@ -63,6 +63,7 @@ public class VoxelVolumeBakerEditor : Editor
         importer.textureShape = TextureImporterShape.Texture3D;
         importer.sRGBTexture = true;
         importer.alphaSource = TextureImporterAlphaSource.FromInput;
+        importer.isReadable = true;
         importer.alphaIsTransparency = true;
 
         importer.mipmapEnabled = false;
@@ -145,28 +146,7 @@ public class VoxelVolumeBakerEditor : Editor
         mat.SetVector("_GridDimensions", gridDims);
 
         // --- Create _HitTexture (R8_UInt, all values = 1) ---
-        Texture3D hitTex = new Texture3D(
-            width,
-            totalHeight,
-            rows,
-            GraphicsFormat.R8_UNorm,
-            TextureCreationFlags.None
-        );
-
-        hitTex.filterMode = FilterMode.Point;
-        hitTex.wrapMode = TextureWrapMode.Clamp;
-
-        // Fill with value = 1
-        int voxelCount = width * totalHeight * rows;
-        byte[] data = new byte[voxelCount];
-
-        for (int i = 0; i < voxelCount; i++)
-        {
-            data[i] = 42;
-        }
-
-        hitTex.SetPixelData(data, 0);
-        hitTex.Apply(false, false);
+        Texture3D hitTex = VoxelSDFGenerator.GenerateManhattanDistanceField(tex3D);
 
         // Assign to material
         mat.SetTexture("_HitTexture", hitTex);
