@@ -48,15 +48,8 @@ public static class VoxelSDFGenerator
 
                     bool filled = src[i].a > FILLED_ALPHA_THRESHOLD * 255f;
 
-                    bool boundary =
-                        x == 0 || x == width - 1 ||
-                        y == 0 || y == height - 1 ||
-                        z == 0 || z == depth - 1;
-
                     if (filled)
                         dist[i] = 0;
-                    else if (boundary)
-                        dist[i] = 1;
                     else
                         dist[i] = maxDist;
                 }
