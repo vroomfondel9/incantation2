@@ -1,24 +1,30 @@
 #ifndef VOXEL_DDA_INCLUDED
 #define VOXEL_DDA_INCLUDED
 
+#ifndef _EDITOR_MODE
+	StructuredBuffer<uint> _Voxels;
+#endif
+
 static const float EPSILON = 1e-5;
 static const float ENTRY_POINT_EPSILON = 5e-3;
 
 static const float3 VOLUME_MIN = float3(-0.5, -0.5, -0.5);
 static const float3 VOLUME_MAX = float3( 0.5,  0.5,  0.5);
 
-void VoxelDDA_float(
+void RayMarch_float(
     UnityTexture3D Texture,
     float3 EntryPointObj,
     float3 RayDirObj,
     float3 GridDimensions,
-    out float Hit,
     out float3 UV,
+	out float3 Voxel,
+    out float Hit,
     out float3 Normals
 )
 {
     Hit = 0.0;
     UV = float3(0,0,0);
+	Voxel = float3(0, 0, 0);
     Normals = float3(0,0,0);
 	
     float3 voxelSize = 1.0 / GridDimensions;
@@ -68,13 +74,21 @@ void VoxelDDA_float(
     float t = 0.0;
 
     const int MAX_STEPS = 512;
+	uint value;
 
     [loop]
     for (int i = 0; i < MAX_STEPS; i++)
     {
 		// Texture Sampling
-		float normalizedValue = LOAD_TEXTURE3D(_HitTexture, voxel);
-		uint value = (uint)round(normalizedValue * 255.0);
+		#ifdef _EDITOR_MODE
+			float normalizedValue = LOAD_TEXTURE3D(Texture, voxel);
+			value = (uint)round(normalizedValue * 255.0);
+		#else
+			uint indexInVolume = voxel.x + GridDimensions.x * voxel.y + GridDimensions.x * GridDimensions.y * voxel.z;
+			uint globalIndex = ((uint)_VoxelVolumeOffset) + indexInVolume;
+			value = _Voxels[globalIndex];
+			value = value & 0xFF;
+		#endif
 
         if (value == 0)
         {
@@ -84,6 +98,7 @@ void VoxelDDA_float(
 			float3 voxelCenter = (voxel + 0.5) * voxelSize;
 			float3 uv = voxelCenter / (VOLUME_MAX - VOLUME_MIN);
             UV = uv;
+			Voxel = voxel;
 
             if (lastAxis == 0)
                 Normals = float3(-stepDir.x, 0, 0);

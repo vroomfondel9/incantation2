@@ -39,6 +39,8 @@ public class VoxelVolumeBakerEditor : Editor
 
         string path = AssetDatabase.GetAssetPath(baker.sourceTexture);
         string filename = Path.GetFileNameWithoutExtension(path);
+        baker.originalVoxelTextureId = path;
+        baker.modified = false;
 
         // --- Extract _h# from filename ---
         Match match = Regex.Match(filename, @"_h(\d+)$");
@@ -151,6 +153,8 @@ public class VoxelVolumeBakerEditor : Editor
         // Assign to material
         mat.SetTexture("_HitTexture", hitTex);
 
+        // Assign Editor Mode Conditional Compilation Version
+        mat.EnableKeyword("_EDITOR_MODE");
 
         // Assign to renderer
         Renderer renderer = baker.GetComponent<Renderer>();
@@ -158,6 +162,7 @@ public class VoxelVolumeBakerEditor : Editor
         {
             renderer.sharedMaterial = mat;
         }
+        baker.editorMaterial = mat;
 
         sw.Stop();
         Debug.Log(logPrefix + "Bake success. Time: " + sw.ElapsedMilliseconds + "ms.");
