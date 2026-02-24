@@ -19,13 +19,17 @@ void RayMarch_float(
     out float3 UV,
 	out float3 Voxel,
     out float Hit,
-    out float3 Normals
+    out float3 NormalsObj,
+	out float3 VoxelSurfaceStrikeLocObj,
+	out float VoxelValue
 )
 {
     Hit = 0.0;
     UV = float3(0,0,0);
 	Voxel = float3(0, 0, 0);
-    Normals = float3(0,0,0);
+    NormalsObj = float3(0,0,0);
+	VoxelSurfaceStrikeLocObj = float3(0, 0, 0);
+	VoxelValue = 1.0;
 	
     float3 voxelSize = 1.0 / GridDimensions;
 	float3 halfVoxelSize = voxelSize * 0.5;
@@ -71,6 +75,7 @@ void RayMarch_float(
 
 	int lastAxis = weighted.x + weighted.y + weighted.z - 1;
 
+	float tPrev = 0.0;
     float t = 0.0;
 
     const int MAX_STEPS = 512;
@@ -99,13 +104,15 @@ void RayMarch_float(
 			float3 uv = voxelCenter / (VOLUME_MAX - VOLUME_MIN);
             UV = uv;
 			Voxel = voxel;
+			
+			VoxelSurfaceStrikeLocObj = pos + rayDir * t;
 
             if (lastAxis == 0)
-                Normals = float3(-stepDir.x, 0, 0);
+                NormalsObj = float3(-stepDir.x, 0, 0);
             else if (lastAxis == 1)
-                Normals = float3(0, -stepDir.y, 0);
+                NormalsObj = float3(0, -stepDir.y, 0);
             else if (lastAxis == 2)
-                Normals = float3(0, 0, -stepDir.z);
+                NormalsObj = float3(0, 0, -stepDir.z);
 
             return;
         }
@@ -113,6 +120,7 @@ void RayMarch_float(
         // Advance DDA using SDF acceleration structure
 		for (int j = value; j > 0; j--)
 		{
+			tPrev = t;
 			if (tMax.x < tMax.y)
 			{
 				if (tMax.x < tMax.z)

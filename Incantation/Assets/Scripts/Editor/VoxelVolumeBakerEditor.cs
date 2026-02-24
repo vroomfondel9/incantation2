@@ -8,7 +8,7 @@ using UnityEngine.Experimental.Rendering;
 public class VoxelVolumeBakerEditor : Editor
 {
     private const string shaderPath =
-        "Assets/Scripts/Shader/Sim 3D/Rendering/Solids/VoxVolShader.shadergraph";
+        "Assets/Scripts/Shader/Sim 3D/Rendering/Solids/VoxVolShader.shader";
 
     public override void OnInspectorGUI()
     {

@@ -9,6 +9,8 @@ void ColorSample_float(
 	out float3 RGB
 )
 {
+	RGB = float3(0, 0, 0);
+	
 	#ifdef _EDITOR_MODE
 		float4 sample = SAMPLE_TEXTURE3D(
 			ColorTexture.tex,
