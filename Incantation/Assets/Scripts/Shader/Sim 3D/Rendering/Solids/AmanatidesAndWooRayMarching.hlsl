@@ -104,6 +104,7 @@ void RayMarch_float(
 			float3 uv = voxelCenter / (VOLUME_MAX - VOLUME_MIN);
             UV = uv;
 			Voxel = voxel;
+			VoxelValue = value;
 			
 			VoxelSurfaceStrikeLocObj = pos + rayDir * t;
 
