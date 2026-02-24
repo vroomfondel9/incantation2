@@ -36,6 +36,14 @@ public class VoxelVolumeRegistry : MonoBehaviour
     private long nextVoxelVolumeID = 1;
 
     // Debug properties
+    private long freeSum = 0;
+    [SerializeField] private long totalConsumers = 0;
+    private long sharedConsumersRiders = 0;
+    [SerializeField] private long sharedConsumers = 0;
+    [SerializeField] private long totalAllocations = 0;
+    [SerializeField] private long sharedAllocations = 0;
+    [SerializeField] private long uniqueAllocations = 0;
+    [SerializeField][Range(0, 100)] private float uniqueAllocationPercent;
     [SerializeField][Range(0, 100)] private float usagePercent;
     [SerializeField][Range(0, 100)] private float fragmentationPercent;
 
@@ -174,6 +182,13 @@ public class VoxelVolumeRegistry : MonoBehaviour
             {
                 if ((existingSharedAllocation.size == size) && (!modified))
                 {
+                    totalConsumers++;
+                    sharedConsumersRiders++;
+                    if (existingSharedAllocation.consumers == 1)
+                    {
+                        sharedAllocations++;
+                    }
+
                     offset = existingSharedAllocation.offset;
                     id = existingSharedAllocationId;
                     existingSharedAllocation.consumers = existingSharedAllocation.consumers + 1;
@@ -236,6 +251,8 @@ public class VoxelVolumeRegistry : MonoBehaviour
 
     private int Allocate(int requestedSize, out long id)
     {
+        totalConsumers++;
+
         // 1. Search free regions
         freeRegions.Sort((a, b) =>
         {
@@ -256,6 +273,7 @@ public class VoxelVolumeRegistry : MonoBehaviour
                 {
                     AddFreeRegion(region.offset + requestedSize, remainder);
                 }
+                freeSum -= requestedSize;
 
                 id = nextVoxelVolumeID++;
                 allocations[id] = new Allocation
@@ -280,7 +298,8 @@ public class VoxelVolumeRegistry : MonoBehaviour
             allocations[id] = new Allocation
             {
                 offset = offset,
-                size = requestedSize
+                size = requestedSize,
+                consumers = 1
             };
 
             UpdateDebugStats();
@@ -295,17 +314,26 @@ public class VoxelVolumeRegistry : MonoBehaviour
         if (!allocations.TryGetValue(voxelVolumeID, out var alloc))
             return false;
 
+        totalConsumers--;
         alloc.consumers--;
+
         if (alloc.consumers > 0)
         {
+            sharedConsumersRiders--;
+            if (alloc.consumers == 1)
+            {
+                sharedAllocations--;
+            }
+
             allocations[voxelVolumeID] = alloc;
             return false;
         }
 
-        allocations.Remove(voxelVolumeID);
+            allocations.Remove(voxelVolumeID);
 
         int newOffset = alloc.offset;
         int newSize = alloc.size;
+        freeSum += newSize;
 
         int endIndex = alloc.offset + alloc.size - 1;
 
@@ -351,13 +379,17 @@ public class VoxelVolumeRegistry : MonoBehaviour
 
     private void UpdateDebugStats()
     {
+        totalAllocations = allocations.Count;
+        uniqueAllocations = totalAllocations - sharedAllocations;
+        sharedConsumers = sharedConsumersRiders + sharedAllocations;
+
+        uniqueAllocationPercent = totalAllocations == 0
+            ? 0
+            : (float)uniqueAllocations / totalAllocations * 100f;
+
         usagePercent = allocationsTail == 0
             ? 0
             : (float)allocationsTail / maxVoxels * 100f;
-
-        int freeSum = 0;
-        foreach (var region in freeRegions)
-            freeSum += region.size;
 
         fragmentationPercent = allocationsTail == 0
             ? 0

@@ -395,7 +395,13 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   maxVoxels: 1000000
-  voxelShader: {fileID: -6465566751694194690, guid: 5c4f75712c6c1d34888dd9233d4273b4, type: 3}
+  voxelShader: {fileID: 4800000, guid: 199dc9e7060cf7f46a82545b94dcd1fd, type: 3}
+  totalConsumers: 0
+  sharedConsumers: 0
+  totalAllocations: 0
+  sharedAllocations: 0
+  uniqueAllocations: 0
+  uniqueAllocationPercent: 0
   usagePercent: 0
   fragmentationPercent: 0
 --- !u!4 &1063587221
