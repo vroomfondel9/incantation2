@@ -88,7 +88,8 @@ void RayMarch_float(
     float t = 0.0;
 
     const int MAX_STEPS = 512;
-	uint value;
+	uint unsignedValue;
+	int value;
 
     [loop]
     for (int i = 0; i < MAX_STEPS; i++)
@@ -96,15 +97,17 @@ void RayMarch_float(
 		// Texture Sampling
 		#ifdef _EDITOR_MODE
 			float normalizedValue = LOAD_TEXTURE3D(Texture, voxel);
-			value = (uint)round(normalizedValue * 255.0);
+			unsignedValue = (uint)round(normalizedValue * 255.0);
 		#else
 			uint indexInVolume = voxel.x + GridDimensions.x * voxel.y + GridDimensions.x * GridDimensions.y * voxel.z;
 			uint globalIndex = ((uint)VoxelVolumeOffset) + indexInVolume;
-			value = _Voxels[globalIndex];
-			value = value & 0xFF;
+			unsignedValue = _Voxels[globalIndex];
+			unsignedValue = unsignedValue & 0xFF;
 		#endif
+		
+		value = ((int)unsignedValue) - 63;
 
-        if (value == 0)
+        if (value <= 0)
         {
             Hit = 1.0;
 			
@@ -113,7 +116,7 @@ void RayMarch_float(
 			float3 uv = voxelCenter / (VOLUME_MAX - VOLUME_MIN);
             UV = uv;
 			Voxel = voxel;
-			VoxelValue = value;
+			VoxelValue = value * -1;
 			
 			VoxelSurfaceStrikeLocObj = pos + rayDir * t;
 

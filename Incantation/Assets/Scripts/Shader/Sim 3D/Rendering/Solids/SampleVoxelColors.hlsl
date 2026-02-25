@@ -53,10 +53,28 @@ void ColorSample_float(
 				RGB = RGB * 50.0;
 			#endif
 		}
-		//Voxel Topology (Corners = Red, Edges = Green, Faces = Blue, Unclassified/Interior = White)
+		//Voxel Topology (Corners = Red, Edges = Green, Faces = Blue, Unclassified/Interior = Black)
 		else if (DebugVisualizationMode == 3)
 		{
-			//TODO
+			uint topologyMask = (uint) VoxelValue;
+			//Corner if:
+			//	-Filled in both sides of exactly 0 axises. Other axises can either be empty on both sides or filled on only one, but not both.
+			//	
+			//Edge if:
+			//	-Filled in both sides of exactly 1 axises. Other axises can either be empty on both sides or filled on only one, but not both.
+			//	
+			//Face if:
+			//	-Filled in both sides of exactly 2 axises. Other axis can be either empty on both sides or filled on only one, but not both.
+			//	
+			//Interior if:
+			//	-Filled in both sides of all 3 axises.
+			uint bothFilledInZ = ((topologyMask & 3u) == 3u);
+			uint bothFilledInY = ((topologyMask & 12u) == 12u);
+			uint bothFilledInX = ((topologyMask & 48u) == 48u);
+			
+			uint numDimsFilledInBothDirs = bothFilledInZ + bothFilledInY + bothFilledInX;
+			
+			RGB = float3(numDimsFilledInBothDirs == 0, numDimsFilledInBothDirs == 1, numDimsFilledInBothDirs == 2);
 		}
 	}
 }

@@ -148,7 +148,16 @@ public class VoxelVolumeBakerEditor : Editor
         mat.SetVector("_GridDimensions", gridDims);
 
         // --- Create _HitTexture (R8_UInt, all values = 1) ---
-        Texture3D hitTex = VoxelSDFGenerator.GenerateManhattanDistanceField(tex3D);
+        TOPOLOGY_COUNTS topologyCounts = new TOPOLOGY_COUNTS();
+        Texture3D hitTex = VoxelSDFGenerator.GenerateManhattanDistanceField(tex3D, out topologyCounts);
+
+        Debug.Log(logPrefix + "Topology Summary: " +
+            $"Corners={topologyCounts.corners} ({100.0 * topologyCounts.corners / topologyCounts.total:F1}%), " +
+            $"Edges={topologyCounts.edges} ({100.0 * topologyCounts.edges / topologyCounts.total:F1}%), " +
+            $"Faces={topologyCounts.faces} ({100.0 * topologyCounts.faces / topologyCounts.total:F1}%), " +
+            $"Interiors={topologyCounts.interiors} ({100.0 * topologyCounts.interiors / topologyCounts.total:F1}%), " +
+            $"Empties={topologyCounts.empties} ({100.0 * topologyCounts.empties / topologyCounts.total:F1}%), " +
+            $"Total={topologyCounts.total}.");
 
         // Assign to material
         mat.SetTexture("_HitTexture", hitTex);
