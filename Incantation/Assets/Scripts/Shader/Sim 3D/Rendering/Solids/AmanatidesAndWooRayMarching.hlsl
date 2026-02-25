@@ -19,10 +19,10 @@ void RayMarch_float(
 	float VoxelVolumeOffset,
     out float3 UV,
 	out float3 Voxel,
-    out float Hit,
+	out float VoxelValue,
     out float3 NormalsObj,
-	out float3 VoxelSurfaceStrikeLocObj,
-	out float VoxelValue
+    out float Hit,
+	out float3 VoxelSurfaceStrikeLocObj
 )
 {
     Hit = 0.0;

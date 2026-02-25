@@ -26,6 +26,15 @@ public class VoxelVolumeRegistry : MonoBehaviour
         public int consumers;
     }
 
+    private enum DEBUG_VISUALIZATION_MODES
+    {
+        NONE = 0,
+        NORMALS = 1,
+        DEPTH = 2,
+        VOXEL_TOPOLOGY = 3
+    }
+
+    // Memory management variables
     private Dictionary<long, Allocation> allocations = new();
     private Dictionary<int, int> startingFreeOffsetsToSize = new();
     private Dictionary<int, int> endingFreeOffsetsToSize = new();
@@ -36,16 +45,22 @@ public class VoxelVolumeRegistry : MonoBehaviour
     private long nextVoxelVolumeID = 1;
 
     // Debug properties
-    private long freeSum = 0;
-    [SerializeField] private long totalConsumers = 0;
-    private long sharedConsumersRiders = 0;
-    [SerializeField] private long sharedConsumers = 0;
-    [SerializeField] private long totalAllocations = 0;
-    [SerializeField] private long sharedAllocations = 0;
-    [SerializeField] private long uniqueAllocations = 0;
-    [SerializeField][Range(0, 100)] private float uniqueAllocationPercent;
+    [Header("Debug Visualization Mode")]
+    [SerializeField] private int debugVisualizationMode = 0;
+
+    [Header("Memory Management - Percent")]
     [SerializeField][Range(0, 100)] private float usagePercent;
     [SerializeField][Range(0, 100)] private float fragmentationPercent;
+    [SerializeField][Range(0, 100)] private float uniqueAllocationPercent;
+
+    private long freeSum = 0;
+    private long sharedMemoryVolumeRiders = 0;
+    [Header("Memory Management - Absolute Values")]
+    [SerializeField] private long sharedMemoryVolumes = 0;
+    [SerializeField] private long totalVolumes = 0;
+    [SerializeField] private long sharedAllocations = 0;
+    [SerializeField] private long uniqueAllocations = 0;
+    [SerializeField] private long totalAllocations = 0;
 
     public float UsagePercent => usagePercent;
     public float FragmentationPercent => fragmentationPercent;
@@ -69,11 +84,59 @@ public class VoxelVolumeRegistry : MonoBehaviour
         CreateRuntimeMaterial();
         RegisterAllVolumesInScene();
         UpdateDebugStats();
+        Debug.Log("Hold L Key and Press Number Keys for Debug Visualizations.");
+    }
+
+    void Update()
+    {
+        CheckDebugModeKeyChange();
     }
 
     private void OnDestroy()
     {
         voxels?.Dispose();
+    }
+
+    private void OnValidate()
+    {
+        SetDebugMode((DEBUG_VISUALIZATION_MODES)debugVisualizationMode);
+    }
+
+        #endregion
+
+        #region Debug Visualization
+
+        void CheckDebugModeKeyChange()
+    {
+        // Only respond while L is held
+        if (!Input.GetKey(KeyCode.L))
+            return;
+
+        CheckKey(KeyCode.Alpha0, DEBUG_VISUALIZATION_MODES.NONE);
+        CheckKey(KeyCode.Alpha1, DEBUG_VISUALIZATION_MODES.NORMALS);
+        CheckKey(KeyCode.Alpha2, DEBUG_VISUALIZATION_MODES.DEPTH);
+        CheckKey(KeyCode.Alpha3, DEBUG_VISUALIZATION_MODES.VOXEL_TOPOLOGY);
+
+        // Optional numpad support
+        CheckKey(KeyCode.Keypad0, DEBUG_VISUALIZATION_MODES.NONE);
+        CheckKey(KeyCode.Keypad1, DEBUG_VISUALIZATION_MODES.NORMALS);
+        CheckKey(KeyCode.Keypad2, DEBUG_VISUALIZATION_MODES.DEPTH);
+        CheckKey(KeyCode.Keypad3, DEBUG_VISUALIZATION_MODES.VOXEL_TOPOLOGY);
+    }
+
+    void CheckKey(KeyCode key, DEBUG_VISUALIZATION_MODES mode)
+    {
+        if (Input.GetKeyDown(key))
+        {
+            SetDebugMode(mode);
+        }
+    }
+
+    void SetDebugMode(DEBUG_VISUALIZATION_MODES mode)
+    {
+        debugVisualizationMode = (int)mode;
+        Shader.SetGlobalFloat("_DebugVisualizationMode", (int)mode);
+        Debug.Log($"Global Debug Mode set to: {mode}");
     }
 
     #endregion
@@ -91,6 +154,8 @@ public class VoxelVolumeRegistry : MonoBehaviour
 
     private void CreateRuntimeMaterial()
     {
+        Shader.SetGlobalFloat("_DebugVisualizationMode", debugVisualizationMode);
+
         runtimeMaterial = new Material(voxelShader);
         runtimeMaterial.enableInstancing = true;
 
@@ -182,8 +247,8 @@ public class VoxelVolumeRegistry : MonoBehaviour
             {
                 if ((existingSharedAllocation.size == size) && (!modified))
                 {
-                    totalConsumers++;
-                    sharedConsumersRiders++;
+                    totalVolumes++;
+                    sharedMemoryVolumeRiders++;
                     if (existingSharedAllocation.consumers == 1)
                     {
                         sharedAllocations++;
@@ -251,7 +316,7 @@ public class VoxelVolumeRegistry : MonoBehaviour
 
     private int Allocate(int requestedSize, out long id)
     {
-        totalConsumers++;
+        totalVolumes++;
 
         // 1. Search free regions
         freeRegions.Sort((a, b) =>
@@ -314,12 +379,12 @@ public class VoxelVolumeRegistry : MonoBehaviour
         if (!allocations.TryGetValue(voxelVolumeID, out var alloc))
             return false;
 
-        totalConsumers--;
+        totalVolumes--;
         alloc.consumers--;
 
         if (alloc.consumers > 0)
         {
-            sharedConsumersRiders--;
+            sharedMemoryVolumeRiders--;
             if (alloc.consumers == 1)
             {
                 sharedAllocations--;
@@ -381,7 +446,7 @@ public class VoxelVolumeRegistry : MonoBehaviour
     {
         totalAllocations = allocations.Count;
         uniqueAllocations = totalAllocations - sharedAllocations;
-        sharedConsumers = sharedConsumersRiders + sharedAllocations;
+        sharedMemoryVolumes = sharedMemoryVolumeRiders + sharedAllocations;
 
         uniqueAllocationPercent = totalAllocations == 0
             ? 0

@@ -442,6 +442,7 @@ Shader "Shader Graphs/VoxVolShaderNoDepth"
         SAMPLER(sampler_ColorTexture);
         TEXTURE3D(_HitTexture);
         SAMPLER(sampler_HitTexture);
+        float _DebugVisualizationMode;
         
         // Graph Includes
         #include "Assets/Scripts/Shader/Sim 3D/Rendering/Solids/AmanatidesAndWooRayMarching.hlsl"
@@ -531,6 +532,9 @@ Shader "Shader Graphs/VoxVolShaderNoDepth"
             float _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_VoxelVolumeOffset, float);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
+            float _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float = _DebugVisualizationMode;
+            #endif
+            #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             UnityTexture3D _Property_edd0109cf6e343169b6506ca080157da_Out_0_Texture3D = UnityBuildTexture3DStruct(_HitTexture);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
@@ -554,15 +558,23 @@ Shader "Shader Graphs/VoxVolShaderNoDepth"
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3;
             float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3;
-            float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float;
-            float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3;
-            float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3;
             float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float;
-            RayMarch_float(_Property_edd0109cf6e343169b6506ca080157da_Out_0_Texture3D, IN.ObjectSpacePosition, _Normalize_86c390669ae146108e1d97a3cedb27f9_Out_1_Vector3, _Property_3c81ef39695847f4961b2e444d7e66d6_Out_0_Vector3, _Property_c1d4284113834aad934275b87db1f016_Out_0_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float);
+            float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3;
+            float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float;
+            float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3;
+            RayMarch_float(_Property_edd0109cf6e343169b6506ca080157da_Out_0_Texture3D, IN.ObjectSpacePosition, _Normalize_86c390669ae146108e1d97a3cedb27f9_Out_1_Vector3, _Property_3c81ef39695847f4961b2e444d7e66d6_Out_0_Vector3, _Property_c1d4284113834aad934275b87db1f016_Out_0_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3);
+            #endif
+            #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
+            float3 _Transform_5583fc4bd1bb424781c368e490f9362e_Out_1_Vector3;
+            _Transform_5583fc4bd1bb424781c368e490f9362e_Out_1_Vector3 = TransformObjectToWorld(_RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3.xyz);
+            #endif
+            #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
+            float _CalculateDepthCustomFunction_89a9fbc79e6948f9a0e3c0730343a8e3_DepthValue_1_Float;
+            CalculateDepth_float(_Transform_5583fc4bd1bb424781c368e490f9362e_Out_1_Vector3, _CalculateDepthCustomFunction_89a9fbc79e6948f9a0e3c0730343a8e3_DepthValue_1_Float);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float3 _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3;
-            ColorSample_float(_Property_06bb097371af41259d80159681d32a0a_Out_0_Texture3D, _Property_cd276a4b141e4d98a1a126c23ca03a78_Out_0_Vector3, _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3);
+            ColorSample_float(_Property_06bb097371af41259d80159681d32a0a_Out_0_Texture3D, _Property_cd276a4b141e4d98a1a126c23ca03a78_Out_0_Vector3, _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float, _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _CalculateDepthCustomFunction_89a9fbc79e6948f9a0e3c0730343a8e3_DepthValue_1_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float3 _Transform_530350f0ad83424f9713cfe51bf4b50c_Out_1_Vector3;
@@ -575,14 +587,6 @@ Shader "Shader Graphs/VoxVolShaderNoDepth"
                     _Transform_530350f0ad83424f9713cfe51bf4b50c_Out_1_Vector3 = TransformWorldToTangentDir(world, tangentTransform, true);
                 }
             }
-            #endif
-            #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-            float3 _Transform_5583fc4bd1bb424781c368e490f9362e_Out_1_Vector3;
-            _Transform_5583fc4bd1bb424781c368e490f9362e_Out_1_Vector3 = TransformObjectToWorld(_RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3.xyz);
-            #endif
-            #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-            float _CalculateDepthCustomFunction_89a9fbc79e6948f9a0e3c0730343a8e3_DepthValue_1_Float;
-            CalculateDepth_float(_Transform_5583fc4bd1bb424781c368e490f9362e_Out_1_Vector3, _CalculateDepthCustomFunction_89a9fbc79e6948f9a0e3c0730343a8e3_DepthValue_1_Float);
             #endif
             surface.BaseColor = _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3;
             surface.NormalTS = _Transform_530350f0ad83424f9713cfe51bf4b50c_Out_1_Vector3;
@@ -1141,6 +1145,7 @@ Shader "Shader Graphs/VoxVolShaderNoDepth"
         SAMPLER(sampler_ColorTexture);
         TEXTURE3D(_HitTexture);
         SAMPLER(sampler_HitTexture);
+        float _DebugVisualizationMode;
         
         // Graph Includes
         #include "Assets/Scripts/Shader/Sim 3D/Rendering/Solids/AmanatidesAndWooRayMarching.hlsl"
@@ -1230,6 +1235,9 @@ Shader "Shader Graphs/VoxVolShaderNoDepth"
             float _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_VoxelVolumeOffset, float);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
+            float _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float = _DebugVisualizationMode;
+            #endif
+            #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             UnityTexture3D _Property_edd0109cf6e343169b6506ca080157da_Out_0_Texture3D = UnityBuildTexture3DStruct(_HitTexture);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
@@ -1253,15 +1261,23 @@ Shader "Shader Graphs/VoxVolShaderNoDepth"
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3;
             float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3;
-            float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float;
-            float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3;
-            float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3;
             float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float;
-            RayMarch_float(_Property_edd0109cf6e343169b6506ca080157da_Out_0_Texture3D, IN.ObjectSpacePosition, _Normalize_86c390669ae146108e1d97a3cedb27f9_Out_1_Vector3, _Property_3c81ef39695847f4961b2e444d7e66d6_Out_0_Vector3, _Property_c1d4284113834aad934275b87db1f016_Out_0_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float);
+            float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3;
+            float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float;
+            float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3;
+            RayMarch_float(_Property_edd0109cf6e343169b6506ca080157da_Out_0_Texture3D, IN.ObjectSpacePosition, _Normalize_86c390669ae146108e1d97a3cedb27f9_Out_1_Vector3, _Property_3c81ef39695847f4961b2e444d7e66d6_Out_0_Vector3, _Property_c1d4284113834aad934275b87db1f016_Out_0_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3);
+            #endif
+            #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
+            float3 _Transform_5583fc4bd1bb424781c368e490f9362e_Out_1_Vector3;
+            _Transform_5583fc4bd1bb424781c368e490f9362e_Out_1_Vector3 = TransformObjectToWorld(_RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3.xyz);
+            #endif
+            #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
+            float _CalculateDepthCustomFunction_89a9fbc79e6948f9a0e3c0730343a8e3_DepthValue_1_Float;
+            CalculateDepth_float(_Transform_5583fc4bd1bb424781c368e490f9362e_Out_1_Vector3, _CalculateDepthCustomFunction_89a9fbc79e6948f9a0e3c0730343a8e3_DepthValue_1_Float);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float3 _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3;
-            ColorSample_float(_Property_06bb097371af41259d80159681d32a0a_Out_0_Texture3D, _Property_cd276a4b141e4d98a1a126c23ca03a78_Out_0_Vector3, _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3);
+            ColorSample_float(_Property_06bb097371af41259d80159681d32a0a_Out_0_Texture3D, _Property_cd276a4b141e4d98a1a126c23ca03a78_Out_0_Vector3, _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float, _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _CalculateDepthCustomFunction_89a9fbc79e6948f9a0e3c0730343a8e3_DepthValue_1_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float3 _Transform_530350f0ad83424f9713cfe51bf4b50c_Out_1_Vector3;
@@ -1274,14 +1290,6 @@ Shader "Shader Graphs/VoxVolShaderNoDepth"
                     _Transform_530350f0ad83424f9713cfe51bf4b50c_Out_1_Vector3 = TransformWorldToTangentDir(world, tangentTransform, true);
                 }
             }
-            #endif
-            #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-            float3 _Transform_5583fc4bd1bb424781c368e490f9362e_Out_1_Vector3;
-            _Transform_5583fc4bd1bb424781c368e490f9362e_Out_1_Vector3 = TransformObjectToWorld(_RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3.xyz);
-            #endif
-            #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-            float _CalculateDepthCustomFunction_89a9fbc79e6948f9a0e3c0730343a8e3_DepthValue_1_Float;
-            CalculateDepth_float(_Transform_5583fc4bd1bb424781c368e490f9362e_Out_1_Vector3, _CalculateDepthCustomFunction_89a9fbc79e6948f9a0e3c0730343a8e3_DepthValue_1_Float);
             #endif
             surface.BaseColor = _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3;
             surface.NormalTS = _Transform_530350f0ad83424f9713cfe51bf4b50c_Out_1_Vector3;
@@ -1691,6 +1699,7 @@ Shader "Shader Graphs/VoxVolShaderNoDepth"
         SAMPLER(sampler_ColorTexture);
         TEXTURE3D(_HitTexture);
         SAMPLER(sampler_HitTexture);
+        float _DebugVisualizationMode;
         
         // Graph Includes
         #include "Assets/Scripts/Shader/Sim 3D/Rendering/Solids/AmanatidesAndWooRayMarching.hlsl"
@@ -1787,11 +1796,11 @@ Shader "Shader Graphs/VoxVolShaderNoDepth"
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3;
             float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3;
-            float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float;
-            float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3;
-            float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3;
             float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float;
-            RayMarch_float(_Property_edd0109cf6e343169b6506ca080157da_Out_0_Texture3D, IN.ObjectSpacePosition, _Normalize_86c390669ae146108e1d97a3cedb27f9_Out_1_Vector3, _Property_3c81ef39695847f4961b2e444d7e66d6_Out_0_Vector3, _Property_c1d4284113834aad934275b87db1f016_Out_0_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float);
+            float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3;
+            float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float;
+            float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3;
+            RayMarch_float(_Property_edd0109cf6e343169b6506ca080157da_Out_0_Texture3D, IN.ObjectSpacePosition, _Normalize_86c390669ae146108e1d97a3cedb27f9_Out_1_Vector3, _Property_3c81ef39695847f4961b2e444d7e66d6_Out_0_Vector3, _Property_c1d4284113834aad934275b87db1f016_Out_0_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float3 _Transform_5583fc4bd1bb424781c368e490f9362e_Out_1_Vector3;
@@ -2193,6 +2202,7 @@ Shader "Shader Graphs/VoxVolShaderNoDepth"
         SAMPLER(sampler_ColorTexture);
         TEXTURE3D(_HitTexture);
         SAMPLER(sampler_HitTexture);
+        float _DebugVisualizationMode;
         
         // Graph Includes
         #include "Assets/Scripts/Shader/Sim 3D/Rendering/Solids/AmanatidesAndWooRayMarching.hlsl"
@@ -2290,11 +2300,11 @@ Shader "Shader Graphs/VoxVolShaderNoDepth"
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3;
             float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3;
-            float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float;
-            float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3;
-            float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3;
             float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float;
-            RayMarch_float(_Property_edd0109cf6e343169b6506ca080157da_Out_0_Texture3D, IN.ObjectSpacePosition, _Normalize_86c390669ae146108e1d97a3cedb27f9_Out_1_Vector3, _Property_3c81ef39695847f4961b2e444d7e66d6_Out_0_Vector3, _Property_c1d4284113834aad934275b87db1f016_Out_0_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float);
+            float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3;
+            float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float;
+            float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3;
+            RayMarch_float(_Property_edd0109cf6e343169b6506ca080157da_Out_0_Texture3D, IN.ObjectSpacePosition, _Normalize_86c390669ae146108e1d97a3cedb27f9_Out_1_Vector3, _Property_3c81ef39695847f4961b2e444d7e66d6_Out_0_Vector3, _Property_c1d4284113834aad934275b87db1f016_Out_0_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float3 _Transform_530350f0ad83424f9713cfe51bf4b50c_Out_1_Vector3;
@@ -2772,6 +2782,7 @@ Shader "Shader Graphs/VoxVolShaderNoDepth"
         SAMPLER(sampler_ColorTexture);
         TEXTURE3D(_HitTexture);
         SAMPLER(sampler_HitTexture);
+        float _DebugVisualizationMode;
         
         // Graph Includes
         #include "Assets/Scripts/Shader/Sim 3D/Rendering/Solids/AmanatidesAndWooRayMarching.hlsl"
@@ -2857,6 +2868,9 @@ Shader "Shader Graphs/VoxVolShaderNoDepth"
             float _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_VoxelVolumeOffset, float);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
+            float _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float = _DebugVisualizationMode;
+            #endif
+            #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             UnityTexture3D _Property_edd0109cf6e343169b6506ca080157da_Out_0_Texture3D = UnityBuildTexture3DStruct(_HitTexture);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
@@ -2880,15 +2894,11 @@ Shader "Shader Graphs/VoxVolShaderNoDepth"
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3;
             float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3;
-            float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float;
-            float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3;
-            float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3;
             float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float;
-            RayMarch_float(_Property_edd0109cf6e343169b6506ca080157da_Out_0_Texture3D, IN.ObjectSpacePosition, _Normalize_86c390669ae146108e1d97a3cedb27f9_Out_1_Vector3, _Property_3c81ef39695847f4961b2e444d7e66d6_Out_0_Vector3, _Property_c1d4284113834aad934275b87db1f016_Out_0_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float);
-            #endif
-            #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-            float3 _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3;
-            ColorSample_float(_Property_06bb097371af41259d80159681d32a0a_Out_0_Texture3D, _Property_cd276a4b141e4d98a1a126c23ca03a78_Out_0_Vector3, _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3);
+            float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3;
+            float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float;
+            float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3;
+            RayMarch_float(_Property_edd0109cf6e343169b6506ca080157da_Out_0_Texture3D, IN.ObjectSpacePosition, _Normalize_86c390669ae146108e1d97a3cedb27f9_Out_1_Vector3, _Property_3c81ef39695847f4961b2e444d7e66d6_Out_0_Vector3, _Property_c1d4284113834aad934275b87db1f016_Out_0_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float3 _Transform_5583fc4bd1bb424781c368e490f9362e_Out_1_Vector3;
@@ -2897,6 +2907,10 @@ Shader "Shader Graphs/VoxVolShaderNoDepth"
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float _CalculateDepthCustomFunction_89a9fbc79e6948f9a0e3c0730343a8e3_DepthValue_1_Float;
             CalculateDepth_float(_Transform_5583fc4bd1bb424781c368e490f9362e_Out_1_Vector3, _CalculateDepthCustomFunction_89a9fbc79e6948f9a0e3c0730343a8e3_DepthValue_1_Float);
+            #endif
+            #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
+            float3 _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3;
+            ColorSample_float(_Property_06bb097371af41259d80159681d32a0a_Out_0_Texture3D, _Property_cd276a4b141e4d98a1a126c23ca03a78_Out_0_Vector3, _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float, _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _CalculateDepthCustomFunction_89a9fbc79e6948f9a0e3c0730343a8e3_DepthValue_1_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3);
             #endif
             surface.BaseColor = _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3;
             surface.Emission = float3(0, 0, 0);
@@ -3247,6 +3261,7 @@ Shader "Shader Graphs/VoxVolShaderNoDepth"
         SAMPLER(sampler_ColorTexture);
         TEXTURE3D(_HitTexture);
         SAMPLER(sampler_HitTexture);
+        float _DebugVisualizationMode;
         
         // Graph Includes
         #include "Assets/Scripts/Shader/Sim 3D/Rendering/Solids/AmanatidesAndWooRayMarching.hlsl"
@@ -3343,11 +3358,11 @@ Shader "Shader Graphs/VoxVolShaderNoDepth"
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3;
             float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3;
-            float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float;
-            float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3;
-            float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3;
             float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float;
-            RayMarch_float(_Property_edd0109cf6e343169b6506ca080157da_Out_0_Texture3D, IN.ObjectSpacePosition, _Normalize_86c390669ae146108e1d97a3cedb27f9_Out_1_Vector3, _Property_3c81ef39695847f4961b2e444d7e66d6_Out_0_Vector3, _Property_c1d4284113834aad934275b87db1f016_Out_0_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float);
+            float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3;
+            float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float;
+            float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3;
+            RayMarch_float(_Property_edd0109cf6e343169b6506ca080157da_Out_0_Texture3D, IN.ObjectSpacePosition, _Normalize_86c390669ae146108e1d97a3cedb27f9_Out_1_Vector3, _Property_3c81ef39695847f4961b2e444d7e66d6_Out_0_Vector3, _Property_c1d4284113834aad934275b87db1f016_Out_0_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float3 _Transform_5583fc4bd1bb424781c368e490f9362e_Out_1_Vector3;
@@ -3704,6 +3719,7 @@ Shader "Shader Graphs/VoxVolShaderNoDepth"
         SAMPLER(sampler_ColorTexture);
         TEXTURE3D(_HitTexture);
         SAMPLER(sampler_HitTexture);
+        float _DebugVisualizationMode;
         
         // Graph Includes
         #include "Assets/Scripts/Shader/Sim 3D/Rendering/Solids/AmanatidesAndWooRayMarching.hlsl"
@@ -3800,11 +3816,11 @@ Shader "Shader Graphs/VoxVolShaderNoDepth"
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3;
             float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3;
-            float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float;
-            float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3;
-            float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3;
             float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float;
-            RayMarch_float(_Property_edd0109cf6e343169b6506ca080157da_Out_0_Texture3D, IN.ObjectSpacePosition, _Normalize_86c390669ae146108e1d97a3cedb27f9_Out_1_Vector3, _Property_3c81ef39695847f4961b2e444d7e66d6_Out_0_Vector3, _Property_c1d4284113834aad934275b87db1f016_Out_0_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float);
+            float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3;
+            float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float;
+            float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3;
+            RayMarch_float(_Property_edd0109cf6e343169b6506ca080157da_Out_0_Texture3D, IN.ObjectSpacePosition, _Normalize_86c390669ae146108e1d97a3cedb27f9_Out_1_Vector3, _Property_3c81ef39695847f4961b2e444d7e66d6_Out_0_Vector3, _Property_c1d4284113834aad934275b87db1f016_Out_0_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float3 _Transform_5583fc4bd1bb424781c368e490f9362e_Out_1_Vector3;
@@ -4161,6 +4177,7 @@ Shader "Shader Graphs/VoxVolShaderNoDepth"
         SAMPLER(sampler_ColorTexture);
         TEXTURE3D(_HitTexture);
         SAMPLER(sampler_HitTexture);
+        float _DebugVisualizationMode;
         
         // Graph Includes
         #include "Assets/Scripts/Shader/Sim 3D/Rendering/Solids/AmanatidesAndWooRayMarching.hlsl"
@@ -4245,6 +4262,9 @@ Shader "Shader Graphs/VoxVolShaderNoDepth"
             float _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_VoxelVolumeOffset, float);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
+            float _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float = _DebugVisualizationMode;
+            #endif
+            #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             UnityTexture3D _Property_edd0109cf6e343169b6506ca080157da_Out_0_Texture3D = UnityBuildTexture3DStruct(_HitTexture);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
@@ -4268,15 +4288,11 @@ Shader "Shader Graphs/VoxVolShaderNoDepth"
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3;
             float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3;
-            float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float;
-            float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3;
-            float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3;
             float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float;
-            RayMarch_float(_Property_edd0109cf6e343169b6506ca080157da_Out_0_Texture3D, IN.ObjectSpacePosition, _Normalize_86c390669ae146108e1d97a3cedb27f9_Out_1_Vector3, _Property_3c81ef39695847f4961b2e444d7e66d6_Out_0_Vector3, _Property_c1d4284113834aad934275b87db1f016_Out_0_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float);
-            #endif
-            #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-            float3 _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3;
-            ColorSample_float(_Property_06bb097371af41259d80159681d32a0a_Out_0_Texture3D, _Property_cd276a4b141e4d98a1a126c23ca03a78_Out_0_Vector3, _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3);
+            float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3;
+            float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float;
+            float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3;
+            RayMarch_float(_Property_edd0109cf6e343169b6506ca080157da_Out_0_Texture3D, IN.ObjectSpacePosition, _Normalize_86c390669ae146108e1d97a3cedb27f9_Out_1_Vector3, _Property_3c81ef39695847f4961b2e444d7e66d6_Out_0_Vector3, _Property_c1d4284113834aad934275b87db1f016_Out_0_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float3 _Transform_5583fc4bd1bb424781c368e490f9362e_Out_1_Vector3;
@@ -4285,6 +4301,10 @@ Shader "Shader Graphs/VoxVolShaderNoDepth"
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float _CalculateDepthCustomFunction_89a9fbc79e6948f9a0e3c0730343a8e3_DepthValue_1_Float;
             CalculateDepth_float(_Transform_5583fc4bd1bb424781c368e490f9362e_Out_1_Vector3, _CalculateDepthCustomFunction_89a9fbc79e6948f9a0e3c0730343a8e3_DepthValue_1_Float);
+            #endif
+            #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
+            float3 _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3;
+            ColorSample_float(_Property_06bb097371af41259d80159681d32a0a_Out_0_Texture3D, _Property_cd276a4b141e4d98a1a126c23ca03a78_Out_0_Vector3, _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float, _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _CalculateDepthCustomFunction_89a9fbc79e6948f9a0e3c0730343a8e3_DepthValue_1_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3);
             #endif
             surface.BaseColor = _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3;
             surface.Alpha = _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float;

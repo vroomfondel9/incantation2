@@ -259,7 +259,7 @@ MonoBehaviour:
     m_MipBias: 0
     m_VarianceClampScale: 0.9
     m_ContrastAdaptiveSharpening: 0
---- !u!21 &680727409
+--- !u!21 &262359753
 Material:
   serializedVersion: 8
   m_ObjectHideFlags: 0
@@ -284,11 +284,11 @@ Material:
     serializedVersion: 3
     m_TexEnvs:
     - _ColorTexture:
-        m_Texture: {fileID: 11700000, guid: 2693470606037a34badc0a78c0ca75e5, type: 3}
+        m_Texture: {fileID: 11700000, guid: d302690f4013e7e4a9f65220ac32784f, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _HitTexture:
-        m_Texture: {fileID: 1653483399}
+        m_Texture: {fileID: 1862582626}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - unity_Lightmaps:
@@ -310,7 +310,7 @@ Material:
     - _VoxelVolumeID: 0
     - _VoxelVolumeOffset: 0
     m_Colors:
-    - _GridDimensions: {r: 4, g: 8, b: 4, a: 0}
+    - _GridDimensions: {r: 2, g: 2, b: 2, a: 0}
   m_BuildTextureStacks: []
 --- !u!21 &817697582
 Material:
@@ -396,14 +396,15 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   maxVoxels: 1000000
   voxelShader: {fileID: 4800000, guid: 199dc9e7060cf7f46a82545b94dcd1fd, type: 3}
-  totalConsumers: 0
-  sharedConsumers: 0
-  totalAllocations: 0
-  sharedAllocations: 0
-  uniqueAllocations: 0
-  uniqueAllocationPercent: 0
+  debugVisualizationMode: 0
   usagePercent: 0
   fragmentationPercent: 0
+  uniqueAllocationPercent: 0
+  sharedMemoryVolumes: 0
+  totalVolumes: 0
+  sharedAllocations: 0
+  uniqueAllocations: 0
+  totalAllocations: 0
 --- !u!4 &1063587221
 Transform:
   m_ObjectHideFlags: 0
@@ -576,7 +577,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 680727409}
+  - {fileID: 262359753}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -618,9 +619,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4910482696424b14ea26594fecd16b99, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  sourceTexture: {fileID: 11700000, guid: 2693470606037a34badc0a78c0ca75e5, type: 3}
-  editorMaterial: {fileID: 680727409}
-  originalVoxelTextureId: Assets/Materials/vox/redL_h4.png
+  sourceTexture: {fileID: 11700000, guid: d302690f4013e7e4a9f65220ac32784f, type: 3}
+  editorMaterial: {fileID: 262359753}
+  originalVoxelTextureId: Assets/Materials/vox/axis_h2.png
   modified: 0
 --- !u!4 &1139289959
 Transform:
@@ -632,7 +633,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0.7071068, y: 0, z: 0, w: 0.7071068}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 0.4, y: 0.8, z: 0.4}
+  m_LocalScale: {x: 0.2, y: 0.2, z: 0.2}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
@@ -675,7 +676,7 @@ Texture3D:
     offset: 0
     size: 0
     path: 
---- !u!117 &1653483399
+--- !u!117 &1862582626
 Texture3D:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -691,11 +692,11 @@ Texture3D:
   serializedVersion: 3
   m_ColorSpace: 0
   m_Format: 5
-  m_Width: 4
-  m_Height: 8
-  m_Depth: 4
+  m_Width: 2
+  m_Height: 2
+  m_Depth: 2
   m_MipCount: 1
-  m_DataSize: 128
+  m_DataSize: 8
   m_TextureSettings:
     serializedVersion: 2
     m_FilterMode: 0
@@ -706,8 +707,8 @@ Texture3D:
     m_WrapW: 1
   m_UsageMode: 0
   m_IsReadable: 1
-  image data: 128
-  _typelessdata: 0303030303030303030303030303030303030303020202020101010100000000020202020202020202020202020202020202020202020202010101010000000001010101010101010101010101010101010101010101010101010101000000000000000000000000000000000000000000000000000000000000000000000000
+  image data: 8
+  _typelessdata: 0001010200000001
   m_StreamData:
     serializedVersion: 2
     offset: 0
@@ -731,7 +732,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!23 &1910990355
 MeshRenderer:
   m_ObjectHideFlags: 0
