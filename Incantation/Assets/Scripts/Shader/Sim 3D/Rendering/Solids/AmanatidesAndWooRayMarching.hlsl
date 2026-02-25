@@ -38,6 +38,14 @@ void RayMarch_float(
 
     float3 rayDir = normalize(RayDirObj);
     float3 pos = EntryPointObj + rayDir * halfSmallestDim * ENTRY_POINT_EPSILON;
+	
+	if ((pos.x > VOLUME_MAX.x) || (pos.x < VOLUME_MIN.x) ||
+		(pos.y > VOLUME_MAX.y) || (pos.y < VOLUME_MIN.y) ||
+		(pos.z > VOLUME_MAX.z) || (pos.z < VOLUME_MIN.z))
+	{
+		// Early exit for cases on the very edge of bounding box where tracing inside at all puts OOB
+		return;
+	}
 
     int3 gridDims = int3(GridDimensions);
 
