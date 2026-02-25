@@ -16,6 +16,7 @@ void RayMarch_float(
     float3 EntryPointObj,
     float3 RayDirObj,
     float3 GridDimensions,
+	float VoxelVolumeOffset,
     out float3 UV,
 	out float3 Voxel,
     out float Hit,
@@ -90,7 +91,7 @@ void RayMarch_float(
 			value = (uint)round(normalizedValue * 255.0);
 		#else
 			uint indexInVolume = voxel.x + GridDimensions.x * voxel.y + GridDimensions.x * GridDimensions.y * voxel.z;
-			uint globalIndex = ((uint)_VoxelVolumeOffset) + indexInVolume;
+			uint globalIndex = ((uint)VoxelVolumeOffset) + indexInVolume;
 			value = _Voxels[globalIndex];
 			value = value & 0xFF;
 		#endif

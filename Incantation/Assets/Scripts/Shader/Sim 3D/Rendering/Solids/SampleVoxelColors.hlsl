@@ -4,6 +4,7 @@
 void ColorSample_float(
     UnityTexture3D ColorTexture,
 	float3 GridDimensions,
+	float VoxelVolumeOffset,
 	float3 UV,
 	float3 Voxel,
 	out float3 RGB
@@ -19,7 +20,7 @@ void ColorSample_float(
 		);
 		RGB = sample.rgb;
 	#else
-		uint globalIndex = ((uint)_VoxelVolumeOffset) + Voxel.x + GridDimensions.x * Voxel.y + GridDimensions.x * GridDimensions.y * Voxel.z;
+		uint globalIndex = ((uint)VoxelVolumeOffset) + Voxel.x + GridDimensions.x * Voxel.y + GridDimensions.x * GridDimensions.y * Voxel.z;
 		uint packedValue = _Voxels[globalIndex];
 		
 		uint r = (packedValue >> 24) & 0xFF;
