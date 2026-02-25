@@ -161,7 +161,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 1030205775}
+  - {fileID: 2056261391}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -204,7 +204,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   sourceTexture: {fileID: 11700000, guid: f6bb67bbbc9e9a14ebb5f3a3878331e5, type: 3}
-  editorMaterial: {fileID: 1030205775}
+  editorMaterial: {fileID: 2056261391}
   originalVoxelTextureId: Assets/Materials/vox/menger_h81.png
   modified: 0
 --- !u!4 &185611848
@@ -253,6 +253,12 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   maxVoxels: 1000000
   voxelShader: {fileID: 4800000, guid: 199dc9e7060cf7f46a82545b94dcd1fd, type: 3}
+  totalConsumers: 0
+  sharedConsumers: 0
+  totalAllocations: 0
+  sharedAllocations: 0
+  uniqueAllocations: 0
+  uniqueAllocationPercent: 0
   usagePercent: 0
   fragmentationPercent: 0
 --- !u!4 &367183693
@@ -270,60 +276,7 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!21 &1030205775
-Material:
-  serializedVersion: 8
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_Name: Shader Graphs/VoxVolShaderNoDepth
-  m_Shader: {fileID: 4800000, guid: 199dc9e7060cf7f46a82545b94dcd1fd, type: 3}
-  m_Parent: {fileID: 0}
-  m_ModifiedSerializedProperties: 0
-  m_ValidKeywords:
-  - _EDITOR_MODE
-  m_InvalidKeywords: []
-  m_LightmapFlags: 4
-  m_EnableInstancingVariants: 0
-  m_DoubleSidedGI: 0
-  m_CustomRenderQueue: -1
-  stringTagMap: {}
-  disabledShaderPasses: []
-  m_LockedProperties: 
-  m_SavedProperties:
-    serializedVersion: 3
-    m_TexEnvs:
-    - _ColorTexture:
-        m_Texture: {fileID: 11700000, guid: f6bb67bbbc9e9a14ebb5f3a3878331e5, type: 3}
-        m_Scale: {x: 1, y: 1}
-        m_Offset: {x: 0, y: 0}
-    - _HitTexture:
-        m_Texture: {fileID: 1687212959}
-        m_Scale: {x: 1, y: 1}
-        m_Offset: {x: 0, y: 0}
-    - unity_Lightmaps:
-        m_Texture: {fileID: 0}
-        m_Scale: {x: 1, y: 1}
-        m_Offset: {x: 0, y: 0}
-    - unity_LightmapsInd:
-        m_Texture: {fileID: 0}
-        m_Scale: {x: 1, y: 1}
-        m_Offset: {x: 0, y: 0}
-    - unity_ShadowMasks:
-        m_Texture: {fileID: 0}
-        m_Scale: {x: 1, y: 1}
-        m_Offset: {x: 0, y: 0}
-    m_Ints: []
-    m_Floats:
-    - _QueueControl: 0
-    - _QueueOffset: 0
-    - _VoxelVolumeID: 0
-    - _VoxelVolumeOffset: 0
-    m_Colors:
-    - _GridDimensions: {r: 81, g: 81, b: 81, a: 0}
-  m_BuildTextureStacks: []
---- !u!117 &1687212959
+--- !u!117 &1539643483
 Texture3D:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -686,6 +639,59 @@ MonoBehaviour:
   lockedZ: 0
   revolutionTime: 15
   starupDelay: 0.5
+--- !u!21 &2056261391
+Material:
+  serializedVersion: 8
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: Shader Graphs/VoxVolShaderNoDepth
+  m_Shader: {fileID: 4800000, guid: 199dc9e7060cf7f46a82545b94dcd1fd, type: 3}
+  m_Parent: {fileID: 0}
+  m_ModifiedSerializedProperties: 0
+  m_ValidKeywords:
+  - _EDITOR_MODE
+  m_InvalidKeywords: []
+  m_LightmapFlags: 4
+  m_EnableInstancingVariants: 0
+  m_DoubleSidedGI: 0
+  m_CustomRenderQueue: -1
+  stringTagMap: {}
+  disabledShaderPasses: []
+  m_LockedProperties: 
+  m_SavedProperties:
+    serializedVersion: 3
+    m_TexEnvs:
+    - _ColorTexture:
+        m_Texture: {fileID: 11700000, guid: f6bb67bbbc9e9a14ebb5f3a3878331e5, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _HitTexture:
+        m_Texture: {fileID: 1539643483}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - unity_Lightmaps:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - unity_LightmapsInd:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - unity_ShadowMasks:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    m_Ints: []
+    m_Floats:
+    - _QueueControl: 0
+    - _QueueOffset: 0
+    - _VoxelVolumeID: 0
+    - _VoxelVolumeOffset: 0
+    m_Colors:
+    - _GridDimensions: {r: 81, g: 81, b: 81, a: 0}
+  m_BuildTextureStacks: []
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
