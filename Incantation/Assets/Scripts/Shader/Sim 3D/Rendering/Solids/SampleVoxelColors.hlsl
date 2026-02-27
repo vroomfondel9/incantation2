@@ -51,13 +51,10 @@ void ColorSample_float(
 		//Voxel Volume Bounding Boxes
 		if (DebugVisualizationMode == 1)
 		{
-			float borderWidth = 0.2;
+			float borderWidth = 0.02;
 			
-			float3 objectScale;
-			objectScale.x = length(unity_ObjectToWorld._m00_m10_m20);
-			objectScale.y = length(unity_ObjectToWorld._m01_m11_m21);
-			objectScale.z = length(unity_ObjectToWorld._m02_m12_m22);
-			
+			float maxDim = max(GridDimensions.x, max(GridDimensions.y, GridDimensions.z));
+			float3 objectScale = float3(GridDimensions.x / maxDim, GridDimensions.y / maxDim, GridDimensions.z / maxDim);
 			float3 borderWidthObj = borderWidth / objectScale;
 			
 			float3 entryUVOnBorder = (abs(EntryPointObj) > (0.5 - borderWidthObj));
