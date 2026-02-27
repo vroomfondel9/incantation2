@@ -20,7 +20,8 @@ void RayMarch_float(
     out float Hit,
     out float3 UV,
 	out float3 Voxel,
-	out float VoxelValue,
+	out float VoxelValue1,
+	out float VoxelValue2,
     out float3 NormalsObj,
 	out float RaymarchIterations,
 	out float RaymarchSamples,
@@ -32,7 +33,8 @@ void RayMarch_float(
 	Voxel = float3(0, 0, 0);
     NormalsObj = float3(0,0,0);
 	VoxelSurfaceStrikeLocObj = float3(0, 0, 0);
-	VoxelValue = 1.0;
+	VoxelValue1 = 0.0;
+	VoxelValue2 = 0.0;
 	RaymarchIterations = 0.0;
 	RaymarchSamples = 0.0;
 	
@@ -106,11 +108,10 @@ void RayMarch_float(
 		#else
 			uint indexInVolume = voxel.x + GridDimensions.x * voxel.y + GridDimensions.x * GridDimensions.y * voxel.z;
 			uint globalIndex = ((uint)VoxelVolumeOffset) + indexInVolume;
-			unsignedValue = _Voxels[globalIndex];
-			unsignedValue = unsignedValue & 0xFF;
+			unsignedValue = (uint) _Voxels[globalIndex];
 		#endif
 		
-		value = ((int)unsignedValue) - 63;
+		value = (((int)(unsignedValue & 0xFF)) - 63);
 
         if (value <= 0)
         {
@@ -121,7 +122,8 @@ void RayMarch_float(
 			float3 uv = voxelCenter / (VOLUME_MAX - VOLUME_MIN);
             UV = uv;
 			Voxel = voxel;
-			VoxelValue = value * -1;
+			VoxelValue1 = (float) ((unsignedValue >> 16) & 0xFFFF);
+			VoxelValue2 = (float) (unsignedValue & 0xFFFF);
 			
 			VoxelSurfaceStrikeLocObj = pos + rayDir * t;
 

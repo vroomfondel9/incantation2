@@ -10,7 +10,8 @@ void ColorSample_float(
 	float3 Hit,
 	float3 UV,
 	float3 Voxel,
-	float VoxelValue,
+	float VoxelValue1,
+	float VoxelValue2,
 	float3 NormalsObj,
 	float RaymarchIterations,
 	float RaymarchSamples,
@@ -26,6 +27,9 @@ void ColorSample_float(
 	Dpth = Depth;
 	NormsObj = NormalsObj;
 	
+	//Hack needed to bypass loss of floating point precision by splitting it into two non-lossy floats to avoid resampling a value I already got from memory
+	uint voxelValue = (((uint) VoxelValue1) << 16) | (((uint) VoxelValue2));
+	
 	// Base color (sampled even in debug visualization mode to maintain same performance characteristics)
 	#ifdef _EDITOR_MODE
 		float4 sample = SAMPLE_TEXTURE3D(
@@ -35,12 +39,9 @@ void ColorSample_float(
 		);
 		RGB = sample.rgb;
 	#else
-		uint globalIndex = ((uint)VoxelVolumeOffset) + Voxel.x + GridDimensions.x * Voxel.y + GridDimensions.x * GridDimensions.y * Voxel.z;
-		uint packedValue = _Voxels[globalIndex];
-		
-		uint r = (packedValue >> 24) & 0xFF;
-		uint g = (packedValue >> 16) & 0xFF;
-		uint b = (packedValue >> 8) & 0xFF;
+		uint r = (voxelValue >> 24) & 0xFF;
+		uint g = (voxelValue >> 16) & 0xFF;
+		uint b = (voxelValue >> 8) & 0xFF;
 		
 		RGB = float3(r / 255.0, g / 255.0, b / 255.0);
 	#endif
@@ -106,7 +107,9 @@ void ColorSample_float(
 		//Voxel Topology (Corners = Red, Edges = Green, Faces = Blue, Unclassified/Interior = Black)
 		else if (DebugVisualizationMode == 4)
 		{
-			uint topologyMask = (uint) VoxelValue;
+			uint topologyMask = voxelValue & 0xFF;
+			topologyMask = (uint) max((((int)topologyMask) - 63) * -1, 0);
+			
 			//Corner if:
 			//	-Filled in both sides of exactly 0 axises. Other axises can either be empty on both sides or filled on only one, but not both.
 			//	
