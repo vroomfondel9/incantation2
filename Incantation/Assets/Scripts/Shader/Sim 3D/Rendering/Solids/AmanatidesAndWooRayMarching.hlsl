@@ -17,11 +17,13 @@ void RayMarch_float(
     float3 RayDirObj,
     float3 GridDimensions,
 	float VoxelVolumeOffset,
+    out float Hit,
     out float3 UV,
 	out float3 Voxel,
 	out float VoxelValue,
     out float3 NormalsObj,
-    out float Hit,
+	out float RaymarchIterations,
+	out float RaymarchSamples,
 	out float3 VoxelSurfaceStrikeLocObj
 )
 {
@@ -31,6 +33,8 @@ void RayMarch_float(
     NormalsObj = float3(0,0,0);
 	VoxelSurfaceStrikeLocObj = float3(0, 0, 0);
 	VoxelValue = 1.0;
+	RaymarchIterations = 0.0;
+	RaymarchSamples = 0.0;
 	
     float3 voxelSize = 1.0 / GridDimensions;
 	float3 halfVoxelSize = voxelSize * 0.5;
@@ -94,6 +98,7 @@ void RayMarch_float(
     [loop]
     for (int i = 0; i < MAX_STEPS; i++)
     {
+		RaymarchSamples++;
 		// Texture Sampling
 		#ifdef _EDITOR_MODE
 			float normalizedValue = LOAD_TEXTURE3D(Texture, voxel);
@@ -126,6 +131,8 @@ void RayMarch_float(
                 NormalsObj = float3(0, -stepDir.y, 0);
             else if (lastAxis == 2)
                 NormalsObj = float3(0, 0, -stepDir.z);
+				
+			RaymarchIterations++;
 
             return;
         }
@@ -133,6 +140,8 @@ void RayMarch_float(
         // Advance DDA using SDF acceleration structure
 		for (int j = value; j > 0; j--)
 		{
+			RaymarchIterations++;
+		
 			tPrev = t;
 			if (tMax.x < tMax.y)
 			{
@@ -175,6 +184,13 @@ void RayMarch_float(
 				voxel.y >= gridDims.y ||
 				voxel.z >= gridDims.z)
 			{
+				if (lastAxis == 0)
+					NormalsObj = float3(-stepDir.x, 0, 0);
+				else if (lastAxis == 1)
+					NormalsObj = float3(0, -stepDir.y, 0);
+				else if (lastAxis == 2)
+					NormalsObj = float3(0, 0, -stepDir.z);
+			
 				return;
 			}
 		}

@@ -343,7 +343,7 @@ Material:
         m_Offset: {x: 0, y: 0}
     m_Ints: []
     m_Floats:
-    - _QueueControl: -1
+    - _QueueControl: 0
     - _QueueOffset: 0
     - _VoxelVolumeID: 0
     - _VoxelVolumeOffset: 0
@@ -381,7 +381,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   maxVoxels: 1000000
   voxelShader: {fileID: 4800000, guid: 199dc9e7060cf7f46a82545b94dcd1fd, type: 3}
-  debugVisualizationMode: 0
+  debugVisualizationMode: 1
   usagePercent: 0
   fragmentationPercent: 0
   uniqueAllocationPercent: 0
