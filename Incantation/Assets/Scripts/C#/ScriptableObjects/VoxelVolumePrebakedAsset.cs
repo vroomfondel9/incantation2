@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using Unity.Mathematics;
 using UnityEngine;
 
-public class VoxelVolume : ScriptableObject
+public class VoxelVolumePrebakedAsset : ScriptableObject
 {
     public string sourcePng;
 

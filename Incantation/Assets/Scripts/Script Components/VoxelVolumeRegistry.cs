@@ -1,3 +1,4 @@
+using Incantation.Engine.Voxels.Components;
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -224,10 +225,14 @@ public class VoxelVolumeRegistry : MonoBehaviour
         var mat = renderer.sharedMaterial;
         if (mat == null) return false;
         if (mat.shader != voxelShader) return false;
-        VoxelVolumeBaker voxelVolume = renderer.GetComponentInParent<VoxelVolumeBaker>();
-        if (voxelVolume == null) return false;
-        String originalVoxelTextureId = voxelVolume.originalVoxelTextureId;
-        Boolean modified = voxelVolume.modified;
+        //VoxelVolumeBaker voxelVolume = renderer.GetComponentInParent<VoxelVolumeBaker>();
+        //if (voxelVolume == null) return false;
+        //String originalVoxelTextureId = voxelVolume.originalVoxelTextureId;
+        //Boolean modified = voxelVolume.modified;
+
+        //TODO mid-refactor commented out code. Fix later.
+        String originalVoxelTextureId = "test";
+        Boolean modified = false;
 
         RegisterVolume(renderer, mat, originalVoxelTextureId, modified);
         return true;

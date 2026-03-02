@@ -13,13 +13,13 @@ public static class VoxelVolumeInstanceCreator
     [MenuItem("Assets/Create/Voxel Volume", true, 0)]
     private static bool ValidateCreateVoxelVolumeInstance()
     {
-        return Selection.activeObject is VoxelVolume;
+        return Selection.activeObject is VoxelVolumePrebakedAsset;
     }
 
     [MenuItem("Assets/Create/Voxel Volume", false, 0)]
     private static void CreateVoxelVolumeInstance()
     {
-        VoxelVolume voxelVolume = Selection.activeObject as VoxelVolume;
+        VoxelVolumePrebakedAsset voxelVolume = Selection.activeObject as VoxelVolumePrebakedAsset;
         if (voxelVolume == null)
             return;
 

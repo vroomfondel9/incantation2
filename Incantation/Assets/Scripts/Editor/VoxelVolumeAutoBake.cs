@@ -129,7 +129,7 @@ public class VoxelVolumeAutoBake : AssetPostprocessor
         }
 
         // Create ScriptableObject
-        var voxelVolume = ScriptableObject.CreateInstance<VoxelVolume>();
+        var voxelVolume = ScriptableObject.CreateInstance<VoxelVolumePrebakedAsset>();
         voxelVolume.sourcePng = pngAssetPath;
         voxelVolume.hash = topologyCounts.hash;
         voxelVolume.dimensions = dims;
