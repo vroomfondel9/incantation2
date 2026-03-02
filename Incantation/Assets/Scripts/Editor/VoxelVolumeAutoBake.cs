@@ -45,7 +45,7 @@ public class VoxelVolumeAutoBake : AssetPostprocessor
         string coreFilename = heightRegex.Replace(filename, "");
 
         string logPrefix = "[" + coreFilename + "]: ";
-        Debug.Log(logPrefix + "Beginning Auto-Bake.");
+        //Debug.Log(logPrefix + "Beginning Auto-Bake.");
 
         // --- Extract _h# from filename ---
         Match match = heightRegex.Match(filename);
@@ -111,7 +111,7 @@ public class VoxelVolumeAutoBake : AssetPostprocessor
         dims.x = width;
         dims.y = totalHeight;
         dims.z = rows;
-        Debug.Log(logPrefix + "Derived grid dimensions: " + width + "x" + totalHeight + "x" + rows);
+        //Debug.Log(logPrefix + "Derived grid dimensions: " + width + "x" + totalHeight + "x" + rows);
 
         // STEP 3 - Extract Voxel and Topology Data from MagicaVoxel Png
         MagicaVoxelImportUtils.TopologyAnalysisResults topologyCounts = new MagicaVoxelImportUtils.TopologyAnalysisResults();
