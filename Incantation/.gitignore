@@ -11,6 +11,10 @@
 /[Ll]ogs/
 /[Uu]ser[Ss]ettings/
 
+# These packed voxel cache assets are 100x or more expensive than the pngs they're derived from because the pngs are compressed. Install pngs then expand at install time.
+/[Aa]ssets/[Vv]ox[Vv]ol/*/*.asset
+/[Aa]ssets/[Vv]ox[Vv]ol/*/*.asset.meta
+
 # MemoryCaptures can get excessive in size.
 # They also could contain extremely sensitive data
 /[Mm]emoryCaptures/
