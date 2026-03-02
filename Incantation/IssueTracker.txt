@@ -1,2 +1,10 @@
-1. DEFER: Rendering - Flickering when far from the origin.
+
+
+
+DEFER
+=====
+
+1. Can't import pngs from MagicaVoxel over around 190x190x190. No clue why. Not a Unity issue as mspaint can't even resave them. Maybe consider trying to update MagicaVoxel later and see if it fixes it.
+
+2. Rendering - Flickering when far from the origin.
 	Due to floating point imprecision when farther from the origin. Starts to be noticible around +/- 3000 from origin. Can be fixed by increasing ENTRY_POINT_EPSILON in AmanitidesAndWoo.hlsl, but at the cost of creating a gap around the boundaries of the volume that becomes noticible. Flicker only becomes noticible between 2000-3000 units from origin, so deferring.
