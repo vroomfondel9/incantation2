@@ -1,3 +1,4 @@
+using Incantation.Engine.Voxels.Authoring;
 using System.IO;
 using Unity.Mathematics;
 using UnityEditor;
@@ -38,6 +39,11 @@ public static class VoxelVolumeInstanceCreator
         BoxCollider collider = cube.GetComponent<BoxCollider>();
         if (collider != null)
             Object.DestroyImmediate(collider);
+
+        // Add Entity authoring script
+        VoxelVolumePrebakedAssetAuthoring authoring =
+            cube.AddComponent<VoxelVolumePrebakedAssetAuthoring>();
+        authoring.voxelVolumePrebakedAsset = voxelVolume;
 
         // --- Load Shader ---
         Shader shader = AssetDatabase.LoadAssetAtPath<Shader>(ShaderPath);

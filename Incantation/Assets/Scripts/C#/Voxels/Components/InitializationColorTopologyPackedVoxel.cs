@@ -80,7 +80,7 @@ namespace Incantation.Engine.Voxels.Components
     /// 
     /// TODO OPT - LOW - Branchless Voxel Helper Functions - Helper functions are very hot. Make branchless if possible. Low because Burst probably does this already automatically.
     /// </summary>
-    public struct Voxel : IBufferElementData
+    public struct InitializationColorTopologyPackedVoxel : IBufferElementData
     {
         public uint PackedValue;
 

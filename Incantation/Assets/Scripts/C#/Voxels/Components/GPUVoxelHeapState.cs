@@ -20,12 +20,22 @@ namespace Incantation.Engine.Voxels.Components
     /// This depends on voxel identity (hash) being determined. It's essential for rendering in play mode.
     /// May be reallocated on modification.
     /// </summary>
-    public struct GPUHeapVoxelState : IComponentData
+    public struct GPUVoxelHeapState : IComponentData
     {
         public uint Offset;
 
-        public uint size;
+        public uint SyncInProgressOffset;
 
-        public byte Shared;
+        public uint Size;
+
+        public uint SyncInProgressSize;
+
+        public bool Shared;
+
+        public bool SyncInProgressShared;
+
+        public bool Allocated;
+
+        public uint FramesUntilSyncSwap;
     }
 }

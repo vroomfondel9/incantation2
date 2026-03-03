@@ -110,6 +110,7 @@ public class VoxelVolumeRegistry : MonoBehaviour
 
         #region Debug Visualization
 
+    //TODO this
         void CheckDebugModeKeyChange()
     {
         // Only respond while L is held
@@ -303,6 +304,7 @@ public class VoxelVolumeRegistry : MonoBehaviour
         renderer.SetPropertyBlock(mpb);
     }
 
+    //TODO this
     private void UploadVoxelData(int offset, int size, Texture3D colorTex, Texture3D hitTex)
     {
         var colors = colorTex.GetPixelData<Color32>(0);
