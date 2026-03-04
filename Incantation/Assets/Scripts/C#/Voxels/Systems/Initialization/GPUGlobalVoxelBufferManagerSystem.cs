@@ -8,7 +8,7 @@ using UnityEngine.Rendering.Universal.Internal;
 
 namespace Incantation.Engine.Voxels.System
 {
-    [UpdateInGroup(typeof(GPUBuffersUpdateSystemGroup))]
+    [UpdateInGroup(typeof(VoxelVolumeInitializationSystemGroup))]
     [UpdateAfter(typeof(GPUHeapAllocationSystem))]
     public partial class GPUGlobalVoxelBufferManagerSystem : SystemBase
     {

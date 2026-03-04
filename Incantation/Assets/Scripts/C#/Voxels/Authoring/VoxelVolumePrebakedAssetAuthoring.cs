@@ -13,6 +13,9 @@ namespace Incantation.Engine.Voxels.Authoring
         [SerializeField]
         public VoxelVolumePrebakedAsset voxelVolumePrebakedAsset;
 
+        [SerializeField]
+        public long count = 1;
+
         public VoxelVolumePrebakedAsset VoxelVolumePrebakedAsset
         {
             get => voxelVolumePrebakedAsset;

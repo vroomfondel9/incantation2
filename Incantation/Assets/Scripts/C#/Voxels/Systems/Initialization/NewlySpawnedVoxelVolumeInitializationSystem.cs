@@ -10,7 +10,7 @@ using UnityEngine.Rendering;
 
 namespace Incantation.Engine.Voxels.Systems
 {
-    [UpdateInGroup(typeof(InitializationSystemGroup))]
+    [UpdateInGroup(typeof(VoxelVolumeInitializationSystemGroup))]
     public partial class NewlySpawnedVoxelVolumeInitializationSystem : SystemBase
     {
         // Singletons for Mesh and Material

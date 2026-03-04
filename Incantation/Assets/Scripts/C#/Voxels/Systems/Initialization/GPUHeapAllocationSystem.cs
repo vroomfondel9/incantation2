@@ -7,6 +7,7 @@ using Unity.Entities;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal.Internal;
+using static UnityEditor.FilePathAttribute;
 
 namespace Incantation.Engine.Voxels.Components
 {
@@ -47,7 +48,8 @@ namespace Incantation.Engine.Voxels.Components
      * Once that copy has begun, this system expects GPUSyncInProgress to be set by a downstream process (at which point, it'll
      * start updating its frame countdown to switching and freeing up the old memory space).
      */
-    [UpdateInGroup(typeof(GPUBuffersUpdateSystemGroup))]
+    [UpdateInGroup(typeof(VoxelVolumeInitializationSystemGroup))]
+    [UpdateAfter(typeof(GPUHeapAllocationSystem))]
     public partial struct GPUHeapAllocationSystem : ISystem
     {
         // Allocation bookkeeping
@@ -231,6 +233,15 @@ namespace Incantation.Engine.Voxels.Components
                 AllocationKey key = new AllocationKey();
                 key.hash = hash;
 
+                uint clones = 0;
+                if (SystemAPI.HasBuffer<InitializationCloneOffset>(entity))
+                {
+                    DynamicBuffer<InitializationCloneOffset> cloneOffsets = SystemAPI.GetBuffer<InitializationCloneOffset>(entity);
+                    clones = (uint) cloneOffsets.Length;
+                }
+                stats.SharedMemoryVolumeRiders += clones;
+                stats.SharedAllocations += (clones > 0) ? 1 : 0;
+
                 //Check if shared heap space already allocated that can be reused
                 for (uint i = 0; i < 2; i++)
                 {
@@ -244,9 +255,10 @@ namespace Incantation.Engine.Voxels.Components
                             // Update heap stats
                             stats.SharedMemoryVolumeRiders++;
                             stats.SharedAllocations += (allocation.consumers == 1) ? 1 : 0;
+                            stats.SharedAllocations -= (clones > 0) ? 1 : 0;
 
                             // Update shared consumer count
-                            allocation.consumers++;
+                            allocation.consumers += 1 + clones;
                             allocations[key] = allocation;
                             newAlloc = allocation;
 
@@ -296,7 +308,7 @@ namespace Incantation.Engine.Voxels.Components
 
                         newAlloc.offset = freeRegion.offset;
                         newAlloc.size = requiredSize;
-                        newAlloc.consumers = 1;
+                        newAlloc.consumers = 1 + clones;
 
                         allocations.Add(key, newAlloc);
                     }
@@ -310,7 +322,7 @@ namespace Incantation.Engine.Voxels.Components
 
                             newAlloc.offset = offset;
                             newAlloc.size = requiredSize;
-                            newAlloc.consumers = 1;
+                            newAlloc.consumers = 1 + clones;
 
                             allocations.Add(key, newAlloc);
                         }
@@ -327,7 +339,7 @@ namespace Incantation.Engine.Voxels.Components
 
                 componentHeapState.SyncInProgressOffset = newAlloc.offset;
                 componentHeapState.SyncInProgressSize = newAlloc.size;
-                componentHeapState.SyncInProgressShared = useSharedMemSpace;
+                componentHeapState.SyncInProgressShared = useSharedMemSpace || (clones > 0);
                 componentHeapState.FramesUntilSyncSwap = GlobalConstants.GPU_BUFFER_UPDATE_SWAP_DELAY_FRAMES;
 
                 // Toggles
