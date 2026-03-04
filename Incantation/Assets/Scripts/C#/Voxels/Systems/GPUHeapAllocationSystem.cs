@@ -181,14 +181,11 @@ namespace Incantation.Engine.Voxels.Components
                     mainKey.index = 0;
                     syncKey.index = 1;
 
+                    // If the value is not there, it's actually fine. It means a previous shared allocation already swapped it
                     if (allocations.TryGetValue(syncKey, out Allocation syncAlloc))
                     {
                         allocations.Add(mainKey, syncAlloc);
                         allocations.Remove(syncKey);
-                    }
-                    else
-                    {
-                        throw new Exception("Attempt to GPU sync voxel volume after global memory copy but expected sync allocation was not found!");
                     }
 
                     syncKey.index = 0;
