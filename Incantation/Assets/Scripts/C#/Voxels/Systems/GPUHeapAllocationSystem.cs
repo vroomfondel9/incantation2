@@ -10,7 +10,43 @@ using UnityEngine.Rendering.Universal.Internal;
 
 namespace Incantation.Engine.Voxels.Components
 {
-
+    /*
+     * Manages addresses / sizes within a conceptual memory heap within the global voxels GPU StructureBuffer.
+     * 
+     * Allocation implemented as requesting new heap space and once a section of memory is carved out and ownership transfers,
+     * flags are set telling the GPU StructuredBuffer manager that it's okay to begin copying data to it. A number
+     * of frames later (settable via GlobalConstants.GPU_BUFFER_UPDATE_SWAP_DELAY_FRAMES), this class will switch
+     * from using the old memory space to the newly allocated one (which is assumed to have all values copied in by now)
+     * and free up the old memory space. This is called a "sync".
+     * 
+     * Reallocation will not occur until all existing syncs are completed (so a voxel volume can own, at most, 2 chunks
+     * of heap memory at any given time). Deallocation removes ownership and frees up both the old memory region and any
+     * regions in which a sync is currently happening.
+     * 
+     * It maintains a set of stats about the state of the heap that can be used for heap monitoring purposes. See GPUHeapStats.
+     * 
+     * Heap implementation is pretty straight-forward. This class keeps track a tail pointer. Nothing past the tail pointer is
+     * allocated if a free region before the tail pointer can be used instead. Free regions are merged if adjascent. On allocating,
+     * we try to find the smallest free region that'll fit the data. That sort of thing.
+     * 
+     * This system manages centralized state across multiple entities and is order dependent (allocations and deallocations
+     * done across the same objects in a different order will result in a different memory layout) and is not parallel-safe
+     * (entities would compete over the same memory regions).
+     * 
+     * Data flow Flags:
+     * ================
+     * 
+     * NeedsGPUReallocation - Set on any entities that are newly-spawned but haven't yet been made to render or interact with
+     * the physics system. Also set on any entities which have been modified in a way that alters their memory usage. An example
+     * would be a voxel volume whose dimensions were reduced so it no longer needs so much memory to store its values.
+     * 
+     * NeedsGPUDeallocation - Indicates an intent to free up all memory regions associated with this entity. Used only prior to
+     * despawn.
+     * 
+     * GPUSyncNeeded - Set to indicate that a new memory region has been allocated and it's okay to start copying data into it.
+     * Once that copy has begun, this system expects GPUSyncInProgress to be set by a downstream process (at which point, it'll
+     * start updating its frame countdown to switching and freeing up the old memory space).
+     */
     [UpdateInGroup(typeof(GPUBuffersUpdateSystemGroup))]
     public partial struct GPUHeapAllocationSystem : ISystem
     {
@@ -135,8 +171,29 @@ namespace Incantation.Engine.Voxels.Components
                     // Deallocate only old buffer region
                     if (componentHeapState.Allocated)
                     {
-                        deallocateUpToIndex(1, hash, ref stats, ref state);
+                        deallocateUpToIndex(0, hash, ref stats, ref state);
                     }
+
+                    // Swap allocation index in allocations (sync partition to main partition)
+                    AllocationKey mainKey = new AllocationKey();
+                    AllocationKey syncKey = new AllocationKey();
+
+                    mainKey.hash = hash;
+                    syncKey.hash = hash;
+                    mainKey.index = 0;
+                    syncKey.index = 1;
+
+                    if (allocations.TryGetValue(syncKey, out Allocation syncAlloc))
+                    {
+                        allocations.Add(mainKey, syncAlloc);
+                        allocations.Remove(syncKey);
+                    }
+                    else
+                    {
+                        throw new Exception("Attempt to GPU sync voxel volume after global memory copy but expected sync allocation was not found!");
+                    }
+
+                    syncKey.index = 0;
 
                     // Swap data from new buffer region in
                     componentHeapState.Offset = componentHeapState.SyncInProgressOffset;
@@ -160,6 +217,7 @@ namespace Incantation.Engine.Voxels.Components
                         RefRW<GPUVoxelHeapState>,
                         RefRO<VoxelVolumeID>>()
                     .WithAll<NeedsGPUReallocation>()
+                    .WithNone<GPUSyncInProgress>()
                     .WithEntityAccess())
             {
                 ulong hash = volumeId.ValueRO.Hash;
@@ -290,7 +348,7 @@ namespace Incantation.Engine.Voxels.Components
                     .WithEntityAccess())
             {
                 ulong hash = volumeId.ValueRO.Hash;
-                deallocateUpToIndex(2, hash, ref stats, ref state);
+                deallocateUpToIndex(1, hash, ref stats, ref state);
 
                 // Update components based on allocation and whether it's shared memory
                 ref var componentHeapState = ref heapState.ValueRW;
@@ -376,12 +434,14 @@ namespace Incantation.Engine.Voxels.Components
                     uint endIndex = alloc.offset + alloc.size - 1;
 
                     // Merge with previous
-                    if (endingFreeOffsetsToSize.TryGetValue(alloc.offset - 1, out uint prevSize))
+                    bool merged = false;
+                    if ((alloc.offset > 0) && (endingFreeOffsetsToSize.TryGetValue(alloc.offset - 1, out uint prevSize)))
                     {
                         uint prevOffset = alloc.offset - prevSize;
                         RemoveFreeRegion(prevOffset, prevSize);
                         newOffset = prevOffset;
                         newSize += prevSize;
+                        merged = true;
                     }
 
                     // Merge with next
@@ -389,16 +449,34 @@ namespace Incantation.Engine.Voxels.Components
                     {
                         RemoveFreeRegion(endIndex + 1, nextSize);
                         newSize += nextSize;
+                        merged = true;
                     }
 
-                    // Add new free region
-                    FreeRegion newFreeRegion = new FreeRegion();
-                    newFreeRegion.offset = newOffset;
-                    newFreeRegion.size = newSize;
+                    // Free region at end - shrink the tail
+                    if (newOffset + newSize == allocationsTail)
+                    {
+                        allocationsTail = newOffset;
+                        stats.FreeSum -= newSize;
 
-                    freeRegions.Add(newFreeRegion);
-                    startingFreeOffsetsToSize[newOffset] = newSize;
-                    endingFreeOffsetsToSize[newOffset + newSize - 1] = newSize;
+                        if (merged)
+                        {
+                            freeRegions.Sort(freeRegionComparator);
+                        }
+                    }
+                    // Free region in middle - add new free region to list
+                    else
+                    {
+                        FreeRegion newFreeRegion = new FreeRegion();
+                        newFreeRegion.offset = newOffset;
+                        newFreeRegion.size = newSize;
+
+                        startingFreeOffsetsToSize[newOffset] = newSize;
+                        endingFreeOffsetsToSize[newOffset + newSize - 1] = newSize;
+
+
+                        freeRegions.Add(newFreeRegion);
+                        freeRegions.Sort(freeRegionComparator);
+                    }
                 }
             }
         }
