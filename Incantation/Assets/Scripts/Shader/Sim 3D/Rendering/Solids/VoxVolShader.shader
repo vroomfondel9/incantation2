@@ -1,4 +1,4 @@
-Shader "Shader Graphs/VoxVolShaderNoDepth"
+Shader "Shader Graphs/VoxVolShader"
 {
     Properties
     {
@@ -6,7 +6,6 @@ Shader "Shader Graphs/VoxVolShaderNoDepth"
         _GridDimensions("GridDimensions", Vector) = (0, 0, 0, 0)
         [NoScaleOffset]_HitTexture("HitTexture", 3D) = "white" {}
         _VoxelVolumeOffset("VoxelVolumeOffset", Float) = 0
-        _VoxelVolumeID("VoxelVolumeID", Float) = 0
         [HideInInspector]_QueueOffset("_QueueOffset", Float) = 0
         [HideInInspector]_QueueControl("_QueueControl", Float) = -1
         [HideInInspector][NoScaleOffset]unity_Lightmaps("unity_Lightmaps", 2DArray) = "" {}
@@ -412,7 +411,6 @@ Shader "Shader Graphs/VoxVolShaderNoDepth"
         CBUFFER_START(UnityPerMaterial)
         float3 _GridDimensions;
         float _VoxelVolumeOffset;
-        float _VoxelVolumeID;
         CBUFFER_END
         
         #if defined(DOTS_INSTANCING_ON)
@@ -420,7 +418,6 @@ Shader "Shader Graphs/VoxVolShaderNoDepth"
         UNITY_DOTS_INSTANCING_START(MaterialPropertyMetadata)
             UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float3, _GridDimensions)
             UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _VoxelVolumeOffset)
-            UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _VoxelVolumeID)
         UNITY_DOTS_INSTANCING_END(MaterialPropertyMetadata)
         // DOTS instancing usage macros
         #define UNITY_ACCESS_HYBRID_INSTANCED_PROP(var, type) UNITY_ACCESS_DOTS_INSTANCED_PROP_WITH_DEFAULT(type, var)
@@ -429,7 +426,6 @@ Shader "Shader Graphs/VoxVolShaderNoDepth"
         UNITY_INSTANCING_BUFFER_START(SGPerInstanceData)
             UNITY_DEFINE_INSTANCED_PROP(float3, _GridDimensions)
             UNITY_DEFINE_INSTANCED_PROP(float, _VoxelVolumeOffset)
-            UNITY_DEFINE_INSTANCED_PROP(float, _VoxelVolumeID)
         UNITY_INSTANCING_BUFFER_END(SGPerInstanceData)
         // Unity instancing usage macros
         #define UNITY_ACCESS_HYBRID_INSTANCED_PROP(var, type) UNITY_ACCESS_INSTANCED_PROP(SGPerInstanceData, var)
@@ -1121,7 +1117,6 @@ Shader "Shader Graphs/VoxVolShaderNoDepth"
         CBUFFER_START(UnityPerMaterial)
         float3 _GridDimensions;
         float _VoxelVolumeOffset;
-        float _VoxelVolumeID;
         CBUFFER_END
         
         #if defined(DOTS_INSTANCING_ON)
@@ -1129,7 +1124,6 @@ Shader "Shader Graphs/VoxVolShaderNoDepth"
         UNITY_DOTS_INSTANCING_START(MaterialPropertyMetadata)
             UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float3, _GridDimensions)
             UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _VoxelVolumeOffset)
-            UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _VoxelVolumeID)
         UNITY_DOTS_INSTANCING_END(MaterialPropertyMetadata)
         // DOTS instancing usage macros
         #define UNITY_ACCESS_HYBRID_INSTANCED_PROP(var, type) UNITY_ACCESS_DOTS_INSTANCED_PROP_WITH_DEFAULT(type, var)
@@ -1138,7 +1132,6 @@ Shader "Shader Graphs/VoxVolShaderNoDepth"
         UNITY_INSTANCING_BUFFER_START(SGPerInstanceData)
             UNITY_DEFINE_INSTANCED_PROP(float3, _GridDimensions)
             UNITY_DEFINE_INSTANCED_PROP(float, _VoxelVolumeOffset)
-            UNITY_DEFINE_INSTANCED_PROP(float, _VoxelVolumeID)
         UNITY_INSTANCING_BUFFER_END(SGPerInstanceData)
         // Unity instancing usage macros
         #define UNITY_ACCESS_HYBRID_INSTANCED_PROP(var, type) UNITY_ACCESS_INSTANCED_PROP(SGPerInstanceData, var)
@@ -1681,7 +1674,6 @@ Shader "Shader Graphs/VoxVolShaderNoDepth"
         CBUFFER_START(UnityPerMaterial)
         float3 _GridDimensions;
         float _VoxelVolumeOffset;
-        float _VoxelVolumeID;
         CBUFFER_END
         
         #if defined(DOTS_INSTANCING_ON)
@@ -1689,7 +1681,6 @@ Shader "Shader Graphs/VoxVolShaderNoDepth"
         UNITY_DOTS_INSTANCING_START(MaterialPropertyMetadata)
             UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float3, _GridDimensions)
             UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _VoxelVolumeOffset)
-            UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _VoxelVolumeID)
         UNITY_DOTS_INSTANCING_END(MaterialPropertyMetadata)
         // DOTS instancing usage macros
         #define UNITY_ACCESS_HYBRID_INSTANCED_PROP(var, type) UNITY_ACCESS_DOTS_INSTANCED_PROP_WITH_DEFAULT(type, var)
@@ -1698,7 +1689,6 @@ Shader "Shader Graphs/VoxVolShaderNoDepth"
         UNITY_INSTANCING_BUFFER_START(SGPerInstanceData)
             UNITY_DEFINE_INSTANCED_PROP(float3, _GridDimensions)
             UNITY_DEFINE_INSTANCED_PROP(float, _VoxelVolumeOffset)
-            UNITY_DEFINE_INSTANCED_PROP(float, _VoxelVolumeID)
         UNITY_INSTANCING_BUFFER_END(SGPerInstanceData)
         // Unity instancing usage macros
         #define UNITY_ACCESS_HYBRID_INSTANCED_PROP(var, type) UNITY_ACCESS_INSTANCED_PROP(SGPerInstanceData, var)
@@ -2207,7 +2197,6 @@ Shader "Shader Graphs/VoxVolShaderNoDepth"
         CBUFFER_START(UnityPerMaterial)
         float3 _GridDimensions;
         float _VoxelVolumeOffset;
-        float _VoxelVolumeID;
         CBUFFER_END
         
         #if defined(DOTS_INSTANCING_ON)
@@ -2215,7 +2204,6 @@ Shader "Shader Graphs/VoxVolShaderNoDepth"
         UNITY_DOTS_INSTANCING_START(MaterialPropertyMetadata)
             UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float3, _GridDimensions)
             UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _VoxelVolumeOffset)
-            UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _VoxelVolumeID)
         UNITY_DOTS_INSTANCING_END(MaterialPropertyMetadata)
         // DOTS instancing usage macros
         #define UNITY_ACCESS_HYBRID_INSTANCED_PROP(var, type) UNITY_ACCESS_DOTS_INSTANCED_PROP_WITH_DEFAULT(type, var)
@@ -2224,7 +2212,6 @@ Shader "Shader Graphs/VoxVolShaderNoDepth"
         UNITY_INSTANCING_BUFFER_START(SGPerInstanceData)
             UNITY_DEFINE_INSTANCED_PROP(float3, _GridDimensions)
             UNITY_DEFINE_INSTANCED_PROP(float, _VoxelVolumeOffset)
-            UNITY_DEFINE_INSTANCED_PROP(float, _VoxelVolumeID)
         UNITY_INSTANCING_BUFFER_END(SGPerInstanceData)
         // Unity instancing usage macros
         #define UNITY_ACCESS_HYBRID_INSTANCED_PROP(var, type) UNITY_ACCESS_INSTANCED_PROP(SGPerInstanceData, var)
@@ -2810,7 +2797,6 @@ Shader "Shader Graphs/VoxVolShaderNoDepth"
         CBUFFER_START(UnityPerMaterial)
         float3 _GridDimensions;
         float _VoxelVolumeOffset;
-        float _VoxelVolumeID;
         CBUFFER_END
         
         #if defined(DOTS_INSTANCING_ON)
@@ -2818,7 +2804,6 @@ Shader "Shader Graphs/VoxVolShaderNoDepth"
         UNITY_DOTS_INSTANCING_START(MaterialPropertyMetadata)
             UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float3, _GridDimensions)
             UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _VoxelVolumeOffset)
-            UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _VoxelVolumeID)
         UNITY_DOTS_INSTANCING_END(MaterialPropertyMetadata)
         // DOTS instancing usage macros
         #define UNITY_ACCESS_HYBRID_INSTANCED_PROP(var, type) UNITY_ACCESS_DOTS_INSTANCED_PROP_WITH_DEFAULT(type, var)
@@ -2827,7 +2812,6 @@ Shader "Shader Graphs/VoxVolShaderNoDepth"
         UNITY_INSTANCING_BUFFER_START(SGPerInstanceData)
             UNITY_DEFINE_INSTANCED_PROP(float3, _GridDimensions)
             UNITY_DEFINE_INSTANCED_PROP(float, _VoxelVolumeOffset)
-            UNITY_DEFINE_INSTANCED_PROP(float, _VoxelVolumeID)
         UNITY_INSTANCING_BUFFER_END(SGPerInstanceData)
         // Unity instancing usage macros
         #define UNITY_ACCESS_HYBRID_INSTANCED_PROP(var, type) UNITY_ACCESS_INSTANCED_PROP(SGPerInstanceData, var)
@@ -3295,7 +3279,6 @@ Shader "Shader Graphs/VoxVolShaderNoDepth"
         CBUFFER_START(UnityPerMaterial)
         float3 _GridDimensions;
         float _VoxelVolumeOffset;
-        float _VoxelVolumeID;
         CBUFFER_END
         
         #if defined(DOTS_INSTANCING_ON)
@@ -3303,7 +3286,6 @@ Shader "Shader Graphs/VoxVolShaderNoDepth"
         UNITY_DOTS_INSTANCING_START(MaterialPropertyMetadata)
             UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float3, _GridDimensions)
             UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _VoxelVolumeOffset)
-            UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _VoxelVolumeID)
         UNITY_DOTS_INSTANCING_END(MaterialPropertyMetadata)
         // DOTS instancing usage macros
         #define UNITY_ACCESS_HYBRID_INSTANCED_PROP(var, type) UNITY_ACCESS_DOTS_INSTANCED_PROP_WITH_DEFAULT(type, var)
@@ -3312,7 +3294,6 @@ Shader "Shader Graphs/VoxVolShaderNoDepth"
         UNITY_INSTANCING_BUFFER_START(SGPerInstanceData)
             UNITY_DEFINE_INSTANCED_PROP(float3, _GridDimensions)
             UNITY_DEFINE_INSTANCED_PROP(float, _VoxelVolumeOffset)
-            UNITY_DEFINE_INSTANCED_PROP(float, _VoxelVolumeID)
         UNITY_INSTANCING_BUFFER_END(SGPerInstanceData)
         // Unity instancing usage macros
         #define UNITY_ACCESS_HYBRID_INSTANCED_PROP(var, type) UNITY_ACCESS_INSTANCED_PROP(SGPerInstanceData, var)
@@ -3776,7 +3757,6 @@ Shader "Shader Graphs/VoxVolShaderNoDepth"
         CBUFFER_START(UnityPerMaterial)
         float3 _GridDimensions;
         float _VoxelVolumeOffset;
-        float _VoxelVolumeID;
         CBUFFER_END
         
         #if defined(DOTS_INSTANCING_ON)
@@ -3784,7 +3764,6 @@ Shader "Shader Graphs/VoxVolShaderNoDepth"
         UNITY_DOTS_INSTANCING_START(MaterialPropertyMetadata)
             UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float3, _GridDimensions)
             UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _VoxelVolumeOffset)
-            UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _VoxelVolumeID)
         UNITY_DOTS_INSTANCING_END(MaterialPropertyMetadata)
         // DOTS instancing usage macros
         #define UNITY_ACCESS_HYBRID_INSTANCED_PROP(var, type) UNITY_ACCESS_DOTS_INSTANCED_PROP_WITH_DEFAULT(type, var)
@@ -3793,7 +3772,6 @@ Shader "Shader Graphs/VoxVolShaderNoDepth"
         UNITY_INSTANCING_BUFFER_START(SGPerInstanceData)
             UNITY_DEFINE_INSTANCED_PROP(float3, _GridDimensions)
             UNITY_DEFINE_INSTANCED_PROP(float, _VoxelVolumeOffset)
-            UNITY_DEFINE_INSTANCED_PROP(float, _VoxelVolumeID)
         UNITY_INSTANCING_BUFFER_END(SGPerInstanceData)
         // Unity instancing usage macros
         #define UNITY_ACCESS_HYBRID_INSTANCED_PROP(var, type) UNITY_ACCESS_INSTANCED_PROP(SGPerInstanceData, var)
@@ -4257,7 +4235,6 @@ Shader "Shader Graphs/VoxVolShaderNoDepth"
         CBUFFER_START(UnityPerMaterial)
         float3 _GridDimensions;
         float _VoxelVolumeOffset;
-        float _VoxelVolumeID;
         CBUFFER_END
         
         #if defined(DOTS_INSTANCING_ON)
@@ -4265,7 +4242,6 @@ Shader "Shader Graphs/VoxVolShaderNoDepth"
         UNITY_DOTS_INSTANCING_START(MaterialPropertyMetadata)
             UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float3, _GridDimensions)
             UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _VoxelVolumeOffset)
-            UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _VoxelVolumeID)
         UNITY_DOTS_INSTANCING_END(MaterialPropertyMetadata)
         // DOTS instancing usage macros
         #define UNITY_ACCESS_HYBRID_INSTANCED_PROP(var, type) UNITY_ACCESS_DOTS_INSTANCED_PROP_WITH_DEFAULT(type, var)
@@ -4274,7 +4250,6 @@ Shader "Shader Graphs/VoxVolShaderNoDepth"
         UNITY_INSTANCING_BUFFER_START(SGPerInstanceData)
             UNITY_DEFINE_INSTANCED_PROP(float3, _GridDimensions)
             UNITY_DEFINE_INSTANCED_PROP(float, _VoxelVolumeOffset)
-            UNITY_DEFINE_INSTANCED_PROP(float, _VoxelVolumeID)
         UNITY_INSTANCING_BUFFER_END(SGPerInstanceData)
         // Unity instancing usage macros
         #define UNITY_ACCESS_HYBRID_INSTANCED_PROP(var, type) UNITY_ACCESS_INSTANCED_PROP(SGPerInstanceData, var)

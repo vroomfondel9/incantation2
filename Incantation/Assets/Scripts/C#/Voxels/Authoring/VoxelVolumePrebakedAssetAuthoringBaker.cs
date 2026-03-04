@@ -1,7 +1,10 @@
-using Unity.Entities;
-using Incantation.Engine.Voxels.Components;
 using Incantation.Engine.Voxels.Authoring;
+using Incantation.Engine.Voxels.Components;
+using Unity.Entities;
 using Unity.Mathematics;
+using Unity.Rendering;
+using UnityEngine;
+using UnityEngine.Rendering;
 
 namespace Incantation.Engine.Voxels.Baking
 {
@@ -10,8 +13,7 @@ namespace Incantation.Engine.Voxels.Baking
     {
         public override void Bake(VoxelVolumePrebakedAssetAuthoring authoring)
         {
-            // Create entity associated with this GameObject
-            var entity = GetEntity(TransformUsageFlags.None);
+            var entity = GetEntity(TransformUsageFlags.Renderable);
 
             // Create components
             int3 dims = authoring.voxelVolumePrebakedAsset.dimensions;
@@ -22,47 +24,8 @@ namespace Incantation.Engine.Voxels.Baking
                 Hash = hash
             });
 
-            int size = dims.x * dims.y * dims.z;
-            AddComponent(entity, new GPUVoxelHeapState
-            {
-                Offset = 0,
-                SyncInProgressOffset = 0,
-                Size = (uint)size,
-                SyncInProgressSize = 0,
-                Shared = false,
-                SyncInProgressShared = false,
-                Allocated = false,
-                FramesUntilSyncSwap = 0,
-            });
-
-            // Material properties
-            AddComponent(entity, new GridDimensionsMaterialProperty
-            {
-                Value = new float3((float)dims.x, (float)dims.y, (float)dims.z)
-            });
-
-            AddComponent(entity, new VoxelVolumeOffsetMaterialProperty
-            {
-                Value = 0
-            });
-
-            // Enableables
-            AddComponent<NeedsGPUReallocation>(entity);
-            SetComponentEnabled<NeedsGPUReallocation>(entity, true);
-
-            AddComponent<NeedsGPUDeallocation>(entity);
-            SetComponentEnabled<NeedsGPUDeallocation>(entity, false);
-
-            AddComponent<GPUSyncNeeded>(entity);
-            SetComponentEnabled<GPUSyncNeeded>(entity, false);
-
-            AddComponent<GPUSyncInProgress>(entity);
-            SetComponentEnabled<GPUSyncInProgress>(entity, false);
-
-            AddComponent<NeedsDeletion>(entity);
-            SetComponentEnabled<NeedsDeletion>(entity, false);
-
             // Add Dynamic Buffer Components
+            int size = dims.x * dims.y * dims.z;
             var buffer = AddBuffer<InitializationColorTopologyPackedVoxel>(entity);
             buffer.EnsureCapacity(size);
 

@@ -16,9 +16,6 @@
             "m_Id": "96b5c3b1f8264f159ecc0eebd06cda32"
         },
         {
-            "m_Id": "eb25f5729e0f455daee19808b31b7832"
-        },
-        {
             "m_Id": "6e699bd20b3644f884edc522755abc9a"
         }
     ],
@@ -3211,9 +3208,6 @@
             "m_Id": "96b5c3b1f8264f159ecc0eebd06cda32"
         },
         {
-            "m_Id": "eb25f5729e0f455daee19808b31b7832"
-        },
-        {
             "m_Id": "6e699bd20b3644f884edc522755abc9a"
         }
     ]
@@ -3492,34 +3486,6 @@
     "m_Value": 1.0,
     "m_DefaultValue": 1.0,
     "m_Labels": []
-}
-
-{
-    "m_SGVersion": 1,
-    "m_Type": "UnityEditor.ShaderGraph.Internal.Vector1ShaderProperty",
-    "m_ObjectId": "eb25f5729e0f455daee19808b31b7832",
-    "m_Guid": {
-        "m_GuidSerialized": "c91cf407-7440-48ee-b208-eddecfc2a1f3"
-    },
-    "m_Name": "VoxelVolumeID",
-    "m_DefaultRefNameVersion": 1,
-    "m_RefNameGeneratedByDisplayName": "VoxelVolumeID",
-    "m_DefaultReferenceName": "_VoxelVolumeID",
-    "m_OverrideReferenceName": "",
-    "m_GeneratePropertyBlock": true,
-    "m_UseCustomSlotLabel": false,
-    "m_CustomSlotLabel": "",
-    "m_DismissedVersion": 0,
-    "m_Precision": 0,
-    "overrideHLSLDeclaration": true,
-    "hlslDeclarationOverride": 3,
-    "m_Hidden": false,
-    "m_Value": 0.0,
-    "m_FloatType": 0,
-    "m_RangeValues": {
-        "x": 0.0,
-        "y": 1.0
-    }
 }
 
 {

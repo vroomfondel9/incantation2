@@ -9,5 +9,9 @@ public class GlobalConstants
 
     public static int MAX_GLOBAL_VOXELS = 100000000;
 
+    public static int MAX_VOX_VOLS_PER_SCENE = 300000;
+
+    public static int MAX_VOX_VOLS_MODIFIABLE_PER_FRAME = 1000;
+
     public static uint GPU_BUFFER_UPDATE_SWAP_DELAY_FRAMES = 1;
 }

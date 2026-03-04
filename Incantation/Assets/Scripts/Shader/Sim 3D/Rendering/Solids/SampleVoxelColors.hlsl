@@ -7,7 +7,7 @@ void ColorSample_float(
 	float VoxelVolumeOffset,
 	float DebugVisualizationMode,
 	float3 EntryPointObj,
-	float3 Hit,
+	float Hit,
 	float3 UV,
 	float3 Voxel,
 	float VoxelValue1,
@@ -39,9 +39,9 @@ void ColorSample_float(
 		);
 		RGB = sample.rgb;
 	#else
-		uint r = (voxelValue >> 24) & 0xFF;
+		uint r = (voxelValue >> 8) & 0xFF;
 		uint g = (voxelValue >> 16) & 0xFF;
-		uint b = (voxelValue >> 8) & 0xFF;
+		uint b = (voxelValue >> 24) & 0xFF;
 		
 		RGB = float3(r / 255.0, g / 255.0, b / 255.0);
 	#endif

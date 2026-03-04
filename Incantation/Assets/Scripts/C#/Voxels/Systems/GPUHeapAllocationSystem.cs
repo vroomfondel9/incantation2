@@ -50,9 +50,6 @@ namespace Incantation.Engine.Voxels.Components
     [UpdateInGroup(typeof(GPUBuffersUpdateSystemGroup))]
     public partial struct GPUHeapAllocationSystem : ISystem
     {
-        // Used for initial capacity for memory management variables
-        private static int ASSUMED_MAX_VOX_VOLS = 300000;
-
         // Allocation bookkeeping
         private struct Allocation
         {
@@ -120,11 +117,11 @@ namespace Incantation.Engine.Voxels.Components
             freeRegionComparator = new FreeRegionComparer();
 
             // Initialize memory management variables
-            allocations = new NativeParallelHashMap<AllocationKey, Allocation>(ASSUMED_MAX_VOX_VOLS, Allocator.Persistent);
-            startingFreeOffsetsToSize = new NativeParallelHashMap<uint, uint>(ASSUMED_MAX_VOX_VOLS, Allocator.Persistent);
-            endingFreeOffsetsToSize = new NativeParallelHashMap<uint, uint>(ASSUMED_MAX_VOX_VOLS, Allocator.Persistent);
+            allocations = new NativeParallelHashMap<AllocationKey, Allocation>(GlobalConstants.MAX_VOX_VOLS_PER_SCENE, Allocator.Persistent);
+            startingFreeOffsetsToSize = new NativeParallelHashMap<uint, uint>(GlobalConstants.MAX_VOX_VOLS_PER_SCENE, Allocator.Persistent);
+            endingFreeOffsetsToSize = new NativeParallelHashMap<uint, uint>(GlobalConstants.MAX_VOX_VOLS_PER_SCENE, Allocator.Persistent);
             freeRegions = new NativeList<FreeRegion>(Allocator.Persistent);
-            freeRegions.SetCapacity(ASSUMED_MAX_VOX_VOLS);
+            freeRegions.SetCapacity(GlobalConstants.MAX_VOX_VOLS_PER_SCENE);
             allocationsTail = 0;
 
             // Create singleton components
@@ -154,9 +151,10 @@ namespace Incantation.Engine.Voxels.Components
 
         private void updateInProgressGPUSyncs(ref GPUHeapStats stats, ref SystemState state)
         {
-            foreach (var (heapState, volumeId, entity)
+            foreach (var (heapState, offsetMaterialProp, volumeId, entity)
                 in SystemAPI.Query<
                         RefRW<GPUVoxelHeapState>,
+                        RefRW<VoxelVolumeOffsetMaterialProperty>,
                         RefRO<VoxelVolumeID>>()
                     .WithAll<GPUSyncInProgress>()
                     .WithEntityAccess())
@@ -203,6 +201,9 @@ namespace Incantation.Engine.Voxels.Components
                     componentHeapState.SyncInProgressSize = 0;
                     componentHeapState.SyncInProgressShared = false;
                     componentHeapState.Allocated = true;
+
+                    // Set material property to new region
+                    offsetMaterialProp.ValueRW.Value = componentHeapState.Offset;
 
                     // Toggles
                     SystemAPI.SetComponentEnabled<GPUSyncInProgress>(entity, false);
