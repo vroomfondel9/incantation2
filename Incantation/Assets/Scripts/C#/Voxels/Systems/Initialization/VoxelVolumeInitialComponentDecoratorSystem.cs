@@ -11,7 +11,7 @@ using UnityEngine.Rendering;
 namespace Incantation.Engine.Voxels.Systems
 {
     [UpdateInGroup(typeof(VoxelVolumeInitializationSystemGroup))]
-    public partial class NewlySpawnedVoxelVolumeInitializationSystem : SystemBase
+    public partial class VoxelVolumeInitialComponentDecoratorSystem : SystemBase
     {
         // Singletons for Mesh and Material
         private RenderMeshArray renderMeshArray;
@@ -42,14 +42,14 @@ namespace Incantation.Engine.Voxels.Systems
             foreach (var (voxelVolumeId, matMeshInfo, entity) in SystemAPI.Query<
                 RefRO<VoxelVolumeID>,
                 RefRW<MaterialMeshInfo>>()
-                         .WithNone<GPUVoxelHeapState>()
+                         .WithNone<GlobalVoxelHeapState>()
                          .WithEntityAccess())
             {
                 // --- Add GPUVoxelHeapState ---
                 var dims = voxelVolumeId.ValueRO.Dimensions;
                 uint size = dims.x * dims.y * dims.z;
 
-                ecb.AddComponent(entity, new GPUVoxelHeapState
+                ecb.AddComponent(entity, new GlobalVoxelHeapState
                 {
                     Offset = 0,
                     SyncInProgressOffset = 0,
@@ -73,17 +73,17 @@ namespace Incantation.Engine.Voxels.Systems
                 });
 
                 // --- Enableables ---
-                ecb.AddComponent<NeedsGPUReallocation>(entity);
-                ecb.SetComponentEnabled<NeedsGPUReallocation>(entity, true);
+                ecb.AddComponent<NeedsGlobalVoxelReallocation>(entity);
+                ecb.SetComponentEnabled<NeedsGlobalVoxelReallocation>(entity, true);
 
-                ecb.AddComponent<NeedsGPUDeallocation>(entity);
-                ecb.SetComponentEnabled<NeedsGPUDeallocation>(entity, false);
+                ecb.AddComponent<NeedsGlobalVoxelDeallocation>(entity);
+                ecb.SetComponentEnabled<NeedsGlobalVoxelDeallocation>(entity, false);
 
-                ecb.AddComponent<GPUSyncNeeded>(entity);
-                ecb.SetComponentEnabled<GPUSyncNeeded>(entity, false);
+                ecb.AddComponent<GlobalVoxelSyncNeeded>(entity);
+                ecb.SetComponentEnabled<GlobalVoxelSyncNeeded>(entity, false);
 
-                ecb.AddComponent<GPUSyncInProgress>(entity);
-                ecb.SetComponentEnabled<GPUSyncInProgress>(entity, false);
+                ecb.AddComponent<GlobalVoxelSyncInProgress>(entity);
+                ecb.SetComponentEnabled<GlobalVoxelSyncInProgress>(entity, false);
 
                 ecb.AddComponent<NeedsDeletion>(entity);
                 ecb.SetComponentEnabled<NeedsDeletion>(entity, false);

@@ -9,7 +9,7 @@ using UnityEngine.Rendering.Universal.Internal;
 namespace Incantation.Engine.Voxels.System
 {
     [UpdateInGroup(typeof(VoxelVolumeInitializationSystemGroup))]
-    [UpdateAfter(typeof(GPUHeapAllocationSystem))]
+    [UpdateAfter(typeof(GlobalVoxelHeapAllocationSystem))]
     public partial class GPUGlobalVoxelBufferManagerSystem : SystemBase
     {
         private float THREAD_GROUP_SIZE = 64.0f;
@@ -85,9 +85,9 @@ namespace Incantation.Engine.Voxels.System
         {
             foreach (var (heapState, entity)
                 in SystemAPI.Query<
-                        RefRO<GPUVoxelHeapState>>()
-                    .WithAll<GPUSyncNeeded>()
-                    .WithNone<GPUSyncInProgress, InitializationColorTopologyPackedVoxel>()
+                        RefRO<GlobalVoxelHeapState>>()
+                    .WithAll<GlobalVoxelSyncNeeded>()
+                    .WithNone<GlobalVoxelSyncInProgress, InitializationColorTopologyPackedVoxel>()
                     .WithEntityAccess())
             {
                 var heap = heapState.ValueRO;
@@ -104,8 +104,8 @@ namespace Incantation.Engine.Voxels.System
                 cmd.DispatchCompute(copyVoxelRegionsShader, kernelIdCopyVoxelVolumes, groups, 1, 1);
 
                 // Toggle components
-                SystemAPI.SetComponentEnabled<GPUSyncNeeded>(entity, false);
-                SystemAPI.SetComponentEnabled<GPUSyncInProgress>(entity, true);
+                SystemAPI.SetComponentEnabled<GlobalVoxelSyncNeeded>(entity, false);
+                SystemAPI.SetComponentEnabled<GlobalVoxelSyncInProgress>(entity, true);
             }
         }
 
@@ -113,10 +113,10 @@ namespace Incantation.Engine.Voxels.System
         {
             foreach (var (heapState, initialBuffer, entity)
                 in SystemAPI.Query<
-                        RefRO<GPUVoxelHeapState>,
+                        RefRO<GlobalVoxelHeapState>,
                         DynamicBuffer<InitializationColorTopologyPackedVoxel>>()
-                    .WithAll<GPUSyncNeeded>()
-                    .WithNone<GPUSyncInProgress>()
+                    .WithAll<GlobalVoxelSyncNeeded>()
+                    .WithNone<GlobalVoxelSyncInProgress>()
                     .WithEntityAccess())
             {
                 var heap = heapState.ValueRO;
@@ -132,8 +132,8 @@ namespace Incantation.Engine.Voxels.System
                 ecb.RemoveComponent<InitializationColorTopologyPackedVoxel>(entity);
 
                 // Toggle components
-                SystemAPI.SetComponentEnabled<GPUSyncNeeded>(entity, false);
-                SystemAPI.SetComponentEnabled<GPUSyncInProgress>(entity, true);
+                SystemAPI.SetComponentEnabled<GlobalVoxelSyncNeeded>(entity, false);
+                SystemAPI.SetComponentEnabled<GlobalVoxelSyncInProgress>(entity, true);
             }
         }
     }

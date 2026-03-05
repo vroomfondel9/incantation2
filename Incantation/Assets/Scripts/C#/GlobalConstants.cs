@@ -13,5 +13,5 @@ public class GlobalConstants
 
     public static int MAX_VOX_VOLS_MODIFIABLE_PER_FRAME = 1000;
 
-    public static uint GPU_BUFFER_UPDATE_SWAP_DELAY_FRAMES = 1;
+    public static uint PER_VOXEL_BUFFER_UPDATE_SWAP_DELAY_FRAMES = 1;
 }

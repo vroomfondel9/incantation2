@@ -16,6 +16,9 @@ namespace Incantation.Engine.Voxels.Authoring
         [SerializeField]
         public long count = 1;
 
+        [SerializeField]
+        public Vector3 spacing = Vector3.zero;
+
         public VoxelVolumePrebakedAsset VoxelVolumePrebakedAsset
         {
             get => voxelVolumePrebakedAsset;

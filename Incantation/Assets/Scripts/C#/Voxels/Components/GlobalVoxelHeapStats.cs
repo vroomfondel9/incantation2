@@ -2,7 +2,7 @@ using Unity.Entities;
 
 namespace Incantation.Engine.Voxels.Components
 {
-    public struct GPUHeapStats : IComponentData
+    public struct GlobalVoxelHeapStats : IComponentData
     {
         // Percent of total memory space used
         public float UsagePercent;

@@ -3,6 +3,7 @@ using Incantation.Engine.Voxels.Components;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Rendering;
+using UnityEditor.PackageManager;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -42,44 +43,56 @@ namespace Incantation.Engine.Voxels.Baking
                 var cloneBuffer = AddBuffer<InitializationCloneOffset>(entity);
                 cloneBuffer.EnsureCapacity((int)math.min(cloneCount, int.MaxValue));
 
-                // Determine cubic grid size
-                int cubeSize = (int)math.ceil(math.pow(authoring.count, 1f / 3f));
+                generateCubicCloneOffsets(authoring, cloneBuffer);
+            }
+        }
 
-                // Determine spacing so volumes do not overlap
-                // Use voxel dimensions scaled by VOXEL_SCALE
-                float3 voxelDims = new float3(
-                    authoring.voxelVolumePrebakedAsset.dimensions.x,
-                    authoring.voxelVolumePrebakedAsset.dimensions.y,
-                    authoring.voxelVolumePrebakedAsset.dimensions.z
-                );
+        private void generateCubicCloneOffsets(VoxelVolumePrebakedAssetAuthoring authoring, 
+            DynamicBuffer<InitializationCloneOffset> cloneBuffer)
+        {
+            long cloneCount = authoring.count - 1;
 
-                float3 spacing = voxelDims * GlobalConstants.VOXEL_SCALE;
+            // Determine cubic grid size
+            int cubeSize = (int)math.ceil(math.pow(authoring.count, 1f / 3f));
 
-                long added = 0;
+            // Determine spacing so volumes do not overlap
+            // Use voxel dimensions scaled by VOXEL_SCALE
+            float3 voxelDims = new float3(
+                authoring.voxelVolumePrebakedAsset.dimensions.x,
+                authoring.voxelVolumePrebakedAsset.dimensions.y,
+                authoring.voxelVolumePrebakedAsset.dimensions.z
+            );
 
-                for (int x = 0; x < cubeSize && added < cloneCount; x++)
+            float3 spacingObjSize = voxelDims * GlobalConstants.VOXEL_SCALE;
+            float3 spacingGaps = new float3(authoring.spacing.x, authoring.spacing.y, authoring.spacing.z);
+            float3 spacingTotal = spacingObjSize + spacingGaps;
+
+            float3 worldOffsets = new float3(spacingTotal.x * cubeSize / 2f, spacingTotal.y * cubeSize / 2f, spacingTotal.z * cubeSize / 2f);
+
+            long added = 0;
+
+            for (int x = 0; x < cubeSize && added < cloneCount; x++)
+            {
+                for (int y = 0; y < cubeSize && added < cloneCount; y++)
                 {
-                    for (int y = 0; y < cubeSize && added < cloneCount; y++)
+                    for (int z = 0; z < cubeSize && added < cloneCount; z++)
                     {
-                        for (int z = 0; z < cubeSize && added < cloneCount; z++)
+                        // Skip the origin (that's the original entity)
+                        if (x == 0 && y == 0 && z == 0)
+                            continue;
+
+                        float3 offset = new float3(
+                            x * spacingTotal.x - worldOffsets.x,
+                            y * spacingTotal.y - worldOffsets.y,
+                            z * spacingTotal.z - worldOffsets.z
+                        );
+
+                        cloneBuffer.Add(new InitializationCloneOffset
                         {
-                            // Skip the origin (that's the original entity)
-                            if (x == 0 && y == 0 && z == 0)
-                                continue;
+                            Offset = offset
+                        });
 
-                            float3 offset = new float3(
-                                x * spacing.x,
-                                y * spacing.y,
-                                z * spacing.z
-                            );
-
-                            cloneBuffer.Add(new InitializationCloneOffset
-                            {
-                                Offset = offset
-                            });
-
-                            added++;
-                        }
+                        added++;
                     }
                 }
             }

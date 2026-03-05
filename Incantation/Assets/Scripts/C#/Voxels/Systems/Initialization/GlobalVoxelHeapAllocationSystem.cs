@@ -1,4 +1,5 @@
 ﻿using Incantation.Engine.Voxels.Components;
+using Incantation.Engine.Voxels.Systems;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
@@ -12,11 +13,15 @@ using static UnityEditor.FilePathAttribute;
 namespace Incantation.Engine.Voxels.Components
 {
     /*
-     * Manages addresses / sizes within a conceptual memory heap within the global voxels GPU StructureBuffer.
+     * Manages addresses / sizes within a conceptual memory heap within the a global voxel buffer. These values can be used
+     * on both the CPU and GPU size in order to do any heap management involving per-voxel values. Since this class isn't
+     * tied to any buffer in particular, it can be reused across any per-voxel buffers as needed and all of those buffers
+     * are kept in sync in terms of indices, sizes, etc. This also ensures that when a swap occurs after async GPU buffer
+     * copy, that the same swap happens for CPU buffers as well.
      * 
      * Allocation implemented as requesting new heap space and once a section of memory is carved out and ownership transfers,
-     * flags are set telling the GPU StructuredBuffer manager that it's okay to begin copying data to it. A number
-     * of frames later (settable via GlobalConstants.GPU_BUFFER_UPDATE_SWAP_DELAY_FRAMES), this class will switch
+     * flags are set telling the buffer managers that it's okay to begin copying data to it. A number
+     * of frames later (settable via GlobalConstants.PER_VOXEL_BUFFER_UPDATE_SWAP_DELAY_FRAMES), this class will switch
      * from using the old memory space to the newly allocated one (which is assumed to have all values copied in by now)
      * and free up the old memory space. This is called a "sync".
      * 
@@ -24,7 +29,7 @@ namespace Incantation.Engine.Voxels.Components
      * of heap memory at any given time). Deallocation removes ownership and frees up both the old memory region and any
      * regions in which a sync is currently happening.
      * 
-     * It maintains a set of stats about the state of the heap that can be used for heap monitoring purposes. See GPUHeapStats.
+     * It maintains a set of stats about the state of the heap that can be used for heap monitoring purposes. See PerVoxelHeapStats.
      * 
      * Heap implementation is pretty straight-forward. This class keeps track a tail pointer. Nothing past the tail pointer is
      * allocated if a free region before the tail pointer can be used instead. Free regions are merged if adjascent. On allocating,
@@ -37,20 +42,20 @@ namespace Incantation.Engine.Voxels.Components
      * Data flow Flags:
      * ================
      * 
-     * NeedsGPUReallocation - Set on any entities that are newly-spawned but haven't yet been made to render or interact with
+     * NeedsReallocation - Set on any entities that are newly-spawned but haven't yet been made to render or interact with
      * the physics system. Also set on any entities which have been modified in a way that alters their memory usage. An example
      * would be a voxel volume whose dimensions were reduced so it no longer needs so much memory to store its values.
      * 
-     * NeedsGPUDeallocation - Indicates an intent to free up all memory regions associated with this entity. Used only prior to
+     * NeedsDeallocation - Indicates an intent to free up all memory regions associated with this entity. Used only prior to
      * despawn.
      * 
-     * GPUSyncNeeded - Set to indicate that a new memory region has been allocated and it's okay to start copying data into it.
-     * Once that copy has begun, this system expects GPUSyncInProgress to be set by a downstream process (at which point, it'll
+     * SyncNeeded - Set to indicate that a new memory region has been allocated and it's okay to start copying data into it.
+     * Once that copy has begun, this system expects SyncInProgress to be set by a downstream process (at which point, it'll
      * start updating its frame countdown to switching and freeing up the old memory space).
      */
     [UpdateInGroup(typeof(VoxelVolumeInitializationSystemGroup))]
-    [UpdateAfter(typeof(GPUHeapAllocationSystem))]
-    public partial struct GPUHeapAllocationSystem : ISystem
+    [UpdateAfter(typeof(VoxelVolumeInitialComponentDecoratorSystem))]
+    public partial struct GlobalVoxelHeapAllocationSystem : ISystem
     {
         // Allocation bookkeeping
         private struct Allocation
@@ -127,7 +132,7 @@ namespace Incantation.Engine.Voxels.Components
             allocationsTail = 0;
 
             // Create singleton components
-            state.EntityManager.CreateSingleton<GPUHeapStats>();
+            state.EntityManager.CreateSingleton<GlobalVoxelHeapStats>();
         }
 
         public void OnDestroy(ref SystemState state)
@@ -141,24 +146,24 @@ namespace Incantation.Engine.Voxels.Components
         public void OnUpdate(ref SystemState state)
         {
             // Heap status (for runtime monitoring / debugging)
-            var statsRW = SystemAPI.GetSingletonRW<GPUHeapStats>();
+            var statsRW = SystemAPI.GetSingletonRW<GlobalVoxelHeapStats>();
             ref var stats = ref statsRW.ValueRW;
 
-            updateInProgressGPUSyncs(ref stats, ref state);
             reallocateNewOrModified(ref stats, ref state);
             deallocateDespawning(ref stats, ref state);
+            updateInProgressSyncs(ref stats, ref state);
 
             updateHeapStats(ref stats);
         }
 
-        private void updateInProgressGPUSyncs(ref GPUHeapStats stats, ref SystemState state)
+        private void updateInProgressSyncs(ref GlobalVoxelHeapStats stats, ref SystemState state)
         {
             foreach (var (heapState, offsetMaterialProp, volumeId, entity)
                 in SystemAPI.Query<
-                        RefRW<GPUVoxelHeapState>,
+                        RefRW<GlobalVoxelHeapState>,
                         RefRW<VoxelVolumeOffsetMaterialProperty>,
                         RefRO<VoxelVolumeID>>()
-                    .WithAll<GPUSyncInProgress>()
+                    .WithAll<GlobalVoxelSyncInProgress>()
                     .WithEntityAccess())
             {
                 ref var componentHeapState = ref heapState.ValueRW;
@@ -205,19 +210,19 @@ namespace Incantation.Engine.Voxels.Components
                     offsetMaterialProp.ValueRW.Value = componentHeapState.Offset;
 
                     // Toggles
-                    SystemAPI.SetComponentEnabled<GPUSyncInProgress>(entity, false);
+                    SystemAPI.SetComponentEnabled<GlobalVoxelSyncInProgress>(entity, false);
                 }
             }
         }
 
-        private void reallocateNewOrModified(ref GPUHeapStats stats, ref SystemState state)
+        private void reallocateNewOrModified(ref GlobalVoxelHeapStats stats, ref SystemState state)
         {
             foreach (var (heapState, volumeId, entity)
                 in SystemAPI.Query<
-                        RefRW<GPUVoxelHeapState>,
+                        RefRW<GlobalVoxelHeapState>,
                         RefRO<VoxelVolumeID>>()
-                    .WithAll<NeedsGPUReallocation>()
-                    .WithNone<GPUSyncInProgress>()
+                    .WithAll<NeedsGlobalVoxelReallocation>()
+                    .WithNone<GlobalVoxelSyncInProgress>()
                     .WithEntityAccess())
             {
                 ulong hash = volumeId.ValueRO.Hash;
@@ -329,7 +334,7 @@ namespace Incantation.Engine.Voxels.Components
                         // Exceeded voxel memory size
                         else
                         {
-                            throw new Exception("Attempt to allocate voxels but ran out of GPU voxel buffer memory. Try increasing GlobalConstants.MAX_GLOBAL_VOXELS.");
+                            throw new Exception("Attempt to allocate voxels but ran out of voxel buffer memory. Try increasing GlobalConstants.MAX_GLOBAL_VOXELS.");
                         }
                     }
                 }
@@ -340,21 +345,21 @@ namespace Incantation.Engine.Voxels.Components
                 componentHeapState.SyncInProgressOffset = newAlloc.offset;
                 componentHeapState.SyncInProgressSize = newAlloc.size;
                 componentHeapState.SyncInProgressShared = useSharedMemSpace || (clones > 0);
-                componentHeapState.FramesUntilSyncSwap = GlobalConstants.GPU_BUFFER_UPDATE_SWAP_DELAY_FRAMES;
+                componentHeapState.FramesUntilSyncSwap = GlobalConstants.PER_VOXEL_BUFFER_UPDATE_SWAP_DELAY_FRAMES + 1;
 
                 // Toggles
-                SystemAPI.SetComponentEnabled<NeedsGPUReallocation>(entity, false);
-                SystemAPI.SetComponentEnabled<GPUSyncNeeded>(entity, true);
+                SystemAPI.SetComponentEnabled<NeedsGlobalVoxelReallocation>(entity, false);
+                SystemAPI.SetComponentEnabled<GlobalVoxelSyncNeeded>(entity, true);
             }
         }
 
-        private void deallocateDespawning(ref GPUHeapStats stats, ref SystemState state)
+        private void deallocateDespawning(ref GlobalVoxelHeapStats stats, ref SystemState state)
         {
             foreach (var (heapState, volumeId, entity)
                 in SystemAPI.Query<
-                        RefRW<GPUVoxelHeapState>,
+                        RefRW<GlobalVoxelHeapState>,
                         RefRO<VoxelVolumeID>>()
-                    .WithAll<NeedsGPUDeallocation>()
+                    .WithAll<NeedsGlobalVoxelDeallocation>()
                     .WithEntityAccess())
             {
                 ulong hash = volumeId.ValueRO.Hash;
@@ -373,7 +378,7 @@ namespace Incantation.Engine.Voxels.Components
                 componentHeapState.FramesUntilSyncSwap = 0;
 
                 // Toggles
-                SystemAPI.SetComponentEnabled<NeedsGPUDeallocation>(entity, false);
+                SystemAPI.SetComponentEnabled<NeedsGlobalVoxelDeallocation>(entity, false);
                 SystemAPI.SetComponentEnabled<NeedsDeletion>(entity, true);
             }
         }
@@ -405,7 +410,7 @@ namespace Incantation.Engine.Voxels.Components
         }
 
         private void deallocateUpToIndex(int maxAllocationIndex, ulong hash, 
-            ref GPUHeapStats stats, ref SystemState state)
+            ref GlobalVoxelHeapStats stats, ref SystemState state)
         {
             AllocationKey key = new AllocationKey();
             key.hash = hash;
@@ -514,7 +519,7 @@ namespace Incantation.Engine.Voxels.Components
             }
         }
 
-        private void updateHeapStats(ref GPUHeapStats stats)
+        private void updateHeapStats(ref GlobalVoxelHeapStats stats)
         {
             stats.TotalAllocations = allocations.Count();
             stats.UniqueAllocations = stats.TotalAllocations - stats.SharedAllocations;
