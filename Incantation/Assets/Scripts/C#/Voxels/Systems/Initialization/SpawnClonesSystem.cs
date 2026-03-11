@@ -51,6 +51,9 @@ namespace Incantation.Engine.Voxels.Systems
                         ));
 
                 }
+
+                // Delete the placeholder prefab component (make sure a clone at that position is present if you want to preserve it)
+                ecb.DestroyEntity(entity);
             }
 
             ecb.Playback(state.EntityManager);

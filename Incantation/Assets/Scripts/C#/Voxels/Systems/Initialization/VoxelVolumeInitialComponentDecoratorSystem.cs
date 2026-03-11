@@ -62,12 +62,9 @@ namespace Incantation.Engine.Voxels.Systems
                 });
 
                 // --- Material properties ---
-                ecb.AddComponent(entity, new GridDimensionsMaterialProperty
-                {
-                    Value = new float3(dims.x, dims.y, dims.z)
-                });
+                ecb.AddComponent(entity, new GridDimensions(dims.x, dims.y, dims.z));
 
-                ecb.AddComponent(entity, new VoxelVolumeOffsetMaterialProperty
+                ecb.AddComponent(entity, new OriginalVoxelVolumeGlobalOffset
                 {
                     Value = 0
                 });

@@ -98,8 +98,8 @@ public static class VoxelVolumeInstanceCreator
         material.SetTexture("_HitTexture", hitTexture);
 
         // --- Grid Dimensions ---
-        material.SetVector("_GridDimensions",
-            new Vector4(width, height, depth, 0f));
+        uint gridDimsAsUint = ((uint)width) << 16 | ((uint)height) << 8 | ((uint)depth);
+        material.SetFloat("_GridDimensions", math.asfloat(gridDimsAsUint));
 
         // --- Enable Editor Mode keyword ---
         material.EnableKeyword("_EDITOR_MODE");

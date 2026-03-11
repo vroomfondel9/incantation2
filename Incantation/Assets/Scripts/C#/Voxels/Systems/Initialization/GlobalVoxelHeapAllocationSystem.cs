@@ -158,10 +158,10 @@ namespace Incantation.Engine.Voxels.Components
 
         private void updateInProgressSyncs(ref GlobalVoxelHeapStats stats, ref SystemState state)
         {
-            foreach (var (heapState, offsetMaterialProp, volumeId, entity)
+            foreach (var (heapState, voxVolOffset, volumeId, entity)
                 in SystemAPI.Query<
                         RefRW<GlobalVoxelHeapState>,
-                        RefRW<VoxelVolumeOffsetMaterialProperty>,
+                        RefRW<OriginalVoxelVolumeGlobalOffset>,
                         RefRO<VoxelVolumeID>>()
                     .WithAll<GlobalVoxelSyncInProgress>()
                     .WithEntityAccess())
@@ -207,7 +207,7 @@ namespace Incantation.Engine.Voxels.Components
                     componentHeapState.Allocated = true;
 
                     // Set material property to new region
-                    offsetMaterialProp.ValueRW.Value = componentHeapState.Offset;
+                    voxVolOffset.ValueRW.Value = componentHeapState.Offset;
 
                     // Toggles
                     SystemAPI.SetComponentEnabled<GlobalVoxelSyncInProgress>(entity, false);

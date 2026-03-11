@@ -15,13 +15,12 @@ void RayMarch_float(
     UnityTexture3D Texture,
     float3 EntryPointObj,
     float3 RayDirObj,
-    float3 GridDimensions,
-	float VoxelVolumeOffset,
+    float GridDimensions,
+	float OriginalVoxelVolumeGlobalOffset,
     out float Hit,
     out float3 UV,
 	out float3 Voxel,
-	out float VoxelValue1,
-	out float VoxelValue2,
+	out float VoxelValue,
     out float3 NormalsObj,
 	out float RaymarchIterations,
 	out float RaymarchSamples,
@@ -33,12 +32,18 @@ void RayMarch_float(
 	Voxel = float3(0, 0, 0);
     NormalsObj = float3(0,0,0);
 	VoxelSurfaceStrikeLocObj = float3(0, 0, 0);
-	VoxelValue1 = 0.0;
-	VoxelValue2 = 0.0;
+	VoxelValue = 0.0;
 	RaymarchIterations = 0.0;
 	RaymarchSamples = 0.0;
 	
-    float3 voxelSize = 1.0 / GridDimensions;
+	uint reinterpretedGridDimBits = asuint(GridDimensions);
+	int3 gridDims = int3(
+		(reinterpretedGridDimBits >> 16) & 0xFF, 
+		(reinterpretedGridDimBits >> 8)  & 0xFF, 
+		reinterpretedGridDimBits & 0xFF
+	);
+	
+    float3 voxelSize = 1.0 / gridDims;
 	float3 halfVoxelSize = voxelSize * 0.5;
 	float halfSmallestDim = min(halfVoxelSize.x, min(halfVoxelSize.y, halfVoxelSize.z));
 
@@ -52,8 +57,6 @@ void RayMarch_float(
 		// Early exit for cases on the very edge of bounding box where tracing inside at all puts OOB
 		return;
 	}
-
-    int3 gridDims = int3(GridDimensions);
 
     // Convert to voxel coordinates
     float3 gridPos = (pos - VOLUME_MIN) * gridDims;
@@ -106,8 +109,9 @@ void RayMarch_float(
 			float normalizedValue = LOAD_TEXTURE3D(Texture, voxel);
 			unsignedValue = (uint)round(normalizedValue * 255.0);
 		#else
-			uint indexInVolume = voxel.x + GridDimensions.x * voxel.y + GridDimensions.x * GridDimensions.y * voxel.z;
-			uint globalIndex = ((uint)VoxelVolumeOffset) + indexInVolume;
+			uint indexStartOfVolume = asuint(OriginalVoxelVolumeGlobalOffset);
+			uint indexInVolume = voxel.x + gridDims.x * voxel.y + gridDims.x * gridDims.y * voxel.z;
+			uint globalIndex = indexStartOfVolume + indexInVolume;
 			unsignedValue = (uint) _Voxels[globalIndex];
 		#endif
 		
@@ -122,8 +126,7 @@ void RayMarch_float(
 			float3 uv = voxelCenter / (VOLUME_MAX - VOLUME_MIN);
             UV = uv;
 			Voxel = voxel;
-			VoxelValue1 = (float) ((unsignedValue >> 16) & 0xFFFF);
-			VoxelValue2 = (float) (unsignedValue & 0xFFFF);
+			VoxelValue = asfloat(unsignedValue);
 			
 			VoxelSurfaceStrikeLocObj = pos + rayDir * t;
 

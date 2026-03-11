@@ -38,7 +38,7 @@ namespace Incantation.Engine.Voxels.Baking
             // Add clone offsets in a cube if count > 1
             if (authoring.count > 1)
             {
-                long cloneCount = authoring.count - 1;
+                long cloneCount = authoring.count;
 
                 var cloneBuffer = AddBuffer<InitializationCloneOffset>(entity);
                 cloneBuffer.EnsureCapacity((int)math.min(cloneCount, int.MaxValue));
@@ -50,7 +50,7 @@ namespace Incantation.Engine.Voxels.Baking
         private void generateCubicCloneOffsets(VoxelVolumePrebakedAssetAuthoring authoring, 
             DynamicBuffer<InitializationCloneOffset> cloneBuffer)
         {
-            long cloneCount = authoring.count - 1;
+            long cloneCount = authoring.count;
 
             // Determine cubic grid size
             int cubeSize = (int)math.ceil(math.pow(authoring.count, 1f / 3f));
@@ -67,7 +67,7 @@ namespace Incantation.Engine.Voxels.Baking
             float3 spacingGaps = new float3(authoring.spacing.x, authoring.spacing.y, authoring.spacing.z);
             float3 spacingTotal = spacingObjSize + spacingGaps;
 
-            float3 worldOffsets = new float3(spacingTotal.x * cubeSize / 2f, spacingTotal.y * cubeSize / 2f, spacingTotal.z * cubeSize / 2f);
+            float3 worldOffsets = spacingTotal * ((cubeSize - 1) * 0.5f);
 
             long added = 0;
 
@@ -77,15 +77,7 @@ namespace Incantation.Engine.Voxels.Baking
                 {
                     for (int z = 0; z < cubeSize && added < cloneCount; z++)
                     {
-                        // Skip the origin (that's the original entity)
-                        if (x == 0 && y == 0 && z == 0)
-                            continue;
-
-                        float3 offset = new float3(
-                            x * spacingTotal.x - worldOffsets.x,
-                            y * spacingTotal.y - worldOffsets.y,
-                            z * spacingTotal.z - worldOffsets.z
-                        );
+                        float3 offset = new float3(x, y, z) * spacingTotal - worldOffsets;
 
                         cloneBuffer.Add(new InitializationCloneOffset
                         {

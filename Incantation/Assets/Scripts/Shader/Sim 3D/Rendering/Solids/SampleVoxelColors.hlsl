@@ -3,15 +3,14 @@
 
 void ColorSample_float(
     UnityTexture3D ColorTexture,
-	float3 GridDimensions,
-	float VoxelVolumeOffset,
+	float GridDimensions,
+	float OriginalVoxelVolumeGlobalOffset,
 	float DebugVisualizationMode,
 	float3 EntryPointObj,
 	float Hit,
 	float3 UV,
 	float3 Voxel,
-	float VoxelValue1,
-	float VoxelValue2,
+	float VoxelValue,
 	float3 NormalsObj,
 	float RaymarchIterations,
 	float RaymarchSamples,
@@ -27,8 +26,7 @@ void ColorSample_float(
 	Dpth = Depth;
 	NormsObj = NormalsObj;
 	
-	//Hack needed to bypass loss of floating point precision by splitting it into two non-lossy floats to avoid resampling a value I already got from memory
-	uint voxelValue = (((uint) VoxelValue1) << 16) | (((uint) VoxelValue2));
+	uint voxelValueUint = asuint(VoxelValue);
 	
 	// Base color (sampled even in debug visualization mode to maintain same performance characteristics)
 	#ifdef _EDITOR_MODE
@@ -39,9 +37,9 @@ void ColorSample_float(
 		);
 		RGB = sample.rgb;
 	#else
-		uint r = (voxelValue >> 8) & 0xFF;
-		uint g = (voxelValue >> 16) & 0xFF;
-		uint b = (voxelValue >> 24) & 0xFF;
+		uint r = (voxelValueUint >> 8) & 0xFF;
+		uint g = (voxelValueUint >> 16) & 0xFF;
+		uint b = (voxelValueUint >> 24) & 0xFF;
 		
 		RGB = float3(r / 255.0, g / 255.0, b / 255.0);
 	#endif
@@ -54,8 +52,15 @@ void ColorSample_float(
 		{
 			float borderWidth = 0.02;
 			
-			float maxDim = max(GridDimensions.x, max(GridDimensions.y, GridDimensions.z));
-			float3 objectScale = float3(GridDimensions.x / maxDim, GridDimensions.y / maxDim, GridDimensions.z / maxDim);
+			uint reinterpretedGridDimBits = asuint(GridDimensions);
+			int3 gridDims = int3(
+				(reinterpretedGridDimBits >> 16) & 0xFF, 
+				(reinterpretedGridDimBits >> 8)  & 0xFF, 
+				reinterpretedGridDimBits & 0xFF
+			);
+			
+			float maxDim = max(gridDims.x, max(gridDims.y, gridDims.z));
+			float3 objectScale = float3(gridDims.x / maxDim, gridDims.y / maxDim, gridDims.z / maxDim);
 			float3 borderWidthObj = borderWidth / objectScale;
 			
 			float3 entryUVOnBorder = (abs(EntryPointObj) > (0.5 - borderWidthObj));
@@ -107,7 +112,7 @@ void ColorSample_float(
 		//Voxel Topology (Corners = Red, Edges = Green, Faces = Blue, Unclassified/Interior = Black)
 		else if (DebugVisualizationMode == 4)
 		{
-			uint topologyMask = voxelValue & 0xFF;
+			uint topologyMask = voxelValueUint & 0xFF;
 			topologyMask = (uint) max((((int)topologyMask) - 63) * -1, 0);
 			
 			//Corner if:

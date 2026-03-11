@@ -3,9 +3,9 @@ Shader "Shader Graphs/VoxVolShader"
     Properties
     {
         [NoScaleOffset]_ColorTexture("ColorTexture", 3D) = "white" {}
-        _GridDimensions("GridDimensions", Vector) = (0, 0, 0, 0)
         [NoScaleOffset]_HitTexture("HitTexture", 3D) = "white" {}
-        _VoxelVolumeOffset("VoxelVolumeOffset", Float) = 0
+        _GridDimensions("GridDimensions", Float) = 0
+        _OriginalVoxelVolumeGlobalOffset("OriginalVoxelVolumeGlobalOffset", Float) = 0
         [HideInInspector]_QueueOffset("_QueueOffset", Float) = 0
         [HideInInspector]_QueueControl("_QueueControl", Float) = -1
         [HideInInspector][NoScaleOffset]unity_Lightmaps("unity_Lightmaps", 2DArray) = "" {}
@@ -90,7 +90,7 @@ Shader "Shader Graphs/VoxVolShader"
         #endif
         
         #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-        #define _NORMAL_DROPOFF_TS 1
+        #define _NORMAL_DROPOFF_OS 1
         #endif
         
         #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
@@ -245,16 +245,10 @@ Shader "Shader Graphs/VoxVolShader"
         struct SurfaceDescriptionInputs
         {
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
+             float3 ObjectSpaceNormal;
+            #endif
+            #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
              float3 WorldSpaceNormal;
-            #endif
-            #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-             float3 TangentSpaceNormal;
-            #endif
-            #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-             float3 WorldSpaceTangent;
-            #endif
-            #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-             float3 WorldSpaceBiTangent;
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
              float3 ObjectSpacePosition;
@@ -409,23 +403,23 @@ Shader "Shader Graphs/VoxVolShader"
         
         // Graph Properties
         CBUFFER_START(UnityPerMaterial)
-        float3 _GridDimensions;
-        float _VoxelVolumeOffset;
+        float _OriginalVoxelVolumeGlobalOffset;
+        float _GridDimensions;
         CBUFFER_END
         
         #if defined(DOTS_INSTANCING_ON)
         // DOTS instancing definitions
         UNITY_DOTS_INSTANCING_START(MaterialPropertyMetadata)
-            UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float3, _GridDimensions)
-            UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _VoxelVolumeOffset)
+            UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _OriginalVoxelVolumeGlobalOffset)
+            UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _GridDimensions)
         UNITY_DOTS_INSTANCING_END(MaterialPropertyMetadata)
         // DOTS instancing usage macros
         #define UNITY_ACCESS_HYBRID_INSTANCED_PROP(var, type) UNITY_ACCESS_DOTS_INSTANCED_PROP_WITH_DEFAULT(type, var)
         #elif defined(UNITY_INSTANCING_ENABLED)
         // Unity instancing definitions
         UNITY_INSTANCING_BUFFER_START(SGPerInstanceData)
-            UNITY_DEFINE_INSTANCED_PROP(float3, _GridDimensions)
-            UNITY_DEFINE_INSTANCED_PROP(float, _VoxelVolumeOffset)
+            UNITY_DEFINE_INSTANCED_PROP(float, _OriginalVoxelVolumeGlobalOffset)
+            UNITY_DEFINE_INSTANCED_PROP(float, _GridDimensions)
         UNITY_INSTANCING_BUFFER_END(SGPerInstanceData)
         // Unity instancing usage macros
         #define UNITY_ACCESS_HYBRID_INSTANCED_PROP(var, type) UNITY_ACCESS_INSTANCED_PROP(SGPerInstanceData, var)
@@ -506,7 +500,7 @@ Shader "Shader Graphs/VoxVolShader"
         struct SurfaceDescription
         {
             float3 BaseColor;
-            float3 NormalTS;
+            float3 NormalOS;
             float3 Emission;
             float Metallic;
             float Smoothness;
@@ -522,10 +516,10 @@ Shader "Shader Graphs/VoxVolShader"
             UnityTexture3D _Property_06bb097371af41259d80159681d32a0a_Out_0_Texture3D = UnityBuildTexture3DStruct(_ColorTexture);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-            float3 _Property_cd276a4b141e4d98a1a126c23ca03a78_Out_0_Vector3 = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_GridDimensions, float3);
+            float _Property_1d6b0b00f9c8443db67b1c1b35f3e665_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_GridDimensions, float);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-            float _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_VoxelVolumeOffset, float);
+            float _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_OriginalVoxelVolumeGlobalOffset, float);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float = _DebugVisualizationMode;
@@ -546,22 +540,21 @@ Shader "Shader Graphs/VoxVolShader"
             Unity_Normalize_float3(_Subtract_19a79dc5a7bb4cf1ad28edf977cf69ad_Out_2_Vector3, _Normalize_86c390669ae146108e1d97a3cedb27f9_Out_1_Vector3);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-            float3 _Property_3c81ef39695847f4961b2e444d7e66d6_Out_0_Vector3 = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_GridDimensions, float3);
+            float _Property_6d96091c47584fd4878914b7d2d06519_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_GridDimensions, float);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-            float _Property_c1d4284113834aad934275b87db1f016_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_VoxelVolumeOffset, float);
+            float _Property_c1d4284113834aad934275b87db1f016_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_OriginalVoxelVolumeGlobalOffset, float);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float;
             float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3;
             float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3;
-            float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue1_9_Float;
-            float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue2_13_Float;
+            float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float;
             float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3;
             float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float;
             float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float;
             float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3;
-            RayMarch_float(_Property_edd0109cf6e343169b6506ca080157da_Out_0_Texture3D, IN.ObjectSpacePosition, _Normalize_86c390669ae146108e1d97a3cedb27f9_Out_1_Vector3, _Property_3c81ef39695847f4961b2e444d7e66d6_Out_0_Vector3, _Property_c1d4284113834aad934275b87db1f016_Out_0_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue1_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue2_13_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3);
+            RayMarch_float(_Property_edd0109cf6e343169b6506ca080157da_Out_0_Texture3D, IN.ObjectSpacePosition, _Normalize_86c390669ae146108e1d97a3cedb27f9_Out_1_Vector3, _Property_6d96091c47584fd4878914b7d2d06519_Out_0_Float, _Property_c1d4284113834aad934275b87db1f016_Out_0_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float3 _Transform_5583fc4bd1bb424781c368e490f9362e_Out_1_Vector3;
@@ -576,22 +569,10 @@ Shader "Shader Graphs/VoxVolShader"
             float _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float;
             float _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float;
             float3 _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3;
-            ColorSample_float(_Property_06bb097371af41259d80159681d32a0a_Out_0_Texture3D, _Property_cd276a4b141e4d98a1a126c23ca03a78_Out_0_Vector3, _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float, _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float, IN.ObjectSpacePosition, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue1_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue2_13_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float, _CalculateDepthCustomFunction_89a9fbc79e6948f9a0e3c0730343a8e3_DepthValue_1_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3);
-            #endif
-            #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-            float3 _Transform_530350f0ad83424f9713cfe51bf4b50c_Out_1_Vector3;
-            {
-                // Converting Direction from Object to Tangent via world space
-                float3 world;
-                world = TransformObjectToWorldDir(_ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3.xyz, false);
-                {
-                    float3x3 tangentTransform = float3x3(IN.WorldSpaceTangent, IN.WorldSpaceBiTangent, IN.WorldSpaceNormal);
-                    _Transform_530350f0ad83424f9713cfe51bf4b50c_Out_1_Vector3 = TransformWorldToTangentDir(world, tangentTransform, true);
-                }
-            }
+            ColorSample_float(_Property_06bb097371af41259d80159681d32a0a_Out_0_Texture3D, _Property_1d6b0b00f9c8443db67b1c1b35f3e665_Out_0_Float, _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float, _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float, IN.ObjectSpacePosition, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float, _CalculateDepthCustomFunction_89a9fbc79e6948f9a0e3c0730343a8e3_DepthValue_1_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3);
             #endif
             surface.BaseColor = _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3;
-            surface.NormalTS = _Transform_530350f0ad83424f9713cfe51bf4b50c_Out_1_Vector3;
+            surface.NormalOS = _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3;
             surface.Emission = float3(0, 0, 0);
             surface.Metallic = float(0);
             surface.Smoothness = float(0.5);
@@ -657,47 +638,15 @@ Shader "Shader Graphs/VoxVolShader"
         #endif
         
         
-        #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-        // use bitangent on the fly like in hdrp
-        #endif
-        
-        #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-        // IMPORTANT! If we ever support Flip on double sided materials ensure bitangent and tangent are NOT flipped.
-        #endif
-        
-        #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-        float crossSign = (input.tangentWS.w > 0.0 ? 1.0 : -1.0)* GetOddNegativeScale();
-        #endif
-        
-        #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-        float3 bitang = crossSign * cross(input.normalWS.xyz, input.tangentWS.xyz);
-        #endif
-        
         
         #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
         output.WorldSpaceNormal = renormFactor * input.normalWS.xyz;      // we want a unit length Normal Vector node in shader graph
         #endif
         
         #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-        output.TangentSpaceNormal = float3(0.0f, 0.0f, 1.0f);
+        output.ObjectSpaceNormal = normalize(mul(output.WorldSpaceNormal, (float3x3) UNITY_MATRIX_M));           // transposed multiplication by inverse matrix to handle normal scale
         #endif
         
-        
-        #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-        // to pr               eserve mikktspace compliance we use same scale renormFactor as was used on the normal.
-        #endif
-        
-        #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-        // This                is explained in section 2.2 in "surface gradient based bump mapping framework"
-        #endif
-        
-        #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-        output.WorldSpaceTangent = renormFactor * input.tangentWS.xyz;
-        #endif
-        
-        #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-        output.WorldSpaceBiTangent = renormFactor * bitang;
-        #endif
         
         
         #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
@@ -796,7 +745,7 @@ Shader "Shader Graphs/VoxVolShader"
         #endif
         
         #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-        #define _NORMAL_DROPOFF_TS 1
+        #define _NORMAL_DROPOFF_OS 1
         #endif
         
         #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
@@ -951,16 +900,10 @@ Shader "Shader Graphs/VoxVolShader"
         struct SurfaceDescriptionInputs
         {
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
+             float3 ObjectSpaceNormal;
+            #endif
+            #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
              float3 WorldSpaceNormal;
-            #endif
-            #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-             float3 TangentSpaceNormal;
-            #endif
-            #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-             float3 WorldSpaceTangent;
-            #endif
-            #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-             float3 WorldSpaceBiTangent;
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
              float3 ObjectSpacePosition;
@@ -1115,23 +1058,23 @@ Shader "Shader Graphs/VoxVolShader"
         
         // Graph Properties
         CBUFFER_START(UnityPerMaterial)
-        float3 _GridDimensions;
-        float _VoxelVolumeOffset;
+        float _OriginalVoxelVolumeGlobalOffset;
+        float _GridDimensions;
         CBUFFER_END
         
         #if defined(DOTS_INSTANCING_ON)
         // DOTS instancing definitions
         UNITY_DOTS_INSTANCING_START(MaterialPropertyMetadata)
-            UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float3, _GridDimensions)
-            UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _VoxelVolumeOffset)
+            UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _OriginalVoxelVolumeGlobalOffset)
+            UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _GridDimensions)
         UNITY_DOTS_INSTANCING_END(MaterialPropertyMetadata)
         // DOTS instancing usage macros
         #define UNITY_ACCESS_HYBRID_INSTANCED_PROP(var, type) UNITY_ACCESS_DOTS_INSTANCED_PROP_WITH_DEFAULT(type, var)
         #elif defined(UNITY_INSTANCING_ENABLED)
         // Unity instancing definitions
         UNITY_INSTANCING_BUFFER_START(SGPerInstanceData)
-            UNITY_DEFINE_INSTANCED_PROP(float3, _GridDimensions)
-            UNITY_DEFINE_INSTANCED_PROP(float, _VoxelVolumeOffset)
+            UNITY_DEFINE_INSTANCED_PROP(float, _OriginalVoxelVolumeGlobalOffset)
+            UNITY_DEFINE_INSTANCED_PROP(float, _GridDimensions)
         UNITY_INSTANCING_BUFFER_END(SGPerInstanceData)
         // Unity instancing usage macros
         #define UNITY_ACCESS_HYBRID_INSTANCED_PROP(var, type) UNITY_ACCESS_INSTANCED_PROP(SGPerInstanceData, var)
@@ -1212,7 +1155,7 @@ Shader "Shader Graphs/VoxVolShader"
         struct SurfaceDescription
         {
             float3 BaseColor;
-            float3 NormalTS;
+            float3 NormalOS;
             float3 Emission;
             float Metallic;
             float Smoothness;
@@ -1228,10 +1171,10 @@ Shader "Shader Graphs/VoxVolShader"
             UnityTexture3D _Property_06bb097371af41259d80159681d32a0a_Out_0_Texture3D = UnityBuildTexture3DStruct(_ColorTexture);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-            float3 _Property_cd276a4b141e4d98a1a126c23ca03a78_Out_0_Vector3 = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_GridDimensions, float3);
+            float _Property_1d6b0b00f9c8443db67b1c1b35f3e665_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_GridDimensions, float);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-            float _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_VoxelVolumeOffset, float);
+            float _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_OriginalVoxelVolumeGlobalOffset, float);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float = _DebugVisualizationMode;
@@ -1252,22 +1195,21 @@ Shader "Shader Graphs/VoxVolShader"
             Unity_Normalize_float3(_Subtract_19a79dc5a7bb4cf1ad28edf977cf69ad_Out_2_Vector3, _Normalize_86c390669ae146108e1d97a3cedb27f9_Out_1_Vector3);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-            float3 _Property_3c81ef39695847f4961b2e444d7e66d6_Out_0_Vector3 = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_GridDimensions, float3);
+            float _Property_6d96091c47584fd4878914b7d2d06519_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_GridDimensions, float);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-            float _Property_c1d4284113834aad934275b87db1f016_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_VoxelVolumeOffset, float);
+            float _Property_c1d4284113834aad934275b87db1f016_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_OriginalVoxelVolumeGlobalOffset, float);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float;
             float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3;
             float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3;
-            float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue1_9_Float;
-            float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue2_13_Float;
+            float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float;
             float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3;
             float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float;
             float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float;
             float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3;
-            RayMarch_float(_Property_edd0109cf6e343169b6506ca080157da_Out_0_Texture3D, IN.ObjectSpacePosition, _Normalize_86c390669ae146108e1d97a3cedb27f9_Out_1_Vector3, _Property_3c81ef39695847f4961b2e444d7e66d6_Out_0_Vector3, _Property_c1d4284113834aad934275b87db1f016_Out_0_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue1_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue2_13_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3);
+            RayMarch_float(_Property_edd0109cf6e343169b6506ca080157da_Out_0_Texture3D, IN.ObjectSpacePosition, _Normalize_86c390669ae146108e1d97a3cedb27f9_Out_1_Vector3, _Property_6d96091c47584fd4878914b7d2d06519_Out_0_Float, _Property_c1d4284113834aad934275b87db1f016_Out_0_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float3 _Transform_5583fc4bd1bb424781c368e490f9362e_Out_1_Vector3;
@@ -1282,22 +1224,10 @@ Shader "Shader Graphs/VoxVolShader"
             float _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float;
             float _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float;
             float3 _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3;
-            ColorSample_float(_Property_06bb097371af41259d80159681d32a0a_Out_0_Texture3D, _Property_cd276a4b141e4d98a1a126c23ca03a78_Out_0_Vector3, _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float, _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float, IN.ObjectSpacePosition, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue1_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue2_13_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float, _CalculateDepthCustomFunction_89a9fbc79e6948f9a0e3c0730343a8e3_DepthValue_1_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3);
-            #endif
-            #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-            float3 _Transform_530350f0ad83424f9713cfe51bf4b50c_Out_1_Vector3;
-            {
-                // Converting Direction from Object to Tangent via world space
-                float3 world;
-                world = TransformObjectToWorldDir(_ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3.xyz, false);
-                {
-                    float3x3 tangentTransform = float3x3(IN.WorldSpaceTangent, IN.WorldSpaceBiTangent, IN.WorldSpaceNormal);
-                    _Transform_530350f0ad83424f9713cfe51bf4b50c_Out_1_Vector3 = TransformWorldToTangentDir(world, tangentTransform, true);
-                }
-            }
+            ColorSample_float(_Property_06bb097371af41259d80159681d32a0a_Out_0_Texture3D, _Property_1d6b0b00f9c8443db67b1c1b35f3e665_Out_0_Float, _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float, _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float, IN.ObjectSpacePosition, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float, _CalculateDepthCustomFunction_89a9fbc79e6948f9a0e3c0730343a8e3_DepthValue_1_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3);
             #endif
             surface.BaseColor = _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3;
-            surface.NormalTS = _Transform_530350f0ad83424f9713cfe51bf4b50c_Out_1_Vector3;
+            surface.NormalOS = _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3;
             surface.Emission = float3(0, 0, 0);
             surface.Metallic = float(0);
             surface.Smoothness = float(0.5);
@@ -1363,47 +1293,15 @@ Shader "Shader Graphs/VoxVolShader"
         #endif
         
         
-        #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-        // use bitangent on the fly like in hdrp
-        #endif
-        
-        #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-        // IMPORTANT! If we ever support Flip on double sided materials ensure bitangent and tangent are NOT flipped.
-        #endif
-        
-        #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-        float crossSign = (input.tangentWS.w > 0.0 ? 1.0 : -1.0)* GetOddNegativeScale();
-        #endif
-        
-        #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-        float3 bitang = crossSign * cross(input.normalWS.xyz, input.tangentWS.xyz);
-        #endif
-        
         
         #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
         output.WorldSpaceNormal = renormFactor * input.normalWS.xyz;      // we want a unit length Normal Vector node in shader graph
         #endif
         
         #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-        output.TangentSpaceNormal = float3(0.0f, 0.0f, 1.0f);
+        output.ObjectSpaceNormal = normalize(mul(output.WorldSpaceNormal, (float3x3) UNITY_MATRIX_M));           // transposed multiplication by inverse matrix to handle normal scale
         #endif
         
-        
-        #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-        // to pr               eserve mikktspace compliance we use same scale renormFactor as was used on the normal.
-        #endif
-        
-        #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-        // This                is explained in section 2.2 in "surface gradient based bump mapping framework"
-        #endif
-        
-        #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-        output.WorldSpaceTangent = renormFactor * input.tangentWS.xyz;
-        #endif
-        
-        #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-        output.WorldSpaceBiTangent = renormFactor * bitang;
-        #endif
         
         
         #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
@@ -1487,7 +1385,7 @@ Shader "Shader Graphs/VoxVolShader"
         #endif
         
         #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-        #define _NORMAL_DROPOFF_TS 1
+        #define _NORMAL_DROPOFF_OS 1
         #endif
         
         #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
@@ -1672,23 +1570,23 @@ Shader "Shader Graphs/VoxVolShader"
         
         // Graph Properties
         CBUFFER_START(UnityPerMaterial)
-        float3 _GridDimensions;
-        float _VoxelVolumeOffset;
+        float _OriginalVoxelVolumeGlobalOffset;
+        float _GridDimensions;
         CBUFFER_END
         
         #if defined(DOTS_INSTANCING_ON)
         // DOTS instancing definitions
         UNITY_DOTS_INSTANCING_START(MaterialPropertyMetadata)
-            UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float3, _GridDimensions)
-            UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _VoxelVolumeOffset)
+            UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _OriginalVoxelVolumeGlobalOffset)
+            UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _GridDimensions)
         UNITY_DOTS_INSTANCING_END(MaterialPropertyMetadata)
         // DOTS instancing usage macros
         #define UNITY_ACCESS_HYBRID_INSTANCED_PROP(var, type) UNITY_ACCESS_DOTS_INSTANCED_PROP_WITH_DEFAULT(type, var)
         #elif defined(UNITY_INSTANCING_ENABLED)
         // Unity instancing definitions
         UNITY_INSTANCING_BUFFER_START(SGPerInstanceData)
-            UNITY_DEFINE_INSTANCED_PROP(float3, _GridDimensions)
-            UNITY_DEFINE_INSTANCED_PROP(float, _VoxelVolumeOffset)
+            UNITY_DEFINE_INSTANCED_PROP(float, _OriginalVoxelVolumeGlobalOffset)
+            UNITY_DEFINE_INSTANCED_PROP(float, _GridDimensions)
         UNITY_INSTANCING_BUFFER_END(SGPerInstanceData)
         // Unity instancing usage macros
         #define UNITY_ACCESS_HYBRID_INSTANCED_PROP(var, type) UNITY_ACCESS_INSTANCED_PROP(SGPerInstanceData, var)
@@ -1779,10 +1677,10 @@ Shader "Shader Graphs/VoxVolShader"
             UnityTexture3D _Property_06bb097371af41259d80159681d32a0a_Out_0_Texture3D = UnityBuildTexture3DStruct(_ColorTexture);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-            float3 _Property_cd276a4b141e4d98a1a126c23ca03a78_Out_0_Vector3 = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_GridDimensions, float3);
+            float _Property_1d6b0b00f9c8443db67b1c1b35f3e665_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_GridDimensions, float);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-            float _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_VoxelVolumeOffset, float);
+            float _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_OriginalVoxelVolumeGlobalOffset, float);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float = _DebugVisualizationMode;
@@ -1803,22 +1701,21 @@ Shader "Shader Graphs/VoxVolShader"
             Unity_Normalize_float3(_Subtract_19a79dc5a7bb4cf1ad28edf977cf69ad_Out_2_Vector3, _Normalize_86c390669ae146108e1d97a3cedb27f9_Out_1_Vector3);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-            float3 _Property_3c81ef39695847f4961b2e444d7e66d6_Out_0_Vector3 = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_GridDimensions, float3);
+            float _Property_6d96091c47584fd4878914b7d2d06519_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_GridDimensions, float);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-            float _Property_c1d4284113834aad934275b87db1f016_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_VoxelVolumeOffset, float);
+            float _Property_c1d4284113834aad934275b87db1f016_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_OriginalVoxelVolumeGlobalOffset, float);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float;
             float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3;
             float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3;
-            float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue1_9_Float;
-            float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue2_13_Float;
+            float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float;
             float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3;
             float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float;
             float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float;
             float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3;
-            RayMarch_float(_Property_edd0109cf6e343169b6506ca080157da_Out_0_Texture3D, IN.ObjectSpacePosition, _Normalize_86c390669ae146108e1d97a3cedb27f9_Out_1_Vector3, _Property_3c81ef39695847f4961b2e444d7e66d6_Out_0_Vector3, _Property_c1d4284113834aad934275b87db1f016_Out_0_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue1_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue2_13_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3);
+            RayMarch_float(_Property_edd0109cf6e343169b6506ca080157da_Out_0_Texture3D, IN.ObjectSpacePosition, _Normalize_86c390669ae146108e1d97a3cedb27f9_Out_1_Vector3, _Property_6d96091c47584fd4878914b7d2d06519_Out_0_Float, _Property_c1d4284113834aad934275b87db1f016_Out_0_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float3 _Transform_5583fc4bd1bb424781c368e490f9362e_Out_1_Vector3;
@@ -1833,7 +1730,7 @@ Shader "Shader Graphs/VoxVolShader"
             float _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float;
             float _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float;
             float3 _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3;
-            ColorSample_float(_Property_06bb097371af41259d80159681d32a0a_Out_0_Texture3D, _Property_cd276a4b141e4d98a1a126c23ca03a78_Out_0_Vector3, _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float, _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float, IN.ObjectSpacePosition, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue1_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue2_13_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float, _CalculateDepthCustomFunction_89a9fbc79e6948f9a0e3c0730343a8e3_DepthValue_1_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3);
+            ColorSample_float(_Property_06bb097371af41259d80159681d32a0a_Out_0_Texture3D, _Property_1d6b0b00f9c8443db67b1c1b35f3e665_Out_0_Float, _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float, _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float, IN.ObjectSpacePosition, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float, _CalculateDepthCustomFunction_89a9fbc79e6948f9a0e3c0730343a8e3_DepthValue_1_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3);
             #endif
             surface.Alpha = _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float;
             surface.AlphaClipThreshold = _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float;
@@ -1966,7 +1863,7 @@ Shader "Shader Graphs/VoxVolShader"
         #endif
         
         #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-        #define _NORMAL_DROPOFF_TS 1
+        #define _NORMAL_DROPOFF_OS 1
         #endif
         
         #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
@@ -2080,16 +1977,10 @@ Shader "Shader Graphs/VoxVolShader"
         struct SurfaceDescriptionInputs
         {
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
+             float3 ObjectSpaceNormal;
+            #endif
+            #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
              float3 WorldSpaceNormal;
-            #endif
-            #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-             float3 TangentSpaceNormal;
-            #endif
-            #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-             float3 WorldSpaceTangent;
-            #endif
-            #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-             float3 WorldSpaceBiTangent;
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
              float3 ObjectSpacePosition;
@@ -2195,23 +2086,23 @@ Shader "Shader Graphs/VoxVolShader"
         
         // Graph Properties
         CBUFFER_START(UnityPerMaterial)
-        float3 _GridDimensions;
-        float _VoxelVolumeOffset;
+        float _OriginalVoxelVolumeGlobalOffset;
+        float _GridDimensions;
         CBUFFER_END
         
         #if defined(DOTS_INSTANCING_ON)
         // DOTS instancing definitions
         UNITY_DOTS_INSTANCING_START(MaterialPropertyMetadata)
-            UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float3, _GridDimensions)
-            UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _VoxelVolumeOffset)
+            UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _OriginalVoxelVolumeGlobalOffset)
+            UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _GridDimensions)
         UNITY_DOTS_INSTANCING_END(MaterialPropertyMetadata)
         // DOTS instancing usage macros
         #define UNITY_ACCESS_HYBRID_INSTANCED_PROP(var, type) UNITY_ACCESS_DOTS_INSTANCED_PROP_WITH_DEFAULT(type, var)
         #elif defined(UNITY_INSTANCING_ENABLED)
         // Unity instancing definitions
         UNITY_INSTANCING_BUFFER_START(SGPerInstanceData)
-            UNITY_DEFINE_INSTANCED_PROP(float3, _GridDimensions)
-            UNITY_DEFINE_INSTANCED_PROP(float, _VoxelVolumeOffset)
+            UNITY_DEFINE_INSTANCED_PROP(float, _OriginalVoxelVolumeGlobalOffset)
+            UNITY_DEFINE_INSTANCED_PROP(float, _GridDimensions)
         UNITY_INSTANCING_BUFFER_END(SGPerInstanceData)
         // Unity instancing usage macros
         #define UNITY_ACCESS_HYBRID_INSTANCED_PROP(var, type) UNITY_ACCESS_INSTANCED_PROP(SGPerInstanceData, var)
@@ -2291,7 +2182,7 @@ Shader "Shader Graphs/VoxVolShader"
         // Graph Pixel
         struct SurfaceDescription
         {
-            float3 NormalTS;
+            float3 NormalOS;
             float Alpha;
             float AlphaClipThreshold;
         };
@@ -2303,10 +2194,10 @@ Shader "Shader Graphs/VoxVolShader"
             UnityTexture3D _Property_06bb097371af41259d80159681d32a0a_Out_0_Texture3D = UnityBuildTexture3DStruct(_ColorTexture);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-            float3 _Property_cd276a4b141e4d98a1a126c23ca03a78_Out_0_Vector3 = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_GridDimensions, float3);
+            float _Property_1d6b0b00f9c8443db67b1c1b35f3e665_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_GridDimensions, float);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-            float _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_VoxelVolumeOffset, float);
+            float _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_OriginalVoxelVolumeGlobalOffset, float);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float = _DebugVisualizationMode;
@@ -2327,22 +2218,21 @@ Shader "Shader Graphs/VoxVolShader"
             Unity_Normalize_float3(_Subtract_19a79dc5a7bb4cf1ad28edf977cf69ad_Out_2_Vector3, _Normalize_86c390669ae146108e1d97a3cedb27f9_Out_1_Vector3);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-            float3 _Property_3c81ef39695847f4961b2e444d7e66d6_Out_0_Vector3 = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_GridDimensions, float3);
+            float _Property_6d96091c47584fd4878914b7d2d06519_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_GridDimensions, float);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-            float _Property_c1d4284113834aad934275b87db1f016_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_VoxelVolumeOffset, float);
+            float _Property_c1d4284113834aad934275b87db1f016_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_OriginalVoxelVolumeGlobalOffset, float);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float;
             float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3;
             float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3;
-            float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue1_9_Float;
-            float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue2_13_Float;
+            float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float;
             float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3;
             float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float;
             float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float;
             float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3;
-            RayMarch_float(_Property_edd0109cf6e343169b6506ca080157da_Out_0_Texture3D, IN.ObjectSpacePosition, _Normalize_86c390669ae146108e1d97a3cedb27f9_Out_1_Vector3, _Property_3c81ef39695847f4961b2e444d7e66d6_Out_0_Vector3, _Property_c1d4284113834aad934275b87db1f016_Out_0_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue1_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue2_13_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3);
+            RayMarch_float(_Property_edd0109cf6e343169b6506ca080157da_Out_0_Texture3D, IN.ObjectSpacePosition, _Normalize_86c390669ae146108e1d97a3cedb27f9_Out_1_Vector3, _Property_6d96091c47584fd4878914b7d2d06519_Out_0_Float, _Property_c1d4284113834aad934275b87db1f016_Out_0_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float3 _Transform_5583fc4bd1bb424781c368e490f9362e_Out_1_Vector3;
@@ -2357,21 +2247,9 @@ Shader "Shader Graphs/VoxVolShader"
             float _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float;
             float _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float;
             float3 _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3;
-            ColorSample_float(_Property_06bb097371af41259d80159681d32a0a_Out_0_Texture3D, _Property_cd276a4b141e4d98a1a126c23ca03a78_Out_0_Vector3, _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float, _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float, IN.ObjectSpacePosition, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue1_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue2_13_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float, _CalculateDepthCustomFunction_89a9fbc79e6948f9a0e3c0730343a8e3_DepthValue_1_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3);
+            ColorSample_float(_Property_06bb097371af41259d80159681d32a0a_Out_0_Texture3D, _Property_1d6b0b00f9c8443db67b1c1b35f3e665_Out_0_Float, _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float, _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float, IN.ObjectSpacePosition, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float, _CalculateDepthCustomFunction_89a9fbc79e6948f9a0e3c0730343a8e3_DepthValue_1_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3);
             #endif
-            #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-            float3 _Transform_530350f0ad83424f9713cfe51bf4b50c_Out_1_Vector3;
-            {
-                // Converting Direction from Object to Tangent via world space
-                float3 world;
-                world = TransformObjectToWorldDir(_ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3.xyz, false);
-                {
-                    float3x3 tangentTransform = float3x3(IN.WorldSpaceTangent, IN.WorldSpaceBiTangent, IN.WorldSpaceNormal);
-                    _Transform_530350f0ad83424f9713cfe51bf4b50c_Out_1_Vector3 = TransformWorldToTangentDir(world, tangentTransform, true);
-                }
-            }
-            #endif
-            surface.NormalTS = _Transform_530350f0ad83424f9713cfe51bf4b50c_Out_1_Vector3;
+            surface.NormalOS = _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3;
             surface.Alpha = _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float;
             surface.AlphaClipThreshold = _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float;
             return surface;
@@ -2433,47 +2311,15 @@ Shader "Shader Graphs/VoxVolShader"
         #endif
         
         
-        #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-        // use bitangent on the fly like in hdrp
-        #endif
-        
-        #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-        // IMPORTANT! If we ever support Flip on double sided materials ensure bitangent and tangent are NOT flipped.
-        #endif
-        
-        #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-        float crossSign = (input.tangentWS.w > 0.0 ? 1.0 : -1.0)* GetOddNegativeScale();
-        #endif
-        
-        #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-        float3 bitang = crossSign * cross(input.normalWS.xyz, input.tangentWS.xyz);
-        #endif
-        
         
         #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
         output.WorldSpaceNormal = renormFactor * input.normalWS.xyz;      // we want a unit length Normal Vector node in shader graph
         #endif
         
         #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-        output.TangentSpaceNormal = float3(0.0f, 0.0f, 1.0f);
+        output.ObjectSpaceNormal = normalize(mul(output.WorldSpaceNormal, (float3x3) UNITY_MATRIX_M));           // transposed multiplication by inverse matrix to handle normal scale
         #endif
         
-        
-        #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-        // to pr               eserve mikktspace compliance we use same scale renormFactor as was used on the normal.
-        #endif
-        
-        #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-        // This                is explained in section 2.2 in "surface gradient based bump mapping framework"
-        #endif
-        
-        #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-        output.WorldSpaceTangent = renormFactor * input.tangentWS.xyz;
-        #endif
-        
-        #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-        output.WorldSpaceBiTangent = renormFactor * bitang;
-        #endif
         
         
         #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
@@ -2552,7 +2398,7 @@ Shader "Shader Graphs/VoxVolShader"
         #endif
         
         #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-        #define _NORMAL_DROPOFF_TS 1
+        #define _NORMAL_DROPOFF_OS 1
         #endif
         
         #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
@@ -2795,23 +2641,23 @@ Shader "Shader Graphs/VoxVolShader"
         
         // Graph Properties
         CBUFFER_START(UnityPerMaterial)
-        float3 _GridDimensions;
-        float _VoxelVolumeOffset;
+        float _OriginalVoxelVolumeGlobalOffset;
+        float _GridDimensions;
         CBUFFER_END
         
         #if defined(DOTS_INSTANCING_ON)
         // DOTS instancing definitions
         UNITY_DOTS_INSTANCING_START(MaterialPropertyMetadata)
-            UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float3, _GridDimensions)
-            UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _VoxelVolumeOffset)
+            UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _OriginalVoxelVolumeGlobalOffset)
+            UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _GridDimensions)
         UNITY_DOTS_INSTANCING_END(MaterialPropertyMetadata)
         // DOTS instancing usage macros
         #define UNITY_ACCESS_HYBRID_INSTANCED_PROP(var, type) UNITY_ACCESS_DOTS_INSTANCED_PROP_WITH_DEFAULT(type, var)
         #elif defined(UNITY_INSTANCING_ENABLED)
         // Unity instancing definitions
         UNITY_INSTANCING_BUFFER_START(SGPerInstanceData)
-            UNITY_DEFINE_INSTANCED_PROP(float3, _GridDimensions)
-            UNITY_DEFINE_INSTANCED_PROP(float, _VoxelVolumeOffset)
+            UNITY_DEFINE_INSTANCED_PROP(float, _OriginalVoxelVolumeGlobalOffset)
+            UNITY_DEFINE_INSTANCED_PROP(float, _GridDimensions)
         UNITY_INSTANCING_BUFFER_END(SGPerInstanceData)
         // Unity instancing usage macros
         #define UNITY_ACCESS_HYBRID_INSTANCED_PROP(var, type) UNITY_ACCESS_INSTANCED_PROP(SGPerInstanceData, var)
@@ -2904,10 +2750,10 @@ Shader "Shader Graphs/VoxVolShader"
             UnityTexture3D _Property_06bb097371af41259d80159681d32a0a_Out_0_Texture3D = UnityBuildTexture3DStruct(_ColorTexture);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-            float3 _Property_cd276a4b141e4d98a1a126c23ca03a78_Out_0_Vector3 = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_GridDimensions, float3);
+            float _Property_1d6b0b00f9c8443db67b1c1b35f3e665_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_GridDimensions, float);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-            float _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_VoxelVolumeOffset, float);
+            float _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_OriginalVoxelVolumeGlobalOffset, float);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float = _DebugVisualizationMode;
@@ -2928,22 +2774,21 @@ Shader "Shader Graphs/VoxVolShader"
             Unity_Normalize_float3(_Subtract_19a79dc5a7bb4cf1ad28edf977cf69ad_Out_2_Vector3, _Normalize_86c390669ae146108e1d97a3cedb27f9_Out_1_Vector3);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-            float3 _Property_3c81ef39695847f4961b2e444d7e66d6_Out_0_Vector3 = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_GridDimensions, float3);
+            float _Property_6d96091c47584fd4878914b7d2d06519_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_GridDimensions, float);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-            float _Property_c1d4284113834aad934275b87db1f016_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_VoxelVolumeOffset, float);
+            float _Property_c1d4284113834aad934275b87db1f016_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_OriginalVoxelVolumeGlobalOffset, float);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float;
             float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3;
             float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3;
-            float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue1_9_Float;
-            float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue2_13_Float;
+            float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float;
             float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3;
             float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float;
             float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float;
             float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3;
-            RayMarch_float(_Property_edd0109cf6e343169b6506ca080157da_Out_0_Texture3D, IN.ObjectSpacePosition, _Normalize_86c390669ae146108e1d97a3cedb27f9_Out_1_Vector3, _Property_3c81ef39695847f4961b2e444d7e66d6_Out_0_Vector3, _Property_c1d4284113834aad934275b87db1f016_Out_0_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue1_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue2_13_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3);
+            RayMarch_float(_Property_edd0109cf6e343169b6506ca080157da_Out_0_Texture3D, IN.ObjectSpacePosition, _Normalize_86c390669ae146108e1d97a3cedb27f9_Out_1_Vector3, _Property_6d96091c47584fd4878914b7d2d06519_Out_0_Float, _Property_c1d4284113834aad934275b87db1f016_Out_0_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float3 _Transform_5583fc4bd1bb424781c368e490f9362e_Out_1_Vector3;
@@ -2958,7 +2803,7 @@ Shader "Shader Graphs/VoxVolShader"
             float _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float;
             float _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float;
             float3 _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3;
-            ColorSample_float(_Property_06bb097371af41259d80159681d32a0a_Out_0_Texture3D, _Property_cd276a4b141e4d98a1a126c23ca03a78_Out_0_Vector3, _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float, _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float, IN.ObjectSpacePosition, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue1_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue2_13_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float, _CalculateDepthCustomFunction_89a9fbc79e6948f9a0e3c0730343a8e3_DepthValue_1_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3);
+            ColorSample_float(_Property_06bb097371af41259d80159681d32a0a_Out_0_Texture3D, _Property_1d6b0b00f9c8443db67b1c1b35f3e665_Out_0_Float, _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float, _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float, IN.ObjectSpacePosition, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float, _CalculateDepthCustomFunction_89a9fbc79e6948f9a0e3c0730343a8e3_DepthValue_1_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3);
             #endif
             surface.BaseColor = _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3;
             surface.Emission = float3(0, 0, 0);
@@ -3090,7 +2935,7 @@ Shader "Shader Graphs/VoxVolShader"
         #endif
         
         #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-        #define _NORMAL_DROPOFF_TS 1
+        #define _NORMAL_DROPOFF_OS 1
         #endif
         
         #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
@@ -3277,23 +3122,23 @@ Shader "Shader Graphs/VoxVolShader"
         
         // Graph Properties
         CBUFFER_START(UnityPerMaterial)
-        float3 _GridDimensions;
-        float _VoxelVolumeOffset;
+        float _OriginalVoxelVolumeGlobalOffset;
+        float _GridDimensions;
         CBUFFER_END
         
         #if defined(DOTS_INSTANCING_ON)
         // DOTS instancing definitions
         UNITY_DOTS_INSTANCING_START(MaterialPropertyMetadata)
-            UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float3, _GridDimensions)
-            UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _VoxelVolumeOffset)
+            UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _OriginalVoxelVolumeGlobalOffset)
+            UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _GridDimensions)
         UNITY_DOTS_INSTANCING_END(MaterialPropertyMetadata)
         // DOTS instancing usage macros
         #define UNITY_ACCESS_HYBRID_INSTANCED_PROP(var, type) UNITY_ACCESS_DOTS_INSTANCED_PROP_WITH_DEFAULT(type, var)
         #elif defined(UNITY_INSTANCING_ENABLED)
         // Unity instancing definitions
         UNITY_INSTANCING_BUFFER_START(SGPerInstanceData)
-            UNITY_DEFINE_INSTANCED_PROP(float3, _GridDimensions)
-            UNITY_DEFINE_INSTANCED_PROP(float, _VoxelVolumeOffset)
+            UNITY_DEFINE_INSTANCED_PROP(float, _OriginalVoxelVolumeGlobalOffset)
+            UNITY_DEFINE_INSTANCED_PROP(float, _GridDimensions)
         UNITY_INSTANCING_BUFFER_END(SGPerInstanceData)
         // Unity instancing usage macros
         #define UNITY_ACCESS_HYBRID_INSTANCED_PROP(var, type) UNITY_ACCESS_INSTANCED_PROP(SGPerInstanceData, var)
@@ -3384,10 +3229,10 @@ Shader "Shader Graphs/VoxVolShader"
             UnityTexture3D _Property_06bb097371af41259d80159681d32a0a_Out_0_Texture3D = UnityBuildTexture3DStruct(_ColorTexture);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-            float3 _Property_cd276a4b141e4d98a1a126c23ca03a78_Out_0_Vector3 = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_GridDimensions, float3);
+            float _Property_1d6b0b00f9c8443db67b1c1b35f3e665_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_GridDimensions, float);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-            float _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_VoxelVolumeOffset, float);
+            float _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_OriginalVoxelVolumeGlobalOffset, float);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float = _DebugVisualizationMode;
@@ -3408,22 +3253,21 @@ Shader "Shader Graphs/VoxVolShader"
             Unity_Normalize_float3(_Subtract_19a79dc5a7bb4cf1ad28edf977cf69ad_Out_2_Vector3, _Normalize_86c390669ae146108e1d97a3cedb27f9_Out_1_Vector3);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-            float3 _Property_3c81ef39695847f4961b2e444d7e66d6_Out_0_Vector3 = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_GridDimensions, float3);
+            float _Property_6d96091c47584fd4878914b7d2d06519_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_GridDimensions, float);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-            float _Property_c1d4284113834aad934275b87db1f016_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_VoxelVolumeOffset, float);
+            float _Property_c1d4284113834aad934275b87db1f016_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_OriginalVoxelVolumeGlobalOffset, float);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float;
             float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3;
             float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3;
-            float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue1_9_Float;
-            float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue2_13_Float;
+            float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float;
             float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3;
             float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float;
             float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float;
             float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3;
-            RayMarch_float(_Property_edd0109cf6e343169b6506ca080157da_Out_0_Texture3D, IN.ObjectSpacePosition, _Normalize_86c390669ae146108e1d97a3cedb27f9_Out_1_Vector3, _Property_3c81ef39695847f4961b2e444d7e66d6_Out_0_Vector3, _Property_c1d4284113834aad934275b87db1f016_Out_0_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue1_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue2_13_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3);
+            RayMarch_float(_Property_edd0109cf6e343169b6506ca080157da_Out_0_Texture3D, IN.ObjectSpacePosition, _Normalize_86c390669ae146108e1d97a3cedb27f9_Out_1_Vector3, _Property_6d96091c47584fd4878914b7d2d06519_Out_0_Float, _Property_c1d4284113834aad934275b87db1f016_Out_0_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float3 _Transform_5583fc4bd1bb424781c368e490f9362e_Out_1_Vector3;
@@ -3438,7 +3282,7 @@ Shader "Shader Graphs/VoxVolShader"
             float _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float;
             float _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float;
             float3 _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3;
-            ColorSample_float(_Property_06bb097371af41259d80159681d32a0a_Out_0_Texture3D, _Property_cd276a4b141e4d98a1a126c23ca03a78_Out_0_Vector3, _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float, _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float, IN.ObjectSpacePosition, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue1_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue2_13_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float, _CalculateDepthCustomFunction_89a9fbc79e6948f9a0e3c0730343a8e3_DepthValue_1_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3);
+            ColorSample_float(_Property_06bb097371af41259d80159681d32a0a_Out_0_Texture3D, _Property_1d6b0b00f9c8443db67b1c1b35f3e665_Out_0_Float, _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float, _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float, IN.ObjectSpacePosition, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float, _CalculateDepthCustomFunction_89a9fbc79e6948f9a0e3c0730343a8e3_DepthValue_1_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3);
             #endif
             surface.Alpha = _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float;
             surface.AlphaClipThreshold = _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float;
@@ -3568,7 +3412,7 @@ Shader "Shader Graphs/VoxVolShader"
         #endif
         
         #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-        #define _NORMAL_DROPOFF_TS 1
+        #define _NORMAL_DROPOFF_OS 1
         #endif
         
         #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
@@ -3755,23 +3599,23 @@ Shader "Shader Graphs/VoxVolShader"
         
         // Graph Properties
         CBUFFER_START(UnityPerMaterial)
-        float3 _GridDimensions;
-        float _VoxelVolumeOffset;
+        float _OriginalVoxelVolumeGlobalOffset;
+        float _GridDimensions;
         CBUFFER_END
         
         #if defined(DOTS_INSTANCING_ON)
         // DOTS instancing definitions
         UNITY_DOTS_INSTANCING_START(MaterialPropertyMetadata)
-            UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float3, _GridDimensions)
-            UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _VoxelVolumeOffset)
+            UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _OriginalVoxelVolumeGlobalOffset)
+            UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _GridDimensions)
         UNITY_DOTS_INSTANCING_END(MaterialPropertyMetadata)
         // DOTS instancing usage macros
         #define UNITY_ACCESS_HYBRID_INSTANCED_PROP(var, type) UNITY_ACCESS_DOTS_INSTANCED_PROP_WITH_DEFAULT(type, var)
         #elif defined(UNITY_INSTANCING_ENABLED)
         // Unity instancing definitions
         UNITY_INSTANCING_BUFFER_START(SGPerInstanceData)
-            UNITY_DEFINE_INSTANCED_PROP(float3, _GridDimensions)
-            UNITY_DEFINE_INSTANCED_PROP(float, _VoxelVolumeOffset)
+            UNITY_DEFINE_INSTANCED_PROP(float, _OriginalVoxelVolumeGlobalOffset)
+            UNITY_DEFINE_INSTANCED_PROP(float, _GridDimensions)
         UNITY_INSTANCING_BUFFER_END(SGPerInstanceData)
         // Unity instancing usage macros
         #define UNITY_ACCESS_HYBRID_INSTANCED_PROP(var, type) UNITY_ACCESS_INSTANCED_PROP(SGPerInstanceData, var)
@@ -3862,10 +3706,10 @@ Shader "Shader Graphs/VoxVolShader"
             UnityTexture3D _Property_06bb097371af41259d80159681d32a0a_Out_0_Texture3D = UnityBuildTexture3DStruct(_ColorTexture);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-            float3 _Property_cd276a4b141e4d98a1a126c23ca03a78_Out_0_Vector3 = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_GridDimensions, float3);
+            float _Property_1d6b0b00f9c8443db67b1c1b35f3e665_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_GridDimensions, float);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-            float _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_VoxelVolumeOffset, float);
+            float _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_OriginalVoxelVolumeGlobalOffset, float);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float = _DebugVisualizationMode;
@@ -3886,22 +3730,21 @@ Shader "Shader Graphs/VoxVolShader"
             Unity_Normalize_float3(_Subtract_19a79dc5a7bb4cf1ad28edf977cf69ad_Out_2_Vector3, _Normalize_86c390669ae146108e1d97a3cedb27f9_Out_1_Vector3);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-            float3 _Property_3c81ef39695847f4961b2e444d7e66d6_Out_0_Vector3 = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_GridDimensions, float3);
+            float _Property_6d96091c47584fd4878914b7d2d06519_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_GridDimensions, float);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-            float _Property_c1d4284113834aad934275b87db1f016_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_VoxelVolumeOffset, float);
+            float _Property_c1d4284113834aad934275b87db1f016_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_OriginalVoxelVolumeGlobalOffset, float);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float;
             float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3;
             float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3;
-            float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue1_9_Float;
-            float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue2_13_Float;
+            float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float;
             float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3;
             float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float;
             float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float;
             float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3;
-            RayMarch_float(_Property_edd0109cf6e343169b6506ca080157da_Out_0_Texture3D, IN.ObjectSpacePosition, _Normalize_86c390669ae146108e1d97a3cedb27f9_Out_1_Vector3, _Property_3c81ef39695847f4961b2e444d7e66d6_Out_0_Vector3, _Property_c1d4284113834aad934275b87db1f016_Out_0_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue1_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue2_13_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3);
+            RayMarch_float(_Property_edd0109cf6e343169b6506ca080157da_Out_0_Texture3D, IN.ObjectSpacePosition, _Normalize_86c390669ae146108e1d97a3cedb27f9_Out_1_Vector3, _Property_6d96091c47584fd4878914b7d2d06519_Out_0_Float, _Property_c1d4284113834aad934275b87db1f016_Out_0_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float3 _Transform_5583fc4bd1bb424781c368e490f9362e_Out_1_Vector3;
@@ -3916,7 +3759,7 @@ Shader "Shader Graphs/VoxVolShader"
             float _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float;
             float _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float;
             float3 _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3;
-            ColorSample_float(_Property_06bb097371af41259d80159681d32a0a_Out_0_Texture3D, _Property_cd276a4b141e4d98a1a126c23ca03a78_Out_0_Vector3, _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float, _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float, IN.ObjectSpacePosition, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue1_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue2_13_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float, _CalculateDepthCustomFunction_89a9fbc79e6948f9a0e3c0730343a8e3_DepthValue_1_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3);
+            ColorSample_float(_Property_06bb097371af41259d80159681d32a0a_Out_0_Texture3D, _Property_1d6b0b00f9c8443db67b1c1b35f3e665_Out_0_Float, _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float, _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float, IN.ObjectSpacePosition, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float, _CalculateDepthCustomFunction_89a9fbc79e6948f9a0e3c0730343a8e3_DepthValue_1_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3);
             #endif
             surface.Alpha = _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float;
             surface.AlphaClipThreshold = _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float;
@@ -4049,7 +3892,7 @@ Shader "Shader Graphs/VoxVolShader"
         #endif
         
         #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-        #define _NORMAL_DROPOFF_TS 1
+        #define _NORMAL_DROPOFF_OS 1
         #endif
         
         #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
@@ -4233,23 +4076,23 @@ Shader "Shader Graphs/VoxVolShader"
         
         // Graph Properties
         CBUFFER_START(UnityPerMaterial)
-        float3 _GridDimensions;
-        float _VoxelVolumeOffset;
+        float _OriginalVoxelVolumeGlobalOffset;
+        float _GridDimensions;
         CBUFFER_END
         
         #if defined(DOTS_INSTANCING_ON)
         // DOTS instancing definitions
         UNITY_DOTS_INSTANCING_START(MaterialPropertyMetadata)
-            UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float3, _GridDimensions)
-            UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _VoxelVolumeOffset)
+            UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _OriginalVoxelVolumeGlobalOffset)
+            UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _GridDimensions)
         UNITY_DOTS_INSTANCING_END(MaterialPropertyMetadata)
         // DOTS instancing usage macros
         #define UNITY_ACCESS_HYBRID_INSTANCED_PROP(var, type) UNITY_ACCESS_DOTS_INSTANCED_PROP_WITH_DEFAULT(type, var)
         #elif defined(UNITY_INSTANCING_ENABLED)
         // Unity instancing definitions
         UNITY_INSTANCING_BUFFER_START(SGPerInstanceData)
-            UNITY_DEFINE_INSTANCED_PROP(float3, _GridDimensions)
-            UNITY_DEFINE_INSTANCED_PROP(float, _VoxelVolumeOffset)
+            UNITY_DEFINE_INSTANCED_PROP(float, _OriginalVoxelVolumeGlobalOffset)
+            UNITY_DEFINE_INSTANCED_PROP(float, _GridDimensions)
         UNITY_INSTANCING_BUFFER_END(SGPerInstanceData)
         // Unity instancing usage macros
         #define UNITY_ACCESS_HYBRID_INSTANCED_PROP(var, type) UNITY_ACCESS_INSTANCED_PROP(SGPerInstanceData, var)
@@ -4341,10 +4184,10 @@ Shader "Shader Graphs/VoxVolShader"
             UnityTexture3D _Property_06bb097371af41259d80159681d32a0a_Out_0_Texture3D = UnityBuildTexture3DStruct(_ColorTexture);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-            float3 _Property_cd276a4b141e4d98a1a126c23ca03a78_Out_0_Vector3 = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_GridDimensions, float3);
+            float _Property_1d6b0b00f9c8443db67b1c1b35f3e665_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_GridDimensions, float);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-            float _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_VoxelVolumeOffset, float);
+            float _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_OriginalVoxelVolumeGlobalOffset, float);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float = _DebugVisualizationMode;
@@ -4365,22 +4208,21 @@ Shader "Shader Graphs/VoxVolShader"
             Unity_Normalize_float3(_Subtract_19a79dc5a7bb4cf1ad28edf977cf69ad_Out_2_Vector3, _Normalize_86c390669ae146108e1d97a3cedb27f9_Out_1_Vector3);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-            float3 _Property_3c81ef39695847f4961b2e444d7e66d6_Out_0_Vector3 = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_GridDimensions, float3);
+            float _Property_6d96091c47584fd4878914b7d2d06519_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_GridDimensions, float);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
-            float _Property_c1d4284113834aad934275b87db1f016_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_VoxelVolumeOffset, float);
+            float _Property_c1d4284113834aad934275b87db1f016_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_OriginalVoxelVolumeGlobalOffset, float);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float;
             float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3;
             float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3;
-            float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue1_9_Float;
-            float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue2_13_Float;
+            float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float;
             float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3;
             float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float;
             float _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float;
             float3 _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3;
-            RayMarch_float(_Property_edd0109cf6e343169b6506ca080157da_Out_0_Texture3D, IN.ObjectSpacePosition, _Normalize_86c390669ae146108e1d97a3cedb27f9_Out_1_Vector3, _Property_3c81ef39695847f4961b2e444d7e66d6_Out_0_Vector3, _Property_c1d4284113834aad934275b87db1f016_Out_0_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue1_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue2_13_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3);
+            RayMarch_float(_Property_edd0109cf6e343169b6506ca080157da_Out_0_Texture3D, IN.ObjectSpacePosition, _Normalize_86c390669ae146108e1d97a3cedb27f9_Out_1_Vector3, _Property_6d96091c47584fd4878914b7d2d06519_Out_0_Float, _Property_c1d4284113834aad934275b87db1f016_Out_0_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelSurfaceStrikeLocObj_8_Vector3);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float3 _Transform_5583fc4bd1bb424781c368e490f9362e_Out_1_Vector3;
@@ -4395,7 +4237,7 @@ Shader "Shader Graphs/VoxVolShader"
             float _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float;
             float _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float;
             float3 _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3;
-            ColorSample_float(_Property_06bb097371af41259d80159681d32a0a_Out_0_Texture3D, _Property_cd276a4b141e4d98a1a126c23ca03a78_Out_0_Vector3, _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float, _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float, IN.ObjectSpacePosition, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue1_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue2_13_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float, _CalculateDepthCustomFunction_89a9fbc79e6948f9a0e3c0730343a8e3_DepthValue_1_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3);
+            ColorSample_float(_Property_06bb097371af41259d80159681d32a0a_Out_0_Texture3D, _Property_1d6b0b00f9c8443db67b1c1b35f3e665_Out_0_Float, _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float, _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float, IN.ObjectSpacePosition, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float, _CalculateDepthCustomFunction_89a9fbc79e6948f9a0e3c0730343a8e3_DepthValue_1_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3);
             #endif
             surface.BaseColor = _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3;
             surface.Alpha = _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float;
