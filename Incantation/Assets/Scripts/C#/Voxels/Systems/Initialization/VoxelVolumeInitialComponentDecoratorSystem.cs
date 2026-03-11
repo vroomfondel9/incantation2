@@ -38,28 +38,17 @@ namespace Incantation.Engine.Voxels.Systems
         {
             var ecb = new EntityCommandBuffer(Unity.Collections.Allocator.Temp);
 
-            // Query: entities with OriginalVoxelVolumeID but without GPUVoxelHeapState
             foreach (var (gridDimensions, matMeshInfo, entity) in SystemAPI.Query<
                 RefRO<GridDimensions>,
                 RefRW<MaterialMeshInfo>>()
-                         .WithNone<GlobalVoxelHeapState>()
+                         .WithAll<InitializationColorTopologyPackedVoxel>()
                          .WithEntityAccess())
             {
                 // --- Add GPUVoxelHeapState ---
                 var dims = gridDimensions.ValueRO.XYZ;
                 uint size = dims.x * dims.y * dims.z;
 
-                ecb.AddComponent(entity, new GlobalVoxelHeapState
-                {
-                    Offset = 0,
-                    SyncInProgressOffset = 0,
-                    Size = size,
-                    SyncInProgressSize = 0,
-                    Shared = false,
-                    SyncInProgressShared = false,
-                    Allocated = false,
-                    FramesUntilSyncSwap = 0,
-                });
+                ecb.AddComponent(entity, new OriginalDimensions(dims.x, dims.y, dims.z));
 
                 // --- Material properties ---
                 ecb.AddComponent(entity, new OriginalVoxelVolumeGlobalOffset
@@ -68,20 +57,8 @@ namespace Incantation.Engine.Voxels.Systems
                 });
 
                 // --- Enableables ---
-                ecb.AddComponent<NeedsGlobalVoxelReallocation>(entity);
-                ecb.SetComponentEnabled<NeedsGlobalVoxelReallocation>(entity, true);
-
-                ecb.AddComponent<NeedsGlobalVoxelDeallocation>(entity);
-                ecb.SetComponentEnabled<NeedsGlobalVoxelDeallocation>(entity, false);
-
-                ecb.AddComponent<GlobalVoxelSyncNeeded>(entity);
-                ecb.SetComponentEnabled<GlobalVoxelSyncNeeded>(entity, false);
-
-                ecb.AddComponent<GlobalVoxelSyncInProgress>(entity);
-                ecb.SetComponentEnabled<GlobalVoxelSyncInProgress>(entity, false);
-
-                ecb.AddComponent<NeedsDeletion>(entity);
-                ecb.SetComponentEnabled<NeedsDeletion>(entity, false);
+                ecb.AddComponent<NeedsOriginalVoxelDeallocation>(entity);
+                ecb.SetComponentEnabled<NeedsOriginalVoxelDeallocation>(entity, false);
 
                 // Hack to fix GPU instancing because Entitles Graphics is dumb
                 matMeshInfo.ValueRW.Material = -1;

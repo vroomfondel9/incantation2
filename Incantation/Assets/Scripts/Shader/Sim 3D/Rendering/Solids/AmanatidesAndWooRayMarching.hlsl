@@ -2,7 +2,7 @@
 #define VOXEL_DDA_INCLUDED
 
 #ifndef _EDITOR_MODE
-	StructuredBuffer<uint> _Voxels;
+	StructuredBuffer<uint> _OriginalVoxels;
 #endif
 
 static const float EPSILON = 1e-5;
@@ -112,7 +112,7 @@ void RayMarch_float(
 			uint indexStartOfVolume = asuint(OriginalVoxelVolumeGlobalOffset);
 			uint indexInVolume = voxel.x + gridDims.x * voxel.y + gridDims.x * gridDims.y * voxel.z;
 			uint globalIndex = indexStartOfVolume + indexInVolume;
-			unsignedValue = (uint) _Voxels[globalIndex];
+			unsignedValue = (uint) _OriginalVoxels[globalIndex];
 		#endif
 		
 		value = (((int)(unsignedValue & 0xFF)) - 63);

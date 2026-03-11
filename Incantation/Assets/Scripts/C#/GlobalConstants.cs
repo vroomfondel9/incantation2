@@ -7,9 +7,9 @@ public class GlobalConstants
 {
     public static float VOXEL_SCALE = 1 / 10.0f;
 
-    public static int MAX_GLOBAL_VOXELS = 100000000;
+    public static int MAX_GLOBAL_ORIGINAL_VOXELS = 100000000;
 
-    public static int MAX_VOX_VOLS_PER_SCENE = 300000;
+    public static int MAX_UNIQUE_ORIG_VOX_VOLS_PER_SCENE = 300000;
 
     public static int MAX_VOX_VOLS_MODIFIABLE_PER_FRAME = 1000;
 

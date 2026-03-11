@@ -10,7 +10,7 @@ namespace Incantation.Engine.Voxels.Systems
 {
     [BurstCompile]
     [UpdateInGroup(typeof(VoxelVolumeInitializationSystemGroup))]
-    [UpdateAfter(typeof(GPUGlobalVoxelBufferManagerSystem))]
+    [UpdateAfter(typeof(GPUOriginalVoxelBufferManagerSystem))]
     public partial struct SpawnClonesSystem : ISystem
     {
         public void OnCreate(ref SystemState state)
