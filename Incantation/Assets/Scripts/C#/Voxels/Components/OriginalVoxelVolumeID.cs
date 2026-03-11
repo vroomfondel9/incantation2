@@ -4,12 +4,10 @@ using Unity.Mathematics;
 namespace Incantation.Engine.Voxels.Components
 {
     /// <summary>
-    /// Uniquely identifies a voxel volume.
+    /// Uniquely identifies an unmodified voxel volume.
     ///
     /// Identity is determined by:
-    ///  - Grid dimensions (uint3)
     ///  - A deterministic 64-bit content hash of:
-    ///        * Grid dimensions
     ///        * Entire voxel grid contents (everything in the packed value)
     ///
     /// Since grid dimensions are baked into hash, checking only hash is sufficient for equality checks.
@@ -18,13 +16,8 @@ namespace Incantation.Engine.Voxels.Components
     /// This is filled as part of topology scanning whenever a new voxel volume is spawned or an existing one
     /// is modified.
     /// </summary>
-    public struct VoxelVolumeID : IComponentData
+    public struct OriginalVoxelVolumeID : IComponentData
     {
-        /// <summary>
-        /// Dimensions of the voxel grid.
-        /// </summary>
-        public uint3 Dimensions;
-
         /// <summary>
         /// 64-bit FNV-1a hash of:
         ///   - Dimensions

@@ -19,11 +19,11 @@ namespace Incantation.Engine.Voxels.Baking
             // Create components
             int3 dims = authoring.voxelVolumePrebakedAsset.dimensions;
             ulong hash = authoring.voxelVolumePrebakedAsset.hash;
-            AddComponent(entity, new VoxelVolumeID
+            AddComponent(entity, new OriginalVoxelVolumeID
             {
-                Dimensions = new uint3((uint)dims.x, (uint)dims.y, (uint)dims.z),
                 Hash = hash
             });
+            AddComponent(entity, new GridDimensions((uint)dims.x, (uint)dims.y, (uint)dims.z));
 
             // Add Dynamic Buffer Components
             int size = dims.x * dims.y * dims.z;

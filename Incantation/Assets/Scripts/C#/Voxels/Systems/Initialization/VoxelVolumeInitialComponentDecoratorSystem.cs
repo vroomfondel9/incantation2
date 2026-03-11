@@ -38,15 +38,15 @@ namespace Incantation.Engine.Voxels.Systems
         {
             var ecb = new EntityCommandBuffer(Unity.Collections.Allocator.Temp);
 
-            // Query: entities with VoxelVolumeID but without GPUVoxelHeapState
-            foreach (var (voxelVolumeId, matMeshInfo, entity) in SystemAPI.Query<
-                RefRO<VoxelVolumeID>,
+            // Query: entities with OriginalVoxelVolumeID but without GPUVoxelHeapState
+            foreach (var (gridDimensions, matMeshInfo, entity) in SystemAPI.Query<
+                RefRO<GridDimensions>,
                 RefRW<MaterialMeshInfo>>()
                          .WithNone<GlobalVoxelHeapState>()
                          .WithEntityAccess())
             {
                 // --- Add GPUVoxelHeapState ---
-                var dims = voxelVolumeId.ValueRO.Dimensions;
+                var dims = gridDimensions.ValueRO.XYZ;
                 uint size = dims.x * dims.y * dims.z;
 
                 ecb.AddComponent(entity, new GlobalVoxelHeapState
@@ -62,8 +62,6 @@ namespace Incantation.Engine.Voxels.Systems
                 });
 
                 // --- Material properties ---
-                ecb.AddComponent(entity, new GridDimensions(dims.x, dims.y, dims.z));
-
                 ecb.AddComponent(entity, new OriginalVoxelVolumeGlobalOffset
                 {
                     Value = 0

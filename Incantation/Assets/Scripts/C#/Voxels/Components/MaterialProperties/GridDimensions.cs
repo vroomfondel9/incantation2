@@ -56,19 +56,19 @@ namespace Incantation.Engine.Voxels.Components
         X component
         --------------------------------------------------------------*/
 
-        public byte X
+        public uint X
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             readonly get
             {
-                return (byte)((math.asuint(floatValue) >> X_SHIFT) & BYTE_MASK);
+                return ((math.asuint(floatValue) >> X_SHIFT) & BYTE_MASK);
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             set
             {
                 uint bits = math.asuint(floatValue);
-                bits = (bits & ~(BYTE_MASK << X_SHIFT)) | ((uint)value << X_SHIFT);
+                bits = (bits & ~(BYTE_MASK << X_SHIFT)) | (value << X_SHIFT);
                 floatValue = math.asfloat(bits);
             }
         }
@@ -77,19 +77,19 @@ namespace Incantation.Engine.Voxels.Components
         Y component
         --------------------------------------------------------------*/
 
-        public byte Y
+        public uint Y
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             readonly get
             {
-                return (byte)((math.asuint(floatValue) >> Y_SHIFT) & BYTE_MASK);
+                return ((math.asuint(floatValue) >> Y_SHIFT) & BYTE_MASK);
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             set
             {
                 uint bits = math.asuint(floatValue);
-                bits = (bits & ~(BYTE_MASK << Y_SHIFT)) | ((uint)value << Y_SHIFT);
+                bits = (bits & ~(BYTE_MASK << Y_SHIFT)) | (value << Y_SHIFT);
                 floatValue = math.asfloat(bits);
             }
         }
@@ -98,19 +98,19 @@ namespace Incantation.Engine.Voxels.Components
         Z component
         --------------------------------------------------------------*/
 
-        public byte Z
+        public uint Z
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             readonly get
             {
-                return (byte)((math.asuint(floatValue) >> Z_SHIFT) & BYTE_MASK);
+                return ((math.asuint(floatValue) >> Z_SHIFT) & BYTE_MASK);
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             set
             {
                 uint bits = math.asuint(floatValue);
-                bits = (bits & ~(BYTE_MASK << Z_SHIFT)) | ((uint)value << Z_SHIFT);
+                bits = (bits & ~(BYTE_MASK << Z_SHIFT)) | (value << Z_SHIFT);
                 floatValue = math.asfloat(bits);
             }
         }
@@ -143,17 +143,6 @@ namespace Incantation.Engine.Voxels.Components
 
                 floatValue = math.asfloat(packed);
             }
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public GridDimensions(byte x, byte y, byte z)
-        {
-            uint packed =
-                ((uint)x << X_SHIFT) |
-                ((uint)y << Y_SHIFT) |
-                ((uint)z << Z_SHIFT);
-
-            floatValue = math.asfloat(packed);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

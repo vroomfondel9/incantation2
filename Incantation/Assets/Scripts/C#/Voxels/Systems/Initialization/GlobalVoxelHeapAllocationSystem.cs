@@ -162,7 +162,7 @@ namespace Incantation.Engine.Voxels.Components
                 in SystemAPI.Query<
                         RefRW<GlobalVoxelHeapState>,
                         RefRW<OriginalVoxelVolumeGlobalOffset>,
-                        RefRO<VoxelVolumeID>>()
+                        RefRO<OriginalVoxelVolumeID>>()
                     .WithAll<GlobalVoxelSyncInProgress>()
                     .WithEntityAccess())
             {
@@ -217,19 +217,20 @@ namespace Incantation.Engine.Voxels.Components
 
         private void reallocateNewOrModified(ref GlobalVoxelHeapStats stats, ref SystemState state)
         {
-            foreach (var (heapState, volumeId, entity)
+            foreach (var (heapState, volumeId, gridDimensions, entity)
                 in SystemAPI.Query<
                         RefRW<GlobalVoxelHeapState>,
-                        RefRO<VoxelVolumeID>>()
+                        RefRO<OriginalVoxelVolumeID>,
+                        RefRO<GridDimensions>>()
                     .WithAll<NeedsGlobalVoxelReallocation>()
                     .WithNone<GlobalVoxelSyncInProgress>()
                     .WithEntityAccess())
             {
                 ulong hash = volumeId.ValueRO.Hash;
                 uint requiredSize =
-                    volumeId.ValueRO.Dimensions.x *
-                    volumeId.ValueRO.Dimensions.y *
-                    volumeId.ValueRO.Dimensions.z;
+                    gridDimensions.ValueRO.X *
+                    gridDimensions.ValueRO.Y *
+                    gridDimensions.ValueRO.Z;
 
                 stats.TotalVolumes++;
                 bool useSharedMemSpace = false;
@@ -358,7 +359,7 @@ namespace Incantation.Engine.Voxels.Components
             foreach (var (heapState, volumeId, entity)
                 in SystemAPI.Query<
                         RefRW<GlobalVoxelHeapState>,
-                        RefRO<VoxelVolumeID>>()
+                        RefRO<OriginalVoxelVolumeID>>()
                     .WithAll<NeedsGlobalVoxelDeallocation>()
                     .WithEntityAccess())
             {
