@@ -1,4 +1,5 @@
 using Incantation.Engine.Voxels.Components;
+using Incantation.Engine.Voxels.Components.Physics.RigidBody;
 using System;
 using Unity.Entities;
 using Unity.Entities.Graphics;
@@ -44,11 +45,24 @@ namespace Incantation.Engine.Voxels.Systems
                          .WithAll<InitializationColorTopologyPackedVoxel>()
                          .WithEntityAccess())
             {
-                // --- Add GPUVoxelHeapState ---
+                // --- Add OriginalDimensions ---
                 var dims = gridDimensions.ValueRO.XYZ;
                 uint size = dims.x * dims.y * dims.z;
 
                 ecb.AddComponent(entity, new OriginalDimensions(dims.x, dims.y, dims.z));
+
+                // --- Physics ---
+                ecb.AddComponent(entity, new PhysicsVelocity
+                {
+                    Linear = new float3(0, 0, 0),
+                    Angular = new float3(0, 0, 0)
+                });
+
+                ecb.AddComponent(entity, new PhysicsForce
+                {
+                    Force = new float3(0, 0, 0),
+                    Torque = new float3(0, 0, 0)
+                });
 
                 // --- Material properties ---
                 ecb.AddComponent(entity, new OriginalVoxelVolumeGlobalOffset
@@ -59,6 +73,9 @@ namespace Incantation.Engine.Voxels.Systems
                 // --- Enableables ---
                 ecb.AddComponent<NeedsOriginalVoxelDeallocation>(entity);
                 ecb.SetComponentEnabled<NeedsOriginalVoxelDeallocation>(entity, false);
+
+                ecb.AddComponent<IsDynamic>(entity);
+                ecb.SetComponentEnabled<IsDynamic>(entity, true);
 
                 // Hack to fix GPU instancing because Entitles Graphics is dumb
                 matMeshInfo.ValueRW.Material = -1;

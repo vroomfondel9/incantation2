@@ -140,6 +140,15 @@ public class VoxelVolumeAutoBake : AssetPostprocessor
         voxelVolume.interiorVoxelCount = topologyCounts.interiors;
         voxelVolume.emptyVoxelCount = topologyCounts.empties;
         voxelVolume.totalVoxelCount = topologyCounts.total;
+        voxelVolume.centerOfMass = topologyCounts.centerOfMass;
+        voxelVolume.mass = topologyCounts.mass;
+        voxelVolume.momentOfInertia = topologyCounts.momentOfInertia;
+        voxelVolume.inverseMass = (voxelVolume.mass == 0) ? float.MaxValue : 1.0f / voxelVolume.mass;
+        voxelVolume.inverseInertia = new Vector3(
+            (voxelVolume.momentOfInertia.x == 0) ? float.MaxValue : 1.0f / voxelVolume.momentOfInertia.x,
+            (voxelVolume.momentOfInertia.y == 0) ? float.MaxValue : 1.0f / voxelVolume.momentOfInertia.y,
+            (voxelVolume.momentOfInertia.z == 0) ? float.MaxValue : 1.0f / voxelVolume.momentOfInertia.z
+        );
 
         AssetDatabase.CreateAsset(voxelVolume, assetPath);
         AssetDatabase.SaveAssets();

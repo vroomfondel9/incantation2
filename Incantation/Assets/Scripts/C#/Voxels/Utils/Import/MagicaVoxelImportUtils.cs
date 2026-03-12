@@ -21,7 +21,12 @@ namespace Incantation.Engine.Voxels.Utils.Import
             public int interiors;
             public int empties;
             public int total;
+
             public ulong hash;
+
+            public Vector3 centerOfMass;
+            public float mass;
+            public Vector3 momentOfInertia;
         }
 
         /// <summary>
@@ -169,6 +174,8 @@ namespace Incantation.Engine.Voxels.Utils.Import
             // And count topology features
             // --------------------------------------------
             topologyCounts = new TopologyAnalysisResults();
+            topologyCounts.centerOfMass = new Vector3(0, 0, 0);
+            topologyCounts.momentOfInertia = new Vector3(0, 0, 0);
 
             ulong hash = FNV_OFFSET_BASIS;
 
@@ -228,6 +235,30 @@ namespace Incantation.Engine.Voxels.Utils.Import
                         {
                             topologyCounts.empties++;
                         }
+
+                        // Analyze mass values
+                        if (d == 0)
+                        {
+                            Vector3 voxelCenter = new Vector3(
+                                x + 0.5f - width * 0.5f, 
+                                y + 0.5f - height * 0.5f, 
+                                z + 0.5f - depth * 0.5f
+                            );
+                            Vector3 voxelSqCenter = new Vector3(
+                                voxelCenter.x * voxelCenter.x, 
+                                voxelCenter.y * voxelCenter.y, 
+                                voxelCenter.z * voxelCenter.z
+                            );
+
+                            //Assume constant mass of 1 per voxel for now (every 1.0f placeholder here)
+                            topologyCounts.mass += 1.0f;
+                            topologyCounts.centerOfMass += voxelCenter * 1.0f;
+                            topologyCounts.momentOfInertia += new Vector3(
+                                (voxelSqCenter.y + voxelSqCenter.z) * 1.0f,
+                                (voxelSqCenter.x + voxelSqCenter.z) * 1.0f,
+                                (voxelSqCenter.x + voxelSqCenter.y) * 1.0f
+                            );
+                        }
                     }
                 }
             }
@@ -237,6 +268,23 @@ namespace Incantation.Engine.Voxels.Utils.Import
                 throw new Exception("Mismatch between number of classified topology voxels and total voxels in volume.");
 
             topologyCounts.hash = hash;
+            topologyCounts.centerOfMass /= (topologyCounts.mass == 0) ? 1.0f : topologyCounts.mass;
+
+            // parallel axis theorem
+            Vector3 centerOfMassSq = new Vector3(
+                topologyCounts.centerOfMass.x * topologyCounts.centerOfMass.x,
+                topologyCounts.centerOfMass.y * topologyCounts.centerOfMass.y,
+                topologyCounts.centerOfMass.z * topologyCounts.centerOfMass.z
+            );
+            topologyCounts.momentOfInertia -= (topologyCounts.mass * new Vector3(
+                centerOfMassSq.y + centerOfMassSq.z,
+                centerOfMassSq.x + centerOfMassSq.z,
+                centerOfMassSq.x + centerOfMassSq.y
+            ));
+
+            // Scaling to world space
+            topologyCounts.centerOfMass *= GlobalConstants.VOXEL_SCALE;
+            topologyCounts.momentOfInertia *= GlobalConstants.VOXEL_SCALE * GlobalConstants.VOXEL_SCALE;
 
             return dist;
         }

@@ -1,5 +1,6 @@
 using Incantation.Engine.Voxels.Authoring;
 using Incantation.Engine.Voxels.Components;
+using Incantation.Engine.Voxels.Components.Physics.RigidBody;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Rendering;
@@ -16,7 +17,7 @@ namespace Incantation.Engine.Voxels.Baking
         {
             var entity = GetEntity(TransformUsageFlags.Dynamic);
 
-            // Create components
+            // Create identity components
             int3 dims = authoring.voxelVolumePrebakedAsset.dimensions;
             ulong hash = authoring.voxelVolumePrebakedAsset.hash;
             AddComponent(entity, new OriginalVoxelVolumeID
@@ -25,7 +26,26 @@ namespace Incantation.Engine.Voxels.Baking
             });
             AddComponent(entity, new GridDimensions((uint)dims.x, (uint)dims.y, (uint)dims.z));
 
-            // Add Dynamic Buffer Components
+            // Physics
+            float invMass = authoring.voxelVolumePrebakedAsset.inverseMass;
+            float3 invInertia = new float3(
+                authoring.voxelVolumePrebakedAsset.inverseInertia.x,
+                authoring.voxelVolumePrebakedAsset.inverseInertia.y,
+                authoring.voxelVolumePrebakedAsset.inverseInertia.z
+            );
+            float3 com = new float3(
+                authoring.voxelVolumePrebakedAsset.centerOfMass.x,
+                authoring.voxelVolumePrebakedAsset.centerOfMass.y,
+                authoring.voxelVolumePrebakedAsset.centerOfMass.z
+            );
+            AddComponent(entity, new PhysicsMass
+            {
+                InverseMass = invMass,
+                InverseInertia = invInertia,
+                CenterOfMass = com
+            });
+
+            // Add Dynamic Buffer Component for individual voxels
             int size = dims.x * dims.y * dims.z;
             var buffer = AddBuffer<InitializationColorTopologyPackedVoxel>(entity);
             buffer.EnsureCapacity(size);
