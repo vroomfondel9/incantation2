@@ -65,8 +65,15 @@ public class DebugVisualizer : MonoBehaviour
 
     void SetDebugMode(DEBUG_VISUALIZATION_MODES mode)
     {
+        DebugConstants.DRAW_AABBS = false;
+
         debugVisualizationMode = (int)mode;
         Shader.SetGlobalFloat("_DebugVisualizationMode", (int)mode);
+        if (mode == DEBUG_VISUALIZATION_MODES.BOUNDING_BOXES)
+        {
+            DebugConstants.DRAW_AABBS = true;
+        }
+
         Debug.Log($"Global Debug Mode set to: {mode}");
     }
 

@@ -6,6 +6,7 @@ Shader "Shader Graphs/VoxVolShader"
         [NoScaleOffset]_HitTexture("HitTexture", 3D) = "white" {}
         _GridDimensions("GridDimensions", Float) = 0
         _OriginalVoxelVolumeGlobalOffset("OriginalVoxelVolumeGlobalOffset", Float) = 0
+        _VolumeWideColorOverride("VolumeWideColorOverride", Float) = 0
         [HideInInspector]_QueueOffset("_QueueOffset", Float) = 0
         [HideInInspector]_QueueControl("_QueueControl", Float) = -1
         [HideInInspector][NoScaleOffset]unity_Lightmaps("unity_Lightmaps", 2DArray) = "" {}
@@ -405,6 +406,7 @@ Shader "Shader Graphs/VoxVolShader"
         CBUFFER_START(UnityPerMaterial)
         float _OriginalVoxelVolumeGlobalOffset;
         float _GridDimensions;
+        float _VolumeWideColorOverride;
         CBUFFER_END
         
         #if defined(DOTS_INSTANCING_ON)
@@ -412,6 +414,7 @@ Shader "Shader Graphs/VoxVolShader"
         UNITY_DOTS_INSTANCING_START(MaterialPropertyMetadata)
             UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _OriginalVoxelVolumeGlobalOffset)
             UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _GridDimensions)
+            UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _VolumeWideColorOverride)
         UNITY_DOTS_INSTANCING_END(MaterialPropertyMetadata)
         // DOTS instancing usage macros
         #define UNITY_ACCESS_HYBRID_INSTANCED_PROP(var, type) UNITY_ACCESS_DOTS_INSTANCED_PROP_WITH_DEFAULT(type, var)
@@ -420,6 +423,7 @@ Shader "Shader Graphs/VoxVolShader"
         UNITY_INSTANCING_BUFFER_START(SGPerInstanceData)
             UNITY_DEFINE_INSTANCED_PROP(float, _OriginalVoxelVolumeGlobalOffset)
             UNITY_DEFINE_INSTANCED_PROP(float, _GridDimensions)
+            UNITY_DEFINE_INSTANCED_PROP(float, _VolumeWideColorOverride)
         UNITY_INSTANCING_BUFFER_END(SGPerInstanceData)
         // Unity instancing usage macros
         #define UNITY_ACCESS_HYBRID_INSTANCED_PROP(var, type) UNITY_ACCESS_INSTANCED_PROP(SGPerInstanceData, var)
@@ -522,6 +526,9 @@ Shader "Shader Graphs/VoxVolShader"
             float _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_OriginalVoxelVolumeGlobalOffset, float);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
+            float _Property_5b7a63d8fcee4742a7475bfecb589aff_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_VolumeWideColorOverride, float);
+            #endif
+            #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float = _DebugVisualizationMode;
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
@@ -569,7 +576,7 @@ Shader "Shader Graphs/VoxVolShader"
             float _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float;
             float _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float;
             float3 _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3;
-            ColorSample_float(_Property_06bb097371af41259d80159681d32a0a_Out_0_Texture3D, _Property_1d6b0b00f9c8443db67b1c1b35f3e665_Out_0_Float, _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float, _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float, IN.ObjectSpacePosition, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float, _CalculateDepthCustomFunction_89a9fbc79e6948f9a0e3c0730343a8e3_DepthValue_1_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3);
+            ColorSample_float(_Property_06bb097371af41259d80159681d32a0a_Out_0_Texture3D, _Property_1d6b0b00f9c8443db67b1c1b35f3e665_Out_0_Float, _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float, _Property_5b7a63d8fcee4742a7475bfecb589aff_Out_0_Float, _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float, IN.ObjectSpacePosition, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float, _CalculateDepthCustomFunction_89a9fbc79e6948f9a0e3c0730343a8e3_DepthValue_1_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3);
             #endif
             surface.BaseColor = _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3;
             surface.NormalOS = _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3;
@@ -1060,6 +1067,7 @@ Shader "Shader Graphs/VoxVolShader"
         CBUFFER_START(UnityPerMaterial)
         float _OriginalVoxelVolumeGlobalOffset;
         float _GridDimensions;
+        float _VolumeWideColorOverride;
         CBUFFER_END
         
         #if defined(DOTS_INSTANCING_ON)
@@ -1067,6 +1075,7 @@ Shader "Shader Graphs/VoxVolShader"
         UNITY_DOTS_INSTANCING_START(MaterialPropertyMetadata)
             UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _OriginalVoxelVolumeGlobalOffset)
             UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _GridDimensions)
+            UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _VolumeWideColorOverride)
         UNITY_DOTS_INSTANCING_END(MaterialPropertyMetadata)
         // DOTS instancing usage macros
         #define UNITY_ACCESS_HYBRID_INSTANCED_PROP(var, type) UNITY_ACCESS_DOTS_INSTANCED_PROP_WITH_DEFAULT(type, var)
@@ -1075,6 +1084,7 @@ Shader "Shader Graphs/VoxVolShader"
         UNITY_INSTANCING_BUFFER_START(SGPerInstanceData)
             UNITY_DEFINE_INSTANCED_PROP(float, _OriginalVoxelVolumeGlobalOffset)
             UNITY_DEFINE_INSTANCED_PROP(float, _GridDimensions)
+            UNITY_DEFINE_INSTANCED_PROP(float, _VolumeWideColorOverride)
         UNITY_INSTANCING_BUFFER_END(SGPerInstanceData)
         // Unity instancing usage macros
         #define UNITY_ACCESS_HYBRID_INSTANCED_PROP(var, type) UNITY_ACCESS_INSTANCED_PROP(SGPerInstanceData, var)
@@ -1177,6 +1187,9 @@ Shader "Shader Graphs/VoxVolShader"
             float _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_OriginalVoxelVolumeGlobalOffset, float);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
+            float _Property_5b7a63d8fcee4742a7475bfecb589aff_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_VolumeWideColorOverride, float);
+            #endif
+            #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float = _DebugVisualizationMode;
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
@@ -1224,7 +1237,7 @@ Shader "Shader Graphs/VoxVolShader"
             float _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float;
             float _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float;
             float3 _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3;
-            ColorSample_float(_Property_06bb097371af41259d80159681d32a0a_Out_0_Texture3D, _Property_1d6b0b00f9c8443db67b1c1b35f3e665_Out_0_Float, _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float, _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float, IN.ObjectSpacePosition, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float, _CalculateDepthCustomFunction_89a9fbc79e6948f9a0e3c0730343a8e3_DepthValue_1_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3);
+            ColorSample_float(_Property_06bb097371af41259d80159681d32a0a_Out_0_Texture3D, _Property_1d6b0b00f9c8443db67b1c1b35f3e665_Out_0_Float, _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float, _Property_5b7a63d8fcee4742a7475bfecb589aff_Out_0_Float, _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float, IN.ObjectSpacePosition, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float, _CalculateDepthCustomFunction_89a9fbc79e6948f9a0e3c0730343a8e3_DepthValue_1_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3);
             #endif
             surface.BaseColor = _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3;
             surface.NormalOS = _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3;
@@ -1572,6 +1585,7 @@ Shader "Shader Graphs/VoxVolShader"
         CBUFFER_START(UnityPerMaterial)
         float _OriginalVoxelVolumeGlobalOffset;
         float _GridDimensions;
+        float _VolumeWideColorOverride;
         CBUFFER_END
         
         #if defined(DOTS_INSTANCING_ON)
@@ -1579,6 +1593,7 @@ Shader "Shader Graphs/VoxVolShader"
         UNITY_DOTS_INSTANCING_START(MaterialPropertyMetadata)
             UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _OriginalVoxelVolumeGlobalOffset)
             UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _GridDimensions)
+            UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _VolumeWideColorOverride)
         UNITY_DOTS_INSTANCING_END(MaterialPropertyMetadata)
         // DOTS instancing usage macros
         #define UNITY_ACCESS_HYBRID_INSTANCED_PROP(var, type) UNITY_ACCESS_DOTS_INSTANCED_PROP_WITH_DEFAULT(type, var)
@@ -1587,6 +1602,7 @@ Shader "Shader Graphs/VoxVolShader"
         UNITY_INSTANCING_BUFFER_START(SGPerInstanceData)
             UNITY_DEFINE_INSTANCED_PROP(float, _OriginalVoxelVolumeGlobalOffset)
             UNITY_DEFINE_INSTANCED_PROP(float, _GridDimensions)
+            UNITY_DEFINE_INSTANCED_PROP(float, _VolumeWideColorOverride)
         UNITY_INSTANCING_BUFFER_END(SGPerInstanceData)
         // Unity instancing usage macros
         #define UNITY_ACCESS_HYBRID_INSTANCED_PROP(var, type) UNITY_ACCESS_INSTANCED_PROP(SGPerInstanceData, var)
@@ -1683,6 +1699,9 @@ Shader "Shader Graphs/VoxVolShader"
             float _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_OriginalVoxelVolumeGlobalOffset, float);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
+            float _Property_5b7a63d8fcee4742a7475bfecb589aff_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_VolumeWideColorOverride, float);
+            #endif
+            #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float = _DebugVisualizationMode;
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
@@ -1730,7 +1749,7 @@ Shader "Shader Graphs/VoxVolShader"
             float _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float;
             float _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float;
             float3 _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3;
-            ColorSample_float(_Property_06bb097371af41259d80159681d32a0a_Out_0_Texture3D, _Property_1d6b0b00f9c8443db67b1c1b35f3e665_Out_0_Float, _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float, _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float, IN.ObjectSpacePosition, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float, _CalculateDepthCustomFunction_89a9fbc79e6948f9a0e3c0730343a8e3_DepthValue_1_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3);
+            ColorSample_float(_Property_06bb097371af41259d80159681d32a0a_Out_0_Texture3D, _Property_1d6b0b00f9c8443db67b1c1b35f3e665_Out_0_Float, _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float, _Property_5b7a63d8fcee4742a7475bfecb589aff_Out_0_Float, _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float, IN.ObjectSpacePosition, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float, _CalculateDepthCustomFunction_89a9fbc79e6948f9a0e3c0730343a8e3_DepthValue_1_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3);
             #endif
             surface.Alpha = _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float;
             surface.AlphaClipThreshold = _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float;
@@ -2088,6 +2107,7 @@ Shader "Shader Graphs/VoxVolShader"
         CBUFFER_START(UnityPerMaterial)
         float _OriginalVoxelVolumeGlobalOffset;
         float _GridDimensions;
+        float _VolumeWideColorOverride;
         CBUFFER_END
         
         #if defined(DOTS_INSTANCING_ON)
@@ -2095,6 +2115,7 @@ Shader "Shader Graphs/VoxVolShader"
         UNITY_DOTS_INSTANCING_START(MaterialPropertyMetadata)
             UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _OriginalVoxelVolumeGlobalOffset)
             UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _GridDimensions)
+            UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _VolumeWideColorOverride)
         UNITY_DOTS_INSTANCING_END(MaterialPropertyMetadata)
         // DOTS instancing usage macros
         #define UNITY_ACCESS_HYBRID_INSTANCED_PROP(var, type) UNITY_ACCESS_DOTS_INSTANCED_PROP_WITH_DEFAULT(type, var)
@@ -2103,6 +2124,7 @@ Shader "Shader Graphs/VoxVolShader"
         UNITY_INSTANCING_BUFFER_START(SGPerInstanceData)
             UNITY_DEFINE_INSTANCED_PROP(float, _OriginalVoxelVolumeGlobalOffset)
             UNITY_DEFINE_INSTANCED_PROP(float, _GridDimensions)
+            UNITY_DEFINE_INSTANCED_PROP(float, _VolumeWideColorOverride)
         UNITY_INSTANCING_BUFFER_END(SGPerInstanceData)
         // Unity instancing usage macros
         #define UNITY_ACCESS_HYBRID_INSTANCED_PROP(var, type) UNITY_ACCESS_INSTANCED_PROP(SGPerInstanceData, var)
@@ -2200,6 +2222,9 @@ Shader "Shader Graphs/VoxVolShader"
             float _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_OriginalVoxelVolumeGlobalOffset, float);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
+            float _Property_5b7a63d8fcee4742a7475bfecb589aff_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_VolumeWideColorOverride, float);
+            #endif
+            #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float = _DebugVisualizationMode;
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
@@ -2247,7 +2272,7 @@ Shader "Shader Graphs/VoxVolShader"
             float _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float;
             float _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float;
             float3 _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3;
-            ColorSample_float(_Property_06bb097371af41259d80159681d32a0a_Out_0_Texture3D, _Property_1d6b0b00f9c8443db67b1c1b35f3e665_Out_0_Float, _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float, _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float, IN.ObjectSpacePosition, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float, _CalculateDepthCustomFunction_89a9fbc79e6948f9a0e3c0730343a8e3_DepthValue_1_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3);
+            ColorSample_float(_Property_06bb097371af41259d80159681d32a0a_Out_0_Texture3D, _Property_1d6b0b00f9c8443db67b1c1b35f3e665_Out_0_Float, _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float, _Property_5b7a63d8fcee4742a7475bfecb589aff_Out_0_Float, _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float, IN.ObjectSpacePosition, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float, _CalculateDepthCustomFunction_89a9fbc79e6948f9a0e3c0730343a8e3_DepthValue_1_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3);
             #endif
             surface.NormalOS = _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3;
             surface.Alpha = _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float;
@@ -2643,6 +2668,7 @@ Shader "Shader Graphs/VoxVolShader"
         CBUFFER_START(UnityPerMaterial)
         float _OriginalVoxelVolumeGlobalOffset;
         float _GridDimensions;
+        float _VolumeWideColorOverride;
         CBUFFER_END
         
         #if defined(DOTS_INSTANCING_ON)
@@ -2650,6 +2676,7 @@ Shader "Shader Graphs/VoxVolShader"
         UNITY_DOTS_INSTANCING_START(MaterialPropertyMetadata)
             UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _OriginalVoxelVolumeGlobalOffset)
             UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _GridDimensions)
+            UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _VolumeWideColorOverride)
         UNITY_DOTS_INSTANCING_END(MaterialPropertyMetadata)
         // DOTS instancing usage macros
         #define UNITY_ACCESS_HYBRID_INSTANCED_PROP(var, type) UNITY_ACCESS_DOTS_INSTANCED_PROP_WITH_DEFAULT(type, var)
@@ -2658,6 +2685,7 @@ Shader "Shader Graphs/VoxVolShader"
         UNITY_INSTANCING_BUFFER_START(SGPerInstanceData)
             UNITY_DEFINE_INSTANCED_PROP(float, _OriginalVoxelVolumeGlobalOffset)
             UNITY_DEFINE_INSTANCED_PROP(float, _GridDimensions)
+            UNITY_DEFINE_INSTANCED_PROP(float, _VolumeWideColorOverride)
         UNITY_INSTANCING_BUFFER_END(SGPerInstanceData)
         // Unity instancing usage macros
         #define UNITY_ACCESS_HYBRID_INSTANCED_PROP(var, type) UNITY_ACCESS_INSTANCED_PROP(SGPerInstanceData, var)
@@ -2756,6 +2784,9 @@ Shader "Shader Graphs/VoxVolShader"
             float _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_OriginalVoxelVolumeGlobalOffset, float);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
+            float _Property_5b7a63d8fcee4742a7475bfecb589aff_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_VolumeWideColorOverride, float);
+            #endif
+            #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float = _DebugVisualizationMode;
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
@@ -2803,7 +2834,7 @@ Shader "Shader Graphs/VoxVolShader"
             float _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float;
             float _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float;
             float3 _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3;
-            ColorSample_float(_Property_06bb097371af41259d80159681d32a0a_Out_0_Texture3D, _Property_1d6b0b00f9c8443db67b1c1b35f3e665_Out_0_Float, _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float, _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float, IN.ObjectSpacePosition, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float, _CalculateDepthCustomFunction_89a9fbc79e6948f9a0e3c0730343a8e3_DepthValue_1_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3);
+            ColorSample_float(_Property_06bb097371af41259d80159681d32a0a_Out_0_Texture3D, _Property_1d6b0b00f9c8443db67b1c1b35f3e665_Out_0_Float, _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float, _Property_5b7a63d8fcee4742a7475bfecb589aff_Out_0_Float, _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float, IN.ObjectSpacePosition, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float, _CalculateDepthCustomFunction_89a9fbc79e6948f9a0e3c0730343a8e3_DepthValue_1_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3);
             #endif
             surface.BaseColor = _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3;
             surface.Emission = float3(0, 0, 0);
@@ -3124,6 +3155,7 @@ Shader "Shader Graphs/VoxVolShader"
         CBUFFER_START(UnityPerMaterial)
         float _OriginalVoxelVolumeGlobalOffset;
         float _GridDimensions;
+        float _VolumeWideColorOverride;
         CBUFFER_END
         
         #if defined(DOTS_INSTANCING_ON)
@@ -3131,6 +3163,7 @@ Shader "Shader Graphs/VoxVolShader"
         UNITY_DOTS_INSTANCING_START(MaterialPropertyMetadata)
             UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _OriginalVoxelVolumeGlobalOffset)
             UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _GridDimensions)
+            UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _VolumeWideColorOverride)
         UNITY_DOTS_INSTANCING_END(MaterialPropertyMetadata)
         // DOTS instancing usage macros
         #define UNITY_ACCESS_HYBRID_INSTANCED_PROP(var, type) UNITY_ACCESS_DOTS_INSTANCED_PROP_WITH_DEFAULT(type, var)
@@ -3139,6 +3172,7 @@ Shader "Shader Graphs/VoxVolShader"
         UNITY_INSTANCING_BUFFER_START(SGPerInstanceData)
             UNITY_DEFINE_INSTANCED_PROP(float, _OriginalVoxelVolumeGlobalOffset)
             UNITY_DEFINE_INSTANCED_PROP(float, _GridDimensions)
+            UNITY_DEFINE_INSTANCED_PROP(float, _VolumeWideColorOverride)
         UNITY_INSTANCING_BUFFER_END(SGPerInstanceData)
         // Unity instancing usage macros
         #define UNITY_ACCESS_HYBRID_INSTANCED_PROP(var, type) UNITY_ACCESS_INSTANCED_PROP(SGPerInstanceData, var)
@@ -3235,6 +3269,9 @@ Shader "Shader Graphs/VoxVolShader"
             float _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_OriginalVoxelVolumeGlobalOffset, float);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
+            float _Property_5b7a63d8fcee4742a7475bfecb589aff_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_VolumeWideColorOverride, float);
+            #endif
+            #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float = _DebugVisualizationMode;
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
@@ -3282,7 +3319,7 @@ Shader "Shader Graphs/VoxVolShader"
             float _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float;
             float _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float;
             float3 _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3;
-            ColorSample_float(_Property_06bb097371af41259d80159681d32a0a_Out_0_Texture3D, _Property_1d6b0b00f9c8443db67b1c1b35f3e665_Out_0_Float, _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float, _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float, IN.ObjectSpacePosition, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float, _CalculateDepthCustomFunction_89a9fbc79e6948f9a0e3c0730343a8e3_DepthValue_1_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3);
+            ColorSample_float(_Property_06bb097371af41259d80159681d32a0a_Out_0_Texture3D, _Property_1d6b0b00f9c8443db67b1c1b35f3e665_Out_0_Float, _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float, _Property_5b7a63d8fcee4742a7475bfecb589aff_Out_0_Float, _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float, IN.ObjectSpacePosition, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float, _CalculateDepthCustomFunction_89a9fbc79e6948f9a0e3c0730343a8e3_DepthValue_1_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3);
             #endif
             surface.Alpha = _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float;
             surface.AlphaClipThreshold = _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float;
@@ -3601,6 +3638,7 @@ Shader "Shader Graphs/VoxVolShader"
         CBUFFER_START(UnityPerMaterial)
         float _OriginalVoxelVolumeGlobalOffset;
         float _GridDimensions;
+        float _VolumeWideColorOverride;
         CBUFFER_END
         
         #if defined(DOTS_INSTANCING_ON)
@@ -3608,6 +3646,7 @@ Shader "Shader Graphs/VoxVolShader"
         UNITY_DOTS_INSTANCING_START(MaterialPropertyMetadata)
             UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _OriginalVoxelVolumeGlobalOffset)
             UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _GridDimensions)
+            UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _VolumeWideColorOverride)
         UNITY_DOTS_INSTANCING_END(MaterialPropertyMetadata)
         // DOTS instancing usage macros
         #define UNITY_ACCESS_HYBRID_INSTANCED_PROP(var, type) UNITY_ACCESS_DOTS_INSTANCED_PROP_WITH_DEFAULT(type, var)
@@ -3616,6 +3655,7 @@ Shader "Shader Graphs/VoxVolShader"
         UNITY_INSTANCING_BUFFER_START(SGPerInstanceData)
             UNITY_DEFINE_INSTANCED_PROP(float, _OriginalVoxelVolumeGlobalOffset)
             UNITY_DEFINE_INSTANCED_PROP(float, _GridDimensions)
+            UNITY_DEFINE_INSTANCED_PROP(float, _VolumeWideColorOverride)
         UNITY_INSTANCING_BUFFER_END(SGPerInstanceData)
         // Unity instancing usage macros
         #define UNITY_ACCESS_HYBRID_INSTANCED_PROP(var, type) UNITY_ACCESS_INSTANCED_PROP(SGPerInstanceData, var)
@@ -3712,6 +3752,9 @@ Shader "Shader Graphs/VoxVolShader"
             float _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_OriginalVoxelVolumeGlobalOffset, float);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
+            float _Property_5b7a63d8fcee4742a7475bfecb589aff_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_VolumeWideColorOverride, float);
+            #endif
+            #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float = _DebugVisualizationMode;
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
@@ -3759,7 +3802,7 @@ Shader "Shader Graphs/VoxVolShader"
             float _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float;
             float _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float;
             float3 _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3;
-            ColorSample_float(_Property_06bb097371af41259d80159681d32a0a_Out_0_Texture3D, _Property_1d6b0b00f9c8443db67b1c1b35f3e665_Out_0_Float, _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float, _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float, IN.ObjectSpacePosition, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float, _CalculateDepthCustomFunction_89a9fbc79e6948f9a0e3c0730343a8e3_DepthValue_1_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3);
+            ColorSample_float(_Property_06bb097371af41259d80159681d32a0a_Out_0_Texture3D, _Property_1d6b0b00f9c8443db67b1c1b35f3e665_Out_0_Float, _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float, _Property_5b7a63d8fcee4742a7475bfecb589aff_Out_0_Float, _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float, IN.ObjectSpacePosition, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float, _CalculateDepthCustomFunction_89a9fbc79e6948f9a0e3c0730343a8e3_DepthValue_1_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3);
             #endif
             surface.Alpha = _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float;
             surface.AlphaClipThreshold = _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float;
@@ -4078,6 +4121,7 @@ Shader "Shader Graphs/VoxVolShader"
         CBUFFER_START(UnityPerMaterial)
         float _OriginalVoxelVolumeGlobalOffset;
         float _GridDimensions;
+        float _VolumeWideColorOverride;
         CBUFFER_END
         
         #if defined(DOTS_INSTANCING_ON)
@@ -4085,6 +4129,7 @@ Shader "Shader Graphs/VoxVolShader"
         UNITY_DOTS_INSTANCING_START(MaterialPropertyMetadata)
             UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _OriginalVoxelVolumeGlobalOffset)
             UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _GridDimensions)
+            UNITY_DOTS_INSTANCED_PROP_OVERRIDE_SUPPORTED(float, _VolumeWideColorOverride)
         UNITY_DOTS_INSTANCING_END(MaterialPropertyMetadata)
         // DOTS instancing usage macros
         #define UNITY_ACCESS_HYBRID_INSTANCED_PROP(var, type) UNITY_ACCESS_DOTS_INSTANCED_PROP_WITH_DEFAULT(type, var)
@@ -4093,6 +4138,7 @@ Shader "Shader Graphs/VoxVolShader"
         UNITY_INSTANCING_BUFFER_START(SGPerInstanceData)
             UNITY_DEFINE_INSTANCED_PROP(float, _OriginalVoxelVolumeGlobalOffset)
             UNITY_DEFINE_INSTANCED_PROP(float, _GridDimensions)
+            UNITY_DEFINE_INSTANCED_PROP(float, _VolumeWideColorOverride)
         UNITY_INSTANCING_BUFFER_END(SGPerInstanceData)
         // Unity instancing usage macros
         #define UNITY_ACCESS_HYBRID_INSTANCED_PROP(var, type) UNITY_ACCESS_INSTANCED_PROP(SGPerInstanceData, var)
@@ -4190,6 +4236,9 @@ Shader "Shader Graphs/VoxVolShader"
             float _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_OriginalVoxelVolumeGlobalOffset, float);
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
+            float _Property_5b7a63d8fcee4742a7475bfecb589aff_Out_0_Float = UNITY_ACCESS_HYBRID_INSTANCED_PROP(_VolumeWideColorOverride, float);
+            #endif
+            #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
             float _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float = _DebugVisualizationMode;
             #endif
             #if defined(KEYWORD_PERMUTATION_0) || defined(KEYWORD_PERMUTATION_1)
@@ -4237,7 +4286,7 @@ Shader "Shader Graphs/VoxVolShader"
             float _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float;
             float _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float;
             float3 _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3;
-            ColorSample_float(_Property_06bb097371af41259d80159681d32a0a_Out_0_Texture3D, _Property_1d6b0b00f9c8443db67b1c1b35f3e665_Out_0_Float, _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float, _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float, IN.ObjectSpacePosition, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float, _CalculateDepthCustomFunction_89a9fbc79e6948f9a0e3c0730343a8e3_DepthValue_1_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3);
+            ColorSample_float(_Property_06bb097371af41259d80159681d32a0a_Out_0_Texture3D, _Property_1d6b0b00f9c8443db67b1c1b35f3e665_Out_0_Float, _Property_527e141c13da4f159c675e5613f45a78_Out_0_Float, _Property_5b7a63d8fcee4742a7475bfecb589aff_Out_0_Float, _Property_c1ae4596922c4a4e95e6246d2141f458_Out_0_Float, IN.ObjectSpacePosition, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Hit_2_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_UV_3_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_Voxel_7_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_VoxelValue_9_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_NormalsObj_6_Vector3, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchIterations_11_Float, _RayMarchCustomFunction_b411f2944ad64b33af5790d16c63bb97_RaymarchSamples_12_Float, _CalculateDepthCustomFunction_89a9fbc79e6948f9a0e3c0730343a8e3_DepthValue_1_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Dpth_16_Float, _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_NormsObj_15_Vector3);
             #endif
             surface.BaseColor = _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_RGB_2_Vector3;
             surface.Alpha = _ColorSampleCustomFunction_329d1da73b19492f89c2fd8bc7a008da_Alpha_10_Float;

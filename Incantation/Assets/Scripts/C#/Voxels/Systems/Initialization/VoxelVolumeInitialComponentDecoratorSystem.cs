@@ -61,7 +61,7 @@ namespace Incantation.Engine.Voxels.Systems
                 ecb.AddComponent(entity, new PhysicsForce
                 {
                     Force = new float3(0, 0, 0),
-                    Torque = new float3(0, 0, 0)
+                    Torque = new float3(1000, 1000, 1000)
                 });
 
                 // --- Material properties ---
@@ -69,6 +69,10 @@ namespace Incantation.Engine.Voxels.Systems
                 {
                     Value = 0
                 });
+
+                ecb.AddComponent(entity, new VolumeWideConstantColorOverride(255, 0, 0));
+                ecb.AddComponent(entity, new VolumeWideConstantColorOverrideEffect(0, 0.5f, false, 1000, 
+                    EasingFunction.LINEAR, 1000, CompletionFunction.REMOVE));
 
                 // --- Enableables ---
                 ecb.AddComponent<NeedsOriginalVoxelDeallocation>(entity);

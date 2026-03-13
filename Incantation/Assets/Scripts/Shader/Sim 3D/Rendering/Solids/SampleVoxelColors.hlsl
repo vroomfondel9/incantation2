@@ -5,6 +5,7 @@ void ColorSample_float(
     UnityTexture3D ColorTexture,
 	float GridDimensions,
 	float OriginalVoxelVolumeGlobalOffset,
+	float VolumeWideColorOverride,
 	float DebugVisualizationMode,
 	float3 EntryPointObj,
 	float Hit,
@@ -26,6 +27,11 @@ void ColorSample_float(
 	Dpth = Depth;
 	NormsObj = NormalsObj;
 	
+	uint r = 0;
+	uint g = 0;
+	uint b = 0;
+	uint a = 0;
+	
 	uint voxelValueUint = asuint(VoxelValue);
 	
 	// Base color (sampled even in debug visualization mode to maintain same performance characteristics)
@@ -37,12 +43,28 @@ void ColorSample_float(
 		);
 		RGB = sample.rgb;
 	#else
-		uint r = (voxelValueUint >> 8) & 0xFF;
-		uint g = (voxelValueUint >> 16) & 0xFF;
-		uint b = (voxelValueUint >> 24) & 0xFF;
+		r = (voxelValueUint >> 8) & 0xFF;
+		g = (voxelValueUint >> 16) & 0xFF;
+		b = (voxelValueUint >> 24) & 0xFF;
 		
 		RGB = float3(r / 255.0, g / 255.0, b / 255.0);
 	#endif
+	
+	// Blend base voxel color if there's a volume-wide color (with blend amount as alpha)
+	uint VolumeWideColorOverrideUint = asuint(VolumeWideColorOverride);
+	a = (VolumeWideColorOverrideUint >> 24) & 0xFF;
+	
+	if (a >= 0)
+	{
+		float blendAmount = a / 255.0;
+	
+		r = (VolumeWideColorOverrideUint >> 16) & 0xFF;
+		g = (VolumeWideColorOverrideUint >> 8) & 0xFF;
+		b = (VolumeWideColorOverrideUint) & 0xFF;
+			
+		float3 volWideColor = float3(r / 255.0, g / 255.0, b / 255.0);
+		RGB = lerp(RGB, volWideColor, saturate(blendAmount));
+	}
 	
 	// Overwrite base color if in debug mode
 	if (DebugVisualizationMode > 0)
