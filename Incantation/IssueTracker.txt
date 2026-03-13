@@ -1,4 +1,7 @@
+TODO
+====
 
+1. Right now, systems like initialization systems have been made such that they make the most sense conceptually. After being made, though, consider how to minimize passes over chunks by combining them where it makes sense.
 
 
 DEFER
