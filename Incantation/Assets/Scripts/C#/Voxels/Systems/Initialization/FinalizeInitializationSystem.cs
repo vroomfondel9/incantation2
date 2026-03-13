@@ -10,13 +10,11 @@ namespace Incantation.Engine.Voxels.Systems
     /// Marks voxel volume initialization as complete.
     ///
     /// After GPUOriginalVoxelBufferManagerSystem finishes uploading voxel data,
-    /// this system performs two cleanup tasks:
+    /// this system performs a cleanup task:
     ///
     /// 1. Removes InitializationColorTopologyPackedVoxel buffers from entities
-    ///    since they are no longer needed after initialization.
-    ///
-    /// 2. Deletes entities marked with NeedsOriginalVoxelDeallocation to free
-    ///    space for voxel volumes that were freshly deallocated.
+    ///    since they are no longer needed after initialization. This ensures
+    ///    tighter entity density per chunk.
     /// </summary>
     [BurstCompile]
     [UpdateInGroup(typeof(VoxelVolumeInitializationSystemGroup))]
@@ -24,16 +22,11 @@ namespace Incantation.Engine.Voxels.Systems
     public partial struct FinalizeInitializationSystem : ISystem
     {
         private EntityQuery _removeInitializationBufferQuery;
-        private EntityQuery _deallocationQuery;
 
         public void OnCreate(ref SystemState state)
         {
             _removeInitializationBufferQuery = new EntityQueryBuilder(Allocator.Temp)
                 .WithAll<InitializationColorTopologyPackedVoxel>()
-                .Build(ref state);
-
-            _deallocationQuery = new EntityQueryBuilder(Allocator.Temp)
-                .WithAll<NeedsOriginalVoxelDeallocation>()
                 .Build(ref state);
         }
 
@@ -47,14 +40,6 @@ namespace Incantation.Engine.Voxels.Systems
                          .WithEntityAccess())
             {
                 ecb.RemoveComponent<InitializationColorTopologyPackedVoxel>(entity);
-            }
-
-            // Destroy entities marked for original voxel deallocation
-            foreach (var (needsDealloc, entity) in
-                SystemAPI.Query<NeedsOriginalVoxelDeallocation>()
-                         .WithEntityAccess())
-            {
-                ecb.DestroyEntity(entity);
             }
 
             ecb.Playback(state.EntityManager);

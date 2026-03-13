@@ -10,12 +10,16 @@ namespace Incantation.Engine.Voxels.Authoring
     [Serializable]
     public class VoxelVolumePrebakedAssetAuthoring : MonoBehaviour
     {
+        [Header("Source Art Asset")]
         [SerializeField]
         public VoxelVolumePrebakedAsset voxelVolumePrebakedAsset;
 
+        [Header("Physics Settings")]
+        public bool isDynamic = true;
+
+        [Header("Spawn Clones")]
         [SerializeField]
         public long count = 1;
-
         [SerializeField]
         public Vector3 spacing = Vector3.zero;
 

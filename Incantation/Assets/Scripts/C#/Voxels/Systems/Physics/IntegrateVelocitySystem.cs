@@ -11,6 +11,7 @@ using Incantation.Engine.Voxels.Components.Physics.RigidBody;
 namespace Incantation.Engine.Voxels.Systems.Physics
 {
     [UpdateInGroup(typeof(FixedStepSimulationSystemGroup))]
+    [UpdateBefore(typeof(PhysicsSolverSystem))]
     [BurstCompile]
     public partial struct IntegrateVelocitySystem : ISystem
     {

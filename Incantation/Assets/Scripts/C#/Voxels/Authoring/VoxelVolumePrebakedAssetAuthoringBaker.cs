@@ -27,23 +27,30 @@ namespace Incantation.Engine.Voxels.Baking
             AddComponent(entity, new GridDimensions((uint)dims.x, (uint)dims.y, (uint)dims.z));
 
             // Physics
-            float invMass = authoring.voxelVolumePrebakedAsset.inverseMass;
-            float3 invInertia = new float3(
-                authoring.voxelVolumePrebakedAsset.inverseInertia.x,
-                authoring.voxelVolumePrebakedAsset.inverseInertia.y,
-                authoring.voxelVolumePrebakedAsset.inverseInertia.z
-            );
-            float3 com = new float3(
-                authoring.voxelVolumePrebakedAsset.centerOfMass.x,
-                authoring.voxelVolumePrebakedAsset.centerOfMass.y,
-                authoring.voxelVolumePrebakedAsset.centerOfMass.z
-            );
-            AddComponent(entity, new PhysicsMass
+            if (authoring.isDynamic)
             {
-                InverseMass = invMass,
-                InverseInertia = invInertia,
-                CenterOfMass = com
-            });
+                float invMass = authoring.voxelVolumePrebakedAsset.inverseMass;
+                float3 invInertia = new float3(
+                    authoring.voxelVolumePrebakedAsset.inverseInertia.x,
+                    authoring.voxelVolumePrebakedAsset.inverseInertia.y,
+                    authoring.voxelVolumePrebakedAsset.inverseInertia.z
+                );
+                float3 com = new float3(
+                    authoring.voxelVolumePrebakedAsset.centerOfMass.x,
+                    authoring.voxelVolumePrebakedAsset.centerOfMass.y,
+                    authoring.voxelVolumePrebakedAsset.centerOfMass.z
+                );
+                AddComponent(entity, new PhysicsMass
+                {
+                    InverseMass = invMass,
+                    InverseInertia = invInertia,
+                    CenterOfMass = com
+                });
+            }
+
+            // Enableables
+            AddComponent<IsDynamic>(entity);
+            SetComponentEnabled<IsDynamic>(entity, authoring.isDynamic);
 
             // Add Dynamic Buffer Component for individual voxels
             int size = dims.x * dims.y * dims.z;

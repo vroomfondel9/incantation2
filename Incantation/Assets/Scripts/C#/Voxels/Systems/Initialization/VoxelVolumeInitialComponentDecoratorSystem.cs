@@ -39,10 +39,12 @@ namespace Incantation.Engine.Voxels.Systems
         {
             var ecb = new EntityCommandBuffer(Unity.Collections.Allocator.Temp);
 
-            foreach (var (gridDimensions, matMeshInfo, entity) in SystemAPI.Query<
+            foreach (var (gridDimensions, matMeshInfo, isDynamic, entity) in SystemAPI.Query<
                 RefRO<GridDimensions>,
-                RefRW<MaterialMeshInfo>>()
+                RefRW<MaterialMeshInfo>,
+                EnabledRefRO<IsDynamic>>()
                          .WithAll<InitializationColorTopologyPackedVoxel>()
+                         .WithOptions(EntityQueryOptions.IgnoreComponentEnabledState)
                          .WithEntityAccess())
             {
                 // --- Add OriginalDimensions ---
@@ -52,17 +54,14 @@ namespace Incantation.Engine.Voxels.Systems
                 ecb.AddComponent(entity, new OriginalDimensions(dims.x, dims.y, dims.z));
 
                 // --- Physics ---
-                ecb.AddComponent(entity, new PhysicsVelocity
+                if (isDynamic.ValueRO)
                 {
-                    Linear = new float3(0, 0, 0),
-                    Angular = new float3(0, 0, 0)
-                });
-
-                ecb.AddComponent(entity, new PhysicsForce
-                {
-                    Force = new float3(0, 0, 0),
-                    Torque = new float3(1000, 1000, 1000)
-                });
+                    ecb.AddComponent(entity, new PhysicsVelocity
+                    {
+                        Linear = new float3(UnityEngine.Random.Range(-1.0f, 1.0f), UnityEngine.Random.Range(-1.0f, 1.0f), UnityEngine.Random.Range(-1.0f, 1.0f)),
+                        Angular = new float3(UnityEngine.Random.Range(-1.0f, 1.0f), UnityEngine.Random.Range(-1.0f, 1.0f), UnityEngine.Random.Range(-1.0f, 1.0f))
+                    });
+                }
 
                 // --- Material properties ---
                 ecb.AddComponent(entity, new OriginalVoxelVolumeGlobalOffset
@@ -75,11 +74,11 @@ namespace Incantation.Engine.Voxels.Systems
                     EasingFunction.LINEAR, 1000, CompletionFunction.REMOVE));
 
                 // --- Enableables ---
-                ecb.AddComponent<NeedsOriginalVoxelDeallocation>(entity);
-                ecb.SetComponentEnabled<NeedsOriginalVoxelDeallocation>(entity, false);
+                ecb.AddComponent<NeedsDeletion>(entity);
+                ecb.SetComponentEnabled<NeedsDeletion>(entity, false);
 
-                ecb.AddComponent<IsDynamic>(entity);
-                ecb.SetComponentEnabled<IsDynamic>(entity, true);
+                ecb.AddComponent<IsBroadphaseRecorded>(entity);
+                ecb.SetComponentEnabled<IsBroadphaseRecorded>(entity, false);
 
                 // Hack to fix GPU instancing because Entitles Graphics is dumb
                 matMeshInfo.ValueRW.Material = -1;

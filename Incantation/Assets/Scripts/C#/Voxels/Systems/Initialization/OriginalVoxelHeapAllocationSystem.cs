@@ -231,7 +231,7 @@ namespace Incantation.Engine.Voxels.Components
                 in SystemAPI.Query<
                         RefRW<OriginalVoxelVolumeGlobalOffset>,
                         RefRO<OriginalVoxelVolumeID>>()
-                    .WithAll<NeedsOriginalVoxelDeallocation>()
+                    .WithAll<NeedsDeletion>()
                     .WithEntityAccess())
             {
                 ulong hash = volumeId.ValueRO.Hash;
