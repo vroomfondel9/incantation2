@@ -4,14 +4,14 @@ namespace Incantation.Engine.Voxels.Systems.Physics.Support
 {
     public struct PhysicsSolverStats : IComponentData
     {
-        public uint broadphaseCellAddsDynamic;
-        public uint broadphaseCellRemovalsDynamic;
+        public int broadphaseCellAddsDynamic;
+        public int broadphaseCellAddsStatic;
 
-        public uint broadphaseCellAddsStatic;
-        public uint broadphaseCellRemovalsStatic;
+        public int broadphaseCellRemovalsDynamic;
+        public int broadphaseCellRemovalsStatic;
 
-        public uint countVolumesDidNotUpdateGrid;
-        public uint countVolumesUpdatedGrid;
+        public int countVolumesDidNotUpdateGrid;
+        public int countVolumesUpdatedGrid;
 
         public int numDynamicVolumes;
         public int numStaticVolumes;
@@ -34,8 +34,8 @@ namespace Incantation.Engine.Voxels.Systems.Physics.Support
             10–20 → large body
             50+ → something is very wrong
         */
-        public uint maxCellsPerVolumeDynamic;
-        public uint maxCellsPerVolumeStatic;
+        public int maxCellsPerVolumeDynamic;
+        public int maxCellsPerVolumeStatic;
 
         /*
          * <5% → excellent

@@ -10,6 +10,7 @@ using Unity.Jobs;
 using Unity.Jobs.LowLevel.Unsafe;
 using Unity.Mathematics;
 using Unity.Rendering;
+using Unity.Transforms;
 
 namespace Incantation.Engine.Voxels.Systems.Physics
 {
@@ -25,7 +26,11 @@ namespace Incantation.Engine.Voxels.Systems.Physics
         NativeQueue<BroadphaseEntityInCell> dynamicRemovalQueue;
         NativeQueue<BroadphaseEntityInCell> staticRemovalQueue;
 
-        NativeArray<PhysicsSolverStatsThreadLocal> threadStats;
+        NativeArray<PhysicsSolverStatsThreadLocal> threadStatsUpdatesDynamic;
+        NativeArray<PhysicsSolverStatsThreadLocal> threadStatsSpawnDynamic;
+        NativeArray<PhysicsSolverStatsThreadLocal> threadStatsSpawnStatic;
+        NativeArray<PhysicsSolverStatsThreadLocal> threadStatsDespawnDynamic;
+        NativeArray<PhysicsSolverStatsThreadLocal> threadStatsDespawnStatic;
 
         Entity statsEntity;
 
@@ -38,17 +43,22 @@ namespace Incantation.Engine.Voxels.Systems.Physics
 
             int capacity = totalCells * 4;
 
+            // Create data structures
             broadphaseDynamic = new NativeParallelMultiHashMap<BroadphaseCell, Entity>(capacity, Allocator.Persistent);
             broadphaseStatic = new NativeParallelMultiHashMap<BroadphaseCell, Entity>(capacity, Allocator.Persistent);
 
             dynamicRemovalQueue = new NativeQueue<BroadphaseEntityInCell>(Allocator.Persistent);
             staticRemovalQueue = new NativeQueue<BroadphaseEntityInCell>(Allocator.Persistent);
 
-            threadStats = new NativeArray<PhysicsSolverStatsThreadLocal>(
-                JobsUtility.MaxJobThreadCount,
-                Allocator.Persistent);
+            threadStatsUpdatesDynamic = new NativeArray<PhysicsSolverStatsThreadLocal>(JobsUtility.MaxJobThreadCount,Allocator.Persistent);
+            threadStatsSpawnDynamic = new NativeArray<PhysicsSolverStatsThreadLocal>(JobsUtility.MaxJobThreadCount, Allocator.Persistent);
+            threadStatsSpawnStatic = new NativeArray<PhysicsSolverStatsThreadLocal>(JobsUtility.MaxJobThreadCount, Allocator.Persistent);
+            threadStatsDespawnDynamic = new NativeArray<PhysicsSolverStatsThreadLocal>(JobsUtility.MaxJobThreadCount, Allocator.Persistent);
+            threadStatsDespawnStatic = new NativeArray<PhysicsSolverStatsThreadLocal>(JobsUtility.MaxJobThreadCount, Allocator.Persistent);
 
-            statsEntity = state.EntityManager.CreateEntity(typeof(PhysicsSolverStats));
+
+            // Create Singletons
+            state.EntityManager.CreateSingleton<PhysicsSolverStats>();
         }
 
         public void OnDestroy(ref SystemState state)
@@ -58,7 +68,11 @@ namespace Incantation.Engine.Voxels.Systems.Physics
             if (dynamicRemovalQueue.IsCreated) dynamicRemovalQueue.Dispose();
             if (staticRemovalQueue.IsCreated) staticRemovalQueue.Dispose();
 
-            if (threadStats.IsCreated) threadStats.Dispose();
+            if (threadStatsUpdatesDynamic.IsCreated) threadStatsUpdatesDynamic.Dispose();
+            if (threadStatsSpawnDynamic.IsCreated) threadStatsSpawnDynamic.Dispose();
+            if (threadStatsSpawnStatic.IsCreated) threadStatsSpawnStatic.Dispose();
+            if (threadStatsDespawnDynamic.IsCreated) threadStatsDespawnDynamic.Dispose();
+            if (threadStatsDespawnStatic.IsCreated) threadStatsDespawnStatic.Dispose();
         }
 
         public void OnUpdate(ref SystemState state)
@@ -78,9 +92,6 @@ namespace Incantation.Engine.Voxels.Systems.Physics
         // BROADPHASE
         // -------------------------------------------------
         // ------------------------------------------------------------
-        // PhysicsSolverSystem Frame Execution Flow
-        //
-        // Frame N:
         //
         // 1. Schedule jobs
         //    ├─ q1 : UpdateDynamicBroadphaseJob
@@ -110,12 +121,21 @@ namespace Incantation.Engine.Voxels.Systems.Physics
         //    Jobs write additions directly to the broadphase maps and
         //    enqueue removals into removal queues.
         //
-        // 3. state.Dependency.Complete() sync point
-        //    Main thread waits until all scheduled jobs have finished.
+        // 3. Job Interdependencies
+        //    Conceptually, these are all totally independent, however
+        //    a safety check by ECS prevents all the dynamic jobs from
+        //    being run at the same time because they all read and write
+        //    to the same component (storing last frame's morton codes).
+        //    The fact that each of these jobs will always operate on a 
+        //    mutually exclusive set of entities due to the way their
+        //    quiries are structured is not something ECS checks for,
+        //    and there's no mechanism for overriding that safety block.
+        //    Therefore, they are each programmed as dependent on each other
+        //    Even though they're really not.
         //
         // 4. ECB Playback
         //    Structural changes recorded during jobs are applied:
-        //      • PrevBroadphaseCellIndices added for new dynamic entities
+        //      • PrevBroadphaseCellIndices set for new or updated dynamic entities
         //      • IsBroadphaseRecorded enabled
         //
         //    These changes become visible to ECS queries starting next frame.
@@ -125,14 +145,15 @@ namespace Incantation.Engine.Voxels.Systems.Physics
         //    removed from the appropriate broadphase hash maps.
         //
         // 6. Broadphase state is now fully updated and ready for the
-        //    next physics stage (e.g., pair generation or narrowphase).
+        //    next physics stage (pair generation).
         // ------------------------------------------------------------
         private void onUpdateBroadphaseSetup(ref SystemState state)
         {
             float cellSize = GlobalConstants.MIN_CHUNK_GRID_CELL_SIZE;
             float3 worldHalf = GlobalConstants.CHUNK_SIZE * 0.5f;
 
-            var ecb = new EntityCommandBuffer(Allocator.TempJob);
+            var ecbDynamic = new EntityCommandBuffer(Allocator.TempJob);
+            var ecbStatic = new EntityCommandBuffer(Allocator.TempJob);
 
             dynamicRemovalQueue.Clear();
             staticRemovalQueue.Clear();
@@ -153,7 +174,7 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                 WorldHalf = worldHalf,
                 BroadphaseDynamic = dynamicWriter,
                 RemovalQueue = dynamicRemovalWriter,
-                ThreadStats = threadStats
+                ThreadStats = threadStatsUpdatesDynamic
             };
 
             var h1 = q1.ScheduleParallel(state.Dependency);
@@ -167,11 +188,11 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                 CellSize = cellSize,
                 WorldHalf = worldHalf,
                 BroadphaseDynamic = dynamicWriter,
-                ECB = ecb.AsParallelWriter(),
-                ThreadStats = threadStats
+                ECB = ecbDynamic.AsParallelWriter(),
+                ThreadStats = threadStatsSpawnDynamic
             };
 
-            var h2 = q2.ScheduleParallel(state.Dependency);
+            var h2 = q2.ScheduleParallel(h1);
 
             // ------------------------------
             // BROADPHASE SETUP - Init Static just spawned
@@ -182,8 +203,8 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                 CellSize = cellSize,
                 WorldHalf = worldHalf,
                 BroadphaseStatic = staticWriter,
-                ECB = ecb.AsParallelWriter(),
-                ThreadStats = threadStats
+                ECB = ecbStatic.AsParallelWriter(),
+                ThreadStats = threadStatsSpawnStatic
             };
 
             var h3 = q3.ScheduleParallel(state.Dependency);
@@ -197,10 +218,10 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                 CellSize = cellSize,
                 WorldHalf = worldHalf,
                 RemovalQueue = dynamicRemovalWriter,
-                ThreadStats = threadStats
+                ThreadStats = threadStatsDespawnDynamic
             };
 
-            var h4 = q4.ScheduleParallel(state.Dependency);
+            var h4 = q4.ScheduleParallel(h2);
 
             // ------------------------------
             // BROADPHASE SETUP - QUERY cleanup static prior to deletion
@@ -211,19 +232,20 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                 CellSize = cellSize,
                 WorldHalf = worldHalf,
                 RemovalQueue = staticRemovalWriter,
-                ThreadStats = threadStats
+                ThreadStats = threadStatsDespawnStatic
             };
 
             var h5 = q5.ScheduleParallel(state.Dependency);
 
-            var h123 = JobHandle.CombineDependencies(h1, h2, h3);
-            var h45 = JobHandle.CombineDependencies(h4, h5);
-            state.Dependency = JobHandle.CombineDependencies(h123, h45);
+            state.Dependency = JobHandle.CombineDependencies(h3, h4, h5);
 
             state.Dependency.Complete();
 
-            ecb.Playback(state.EntityManager);
-            ecb.Dispose();
+            ecbDynamic.Playback(state.EntityManager);
+            ecbStatic.Playback(state.EntityManager);
+
+            ecbDynamic.Dispose();
+            ecbStatic.Dispose();
 
             // ------------------------------------------------
             // APPLY REMOVALS (MAIN THREAD)
@@ -240,11 +262,14 @@ namespace Incantation.Engine.Voxels.Systems.Physics
             }
         }
 
-        // -------------------------------------------------
+        // -------------------------------------------------                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              
         // BROADPHASE SETUP - QUERY HOT (Dynamic, already initialized, compares this frame to last for changes)
         // -------------------------------------------------
 
         [BurstCompile]
+        [WithAll(typeof(IsDynamic))]
+        [WithNone(typeof(NeedsDeletion))]
+        [WithAll(typeof(IsBroadphaseRecorded))]
         partial struct UpdateDynamicBroadphaseJob : IJobEntity
         {
             public float CellSize;
@@ -253,6 +278,7 @@ namespace Incantation.Engine.Voxels.Systems.Physics
             public NativeParallelMultiHashMap<BroadphaseCell, Entity>.ParallelWriter BroadphaseDynamic;
             public NativeQueue<BroadphaseEntityInCell>.ParallelWriter RemovalQueue;
 
+            [NativeDisableParallelForRestriction]
             public NativeArray<PhysicsSolverStatsThreadLocal> ThreadStats;
 
             [NativeSetThreadIndex] int threadIndex;
@@ -298,8 +324,8 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                 int prevCellVolume = (int)(prevCellVolumeDims.x * prevCellVolumeDims.y * prevCellVolumeDims.z);
                 int curCellVolume = curCellVolumeDims.x * curCellVolumeDims.y * curCellVolumeDims.z;
                 int volumeDiff = curCellVolume - prevCellVolume;
-                stats.totalDynamicVolumeCells += volumeDiff;
-                stats.maxCellsPerVolumeDynamic = (uint)math.max(stats.maxCellsPerVolumeDynamic, curCellVolume);
+                stats.totalVolumeCells += volumeDiff;
+                stats.maxCellsPerVolume = math.max(stats.maxCellsPerVolume, curCellVolume);
 
                 uint3 intersectMin = math.max(prevMin, (uint3)minCell);
                 uint3 intersectMax = math.min(prevMax, (uint3)maxCell);
@@ -316,7 +342,7 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                             RemovalQueue.Enqueue(new BroadphaseEntityInCell(
                                 new BroadphaseCell(x, y, z), entity));
 
-                            stats.broadphaseCellRemovalsDynamic++;
+                            stats.broadphaseCellRemovals++;
                         }
 
                 for (uint x = (uint)minCell.x; x <= (uint)maxCell.x; x++)
@@ -330,7 +356,7 @@ namespace Incantation.Engine.Voxels.Systems.Physics
 
                             BroadphaseDynamic.Add(new BroadphaseCell(x, y, z), entity);
 
-                            stats.broadphaseCellAddsDynamic++;
+                            stats.broadphaseCellAdds++;
                         }
 
                 prevIndices.minExtentCellIndex = newMinMorton;
@@ -345,6 +371,9 @@ namespace Incantation.Engine.Voxels.Systems.Physics
         // -------------------------------------------------
 
         [BurstCompile]
+        [WithAll(typeof(IsDynamic))]
+        [WithNone(typeof(NeedsDeletion))]
+        [WithNone(typeof(IsBroadphaseRecorded))]
         partial struct SpawnDynamicBroadphaseJob : IJobEntity
         {
             public float CellSize;
@@ -353,6 +382,7 @@ namespace Incantation.Engine.Voxels.Systems.Physics
             public NativeParallelMultiHashMap<BroadphaseCell, Entity>.ParallelWriter BroadphaseDynamic;
             public EntityCommandBuffer.ParallelWriter ECB;
 
+            [NativeDisableParallelForRestriction]
             public NativeArray<PhysicsSolverStatsThreadLocal> ThreadStats;
 
             [NativeSetThreadIndex] int threadIndex;
@@ -360,16 +390,13 @@ namespace Incantation.Engine.Voxels.Systems.Physics
             void Execute(
                 [ChunkIndexInQuery] int chunkIndex,
                 Entity entity,
-                in WorldRenderBounds bounds,
-                EnabledRefRO<IsDynamic> isDynamic,
-                EnabledRefRO<IsBroadphaseRecorded> recorded)
+                ref PrevBroadphaseCellIndices prevIndices,
+                in WorldRenderBounds bounds)
             {
-                if (!isDynamic.ValueRO || recorded.ValueRO)
-                    return;
-
                 var stats = ThreadStats[threadIndex];
 
-                stats.numDynamicVolumes++;
+                stats.numVolumes++;
+                stats.countVolumesUpdatedGrid++;
 
                 float3 min = bounds.Value.Center - bounds.Value.Extents;
                 float3 max = bounds.Value.Center + bounds.Value.Extents;
@@ -379,8 +406,8 @@ namespace Incantation.Engine.Voxels.Systems.Physics
 
                 int3 curCellVolumeDims = maxCell - minCell;
                 int curCellVolume = curCellVolumeDims.x * curCellVolumeDims.y * curCellVolumeDims.z;
-                stats.totalDynamicVolumeCells += curCellVolume;
-                stats.maxCellsPerVolumeDynamic = (uint)math.max(stats.maxCellsPerVolumeDynamic, curCellVolume);
+                stats.totalVolumeCells += curCellVolume;
+                stats.maxCellsPerVolume = math.max(stats.maxCellsPerVolume, curCellVolume);
 
                 for (int x = minCell.x; x <= maxCell.x; x++)
                     for (int y = minCell.y; y <= maxCell.y; y++)
@@ -388,17 +415,14 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                         {
                             BroadphaseDynamic.Add(new BroadphaseCell((uint)x, (uint)y, (uint)z), entity);
 
-                            stats.broadphaseCellAddsDynamic++;
+                            stats.broadphaseCellAdds++;
                         }
 
                 BroadphaseCell minCellStruct = new BroadphaseCell((uint)minCell.x, (uint)minCell.y, (uint)minCell.z);
                 BroadphaseCell maxCellStruct = new BroadphaseCell((uint)maxCell.x, (uint)maxCell.y, (uint)maxCell.z);
 
-                ECB.AddComponent(chunkIndex, entity, new PrevBroadphaseCellIndices
-                {
-                    minExtentCellIndex = minCellStruct.Morton,
-                    maxExtentCellIndex = maxCellStruct.Morton
-                });
+                prevIndices.minExtentCellIndex = minCellStruct.Morton;
+                prevIndices.maxExtentCellIndex = maxCellStruct.Morton;
 
                 ECB.SetComponentEnabled<IsBroadphaseRecorded>(chunkIndex, entity, true);
 
@@ -411,6 +435,9 @@ namespace Incantation.Engine.Voxels.Systems.Physics
         // -------------------------------------------------
 
         [BurstCompile]
+        [WithNone(typeof(IsDynamic))]
+        [WithNone(typeof(NeedsDeletion))]
+        [WithNone(typeof(IsBroadphaseRecorded))]
         partial struct SpawnStaticBroadphaseJob : IJobEntity
         {
             public float CellSize;
@@ -419,6 +446,7 @@ namespace Incantation.Engine.Voxels.Systems.Physics
             public NativeParallelMultiHashMap<BroadphaseCell, Entity>.ParallelWriter BroadphaseStatic;
             public EntityCommandBuffer.ParallelWriter ECB;
 
+            [NativeDisableParallelForRestriction]
             public NativeArray<PhysicsSolverStatsThreadLocal> ThreadStats;
 
             [NativeSetThreadIndex] int threadIndex;
@@ -426,16 +454,12 @@ namespace Incantation.Engine.Voxels.Systems.Physics
             void Execute(
                 [ChunkIndexInQuery] int chunkIndex,
                 Entity entity,
-                in WorldRenderBounds bounds,
-                EnabledRefRO<IsDynamic> isDynamic,
-                EnabledRefRO<IsBroadphaseRecorded> recorded)
+                in WorldRenderBounds bounds)
             {
-                if (isDynamic.ValueRO || recorded.ValueRO)
-                    return;
-
                 var stats = ThreadStats[threadIndex];
 
-                stats.numStaticVolumes++;
+                stats.numVolumes++;
+                stats.countVolumesUpdatedGrid++;
 
                 float3 min = bounds.Value.Center - bounds.Value.Extents;
                 float3 max = bounds.Value.Center + bounds.Value.Extents;
@@ -445,8 +469,8 @@ namespace Incantation.Engine.Voxels.Systems.Physics
 
                 int3 curCellVolumeDims = maxCell - minCell;
                 int curCellVolume = curCellVolumeDims.x * curCellVolumeDims.y * curCellVolumeDims.z;
-                stats.totalStaticVolumeCells += curCellVolume;
-                stats.maxCellsPerVolumeStatic = (uint)math.max(stats.maxCellsPerVolumeDynamic, curCellVolume);
+                stats.totalVolumeCells += curCellVolume;
+                stats.maxCellsPerVolume = math.max(stats.maxCellsPerVolume, curCellVolume);
 
                 for (int x = minCell.x; x <= maxCell.x; x++)
                     for (int y = minCell.y; y <= maxCell.y; y++)
@@ -454,7 +478,7 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                         {
                             BroadphaseStatic.Add(new BroadphaseCell((uint)x, (uint)y, (uint)z), entity);
 
-                            stats.broadphaseCellAddsStatic++;
+                            stats.broadphaseCellAdds++;
                         }
 
                 ECB.SetComponentEnabled<IsBroadphaseRecorded>(chunkIndex, entity, true);
@@ -468,6 +492,8 @@ namespace Incantation.Engine.Voxels.Systems.Physics
         // -------------------------------------------------
 
         [BurstCompile]
+        [WithAll(typeof(IsDynamic))]
+        [WithAll(typeof(NeedsDeletion))]
         partial struct CleanupDynamicBroadphaseJob : IJobEntity
         {
             public float CellSize;
@@ -475,6 +501,7 @@ namespace Incantation.Engine.Voxels.Systems.Physics
 
             public NativeQueue<BroadphaseEntityInCell>.ParallelWriter RemovalQueue;
 
+            [NativeDisableParallelForRestriction]
             public NativeArray<PhysicsSolverStatsThreadLocal> ThreadStats;
 
             [NativeSetThreadIndex] int threadIndex;
@@ -482,23 +509,19 @@ namespace Incantation.Engine.Voxels.Systems.Physics
             void Execute(
                 Entity entity,
                 in WorldRenderBounds bounds,
-                in PrevBroadphaseCellIndices prev,
-                EnabledRefRO<NeedsDeletion> deletion,
-                EnabledRefRO<IsDynamic> dynamic)
+                in PrevBroadphaseCellIndices prev)
             {
-                if (!deletion.ValueRO || !dynamic.ValueRO)
-                    return;
-
                 var stats = ThreadStats[threadIndex];
 
-                stats.numDynamicVolumes--;
+                stats.numVolumes--;
+                stats.countVolumesUpdatedGrid++;
 
                 uint3 min = BroadphaseCell.DecodeMorton(prev.minExtentCellIndex);
                 uint3 max = BroadphaseCell.DecodeMorton(prev.maxExtentCellIndex);
 
                 uint3 curCellVolumeDims = max - min;
                 int curCellVolume = (int)(curCellVolumeDims.x * curCellVolumeDims.y * curCellVolumeDims.z);
-                stats.totalDynamicVolumeCells -= curCellVolume;
+                stats.totalVolumeCells -= curCellVolume;
 
                 for (uint x = min.x; x <= max.x; x++)
                     for (uint y = min.y; y <= max.y; y++)
@@ -507,7 +530,7 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                             RemovalQueue.Enqueue(new BroadphaseEntityInCell(
                                 new BroadphaseCell(x, y, z), entity));
 
-                            stats.broadphaseCellRemovalsDynamic++;
+                            stats.broadphaseCellRemovals++;
                         }
 
                 ThreadStats[threadIndex] = stats;
@@ -519,6 +542,8 @@ namespace Incantation.Engine.Voxels.Systems.Physics
         // -------------------------------------------------
 
         [BurstCompile]
+        [WithNone(typeof(IsDynamic))]
+        [WithAll(typeof(NeedsDeletion))]
         partial struct CleanupStaticBroadphaseJob : IJobEntity
         {
             public float CellSize;
@@ -526,22 +551,19 @@ namespace Incantation.Engine.Voxels.Systems.Physics
 
             public NativeQueue<BroadphaseEntityInCell>.ParallelWriter RemovalQueue;
 
+            [NativeDisableParallelForRestriction]
             public NativeArray<PhysicsSolverStatsThreadLocal> ThreadStats;
 
             [NativeSetThreadIndex] int threadIndex;
 
             void Execute(
                 Entity entity,
-                in WorldRenderBounds bounds,
-                EnabledRefRO<NeedsDeletion> deletion,
-                EnabledRefRO<IsDynamic> dynamic)
+                in WorldRenderBounds bounds)
             {
-                if (!deletion.ValueRO || dynamic.ValueRO)
-                    return;
-
                 var stats = ThreadStats[threadIndex];
 
-                stats.numStaticVolumes--;
+                stats.numVolumes--;
+                stats.countVolumesUpdatedGrid++;
 
                 float3 min = bounds.Value.Center - bounds.Value.Extents;
                 float3 max = bounds.Value.Center + bounds.Value.Extents;
@@ -551,7 +573,7 @@ namespace Incantation.Engine.Voxels.Systems.Physics
 
                 int3 curCellVolumeDims = maxCell - minCell;
                 int curCellVolume = curCellVolumeDims.x * curCellVolumeDims.y * curCellVolumeDims.z;
-                stats.totalStaticVolumeCells -= curCellVolume;
+                stats.totalVolumeCells -= curCellVolume;
 
                 for (int x = minCell.x; x <= maxCell.x; x++)
                     for (int y = minCell.y; y <= maxCell.y; y++)
@@ -560,49 +582,94 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                             RemovalQueue.Enqueue(new BroadphaseEntityInCell(
                                 new BroadphaseCell((uint)x, (uint)y, (uint)z), entity));
 
-                            stats.broadphaseCellRemovalsStatic++;
+                            stats.broadphaseCellRemovals++;
                         }
 
                 ThreadStats[threadIndex] = stats;
             }
         }
 
-    #endregion
+        #endregion
 
         #region MISC - PHYSICS STATS COLLECTION
+        // This is 32-128 items so don't worry about parallelizing
         private void clearStats()
         {
-            // This is 32-128 items so don't worry about parallelizing
-            for (int i = 0; i < threadStats.Length; i++)
-                threadStats[i] = default;
+            for (int i = 0; i < threadStatsUpdatesDynamic.Length; i++)
+                threadStatsUpdatesDynamic[i] = default;
+
+            for (int i = 0; i < threadStatsSpawnDynamic.Length; i++)
+                threadStatsSpawnDynamic[i] = default;
+
+            for (int i = 0; i < threadStatsSpawnStatic.Length; i++)
+                threadStatsSpawnStatic[i] = default;
+
+            for (int i = 0; i < threadStatsDespawnDynamic.Length; i++)
+                threadStatsDespawnDynamic[i] = default;
+
+            for (int i = 0; i < threadStatsDespawnStatic.Length; i++)
+                threadStatsDespawnStatic[i] = default;
         }
 
         private void aggregateStats(ref SystemState state)
         {
-            PhysicsSolverStats existingStats = state.EntityManager.GetComponentData<PhysicsSolverStats>(statsEntity);
+            var existingStatsRW = SystemAPI.GetSingletonRW<PhysicsSolverStats>();
+            ref var existingStats = ref existingStatsRW.ValueRW;
             PhysicsSolverStats finalStats = default;
 
-            for (int i = 0; i < threadStats.Length; i++)
+            for (int i = 0; i < threadStatsUpdatesDynamic.Length; i++)
             {
-                var s = threadStats[i];
+                var s = threadStatsUpdatesDynamic[i];
 
-                finalStats.broadphaseCellAddsDynamic += s.broadphaseCellAddsDynamic;
-                finalStats.broadphaseCellRemovalsDynamic += s.broadphaseCellRemovalsDynamic;
-
-                finalStats.broadphaseCellAddsStatic += s.broadphaseCellAddsStatic;
-                finalStats.broadphaseCellRemovalsStatic += s.broadphaseCellRemovalsStatic;
-
+                finalStats.broadphaseCellAddsDynamic += s.broadphaseCellAdds;
+                finalStats.broadphaseCellRemovalsDynamic += s.broadphaseCellRemovals;
                 finalStats.countVolumesDidNotUpdateGrid += s.countVolumesDidNotUpdateGrid;
                 finalStats.countVolumesUpdatedGrid += s.countVolumesUpdatedGrid;
+                finalStats.totalDynamicVolumeCells += s.totalVolumeCells;
+                finalStats.numDynamicVolumes += s.numVolumes;
+                finalStats.maxCellsPerVolumeDynamic = math.max(finalStats.maxCellsPerVolumeDynamic, s.maxCellsPerVolume);
+            }
 
-                finalStats.totalDynamicVolumeCells += s.totalDynamicVolumeCells;
-                finalStats.totalStaticVolumeCells += s.totalStaticVolumeCells;
+            for (int i = 0; i < threadStatsSpawnDynamic.Length; i++)
+            {
+                var s = threadStatsSpawnDynamic[i];
 
-                finalStats.numDynamicVolumes += s.numDynamicVolumes;
-                finalStats.numStaticVolumes += s.numStaticVolumes;
+                finalStats.broadphaseCellAddsDynamic += s.broadphaseCellAdds;
+                finalStats.countVolumesUpdatedGrid += s.countVolumesUpdatedGrid;
+                finalStats.totalDynamicVolumeCells += s.totalVolumeCells;
+                finalStats.numDynamicVolumes += s.numVolumes;
+                finalStats.maxCellsPerVolumeDynamic = math.max(finalStats.maxCellsPerVolumeDynamic, s.maxCellsPerVolume);
+            }
 
-                finalStats.maxCellsPerVolumeDynamic = math.max(finalStats.maxCellsPerVolumeDynamic, s.maxCellsPerVolumeDynamic);
-                finalStats.maxCellsPerVolumeStatic = math.max(finalStats.maxCellsPerVolumeStatic, s.maxCellsPerVolumeStatic);
+            for (int i = 0; i < threadStatsSpawnStatic.Length; i++)
+            {
+                var s = threadStatsSpawnStatic[i];
+
+                finalStats.broadphaseCellAddsStatic += s.broadphaseCellAdds;
+                finalStats.countVolumesUpdatedGrid += s.countVolumesUpdatedGrid;
+                finalStats.totalStaticVolumeCells += s.totalVolumeCells;
+                finalStats.numStaticVolumes += s.numVolumes;
+                finalStats.maxCellsPerVolumeStatic = math.max(finalStats.maxCellsPerVolumeDynamic, s.maxCellsPerVolume);
+            }
+
+            for (int i = 0; i < threadStatsDespawnDynamic.Length; i++)
+            {
+                var s = threadStatsDespawnDynamic[i];
+
+                finalStats.broadphaseCellRemovalsDynamic += s.broadphaseCellRemovals;
+                finalStats.countVolumesUpdatedGrid += s.countVolumesUpdatedGrid;
+                finalStats.totalDynamicVolumeCells += s.totalVolumeCells;
+                finalStats.numDynamicVolumes += s.numVolumes;
+            }
+
+            for (int i = 0; i < threadStatsDespawnStatic.Length; i++)
+            {
+                var s = threadStatsDespawnStatic[i];
+
+                finalStats.broadphaseCellRemovalsStatic += s.broadphaseCellRemovals;
+                finalStats.countVolumesUpdatedGrid += s.countVolumesUpdatedGrid;
+                finalStats.totalStaticVolumeCells += s.totalVolumeCells;
+                finalStats.numStaticVolumes += s.numVolumes;
             }
 
             finalStats.totalDynamicVolumeCells += existingStats.totalDynamicVolumeCells;
@@ -622,7 +689,8 @@ namespace Incantation.Engine.Voxels.Systems.Physics
             finalStats.updateRateDynamic = finalStats.numDynamicVolumes > 0 ?
                 finalStats.countVolumesUpdatedGrid / ((float)finalStats.numDynamicVolumes) : 0.0f;
 
-            state.EntityManager.SetComponentData(statsEntity, finalStats);
+            //Assign to values to singleton
+            existingStats = finalStats;
         }
         #endregion
     }

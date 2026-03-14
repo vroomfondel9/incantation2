@@ -61,6 +61,12 @@ namespace Incantation.Engine.Voxels.Systems
                         Linear = new float3(UnityEngine.Random.Range(-1.0f, 1.0f), UnityEngine.Random.Range(-1.0f, 1.0f), UnityEngine.Random.Range(-1.0f, 1.0f)),
                         Angular = new float3(UnityEngine.Random.Range(-1.0f, 1.0f), UnityEngine.Random.Range(-1.0f, 1.0f), UnityEngine.Random.Range(-1.0f, 1.0f))
                     });
+
+                    ecb.AddComponent(entity, new PrevBroadphaseCellIndices
+                    {
+                        minExtentCellIndex = 0,
+                        maxExtentCellIndex = 0
+                    });
                 }
 
                 // --- Material properties ---

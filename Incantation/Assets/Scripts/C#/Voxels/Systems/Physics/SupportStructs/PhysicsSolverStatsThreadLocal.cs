@@ -4,22 +4,16 @@ namespace Incantation.Engine.Voxels.Systems.Physics.Support
 {
     public struct PhysicsSolverStatsThreadLocal
     {
-        public uint broadphaseCellAddsDynamic;
-        public uint broadphaseCellRemovalsDynamic;
+        public int broadphaseCellAdds;
+        public int broadphaseCellRemovals;
 
-        public uint broadphaseCellAddsStatic;
-        public uint broadphaseCellRemovalsStatic;
+        public int countVolumesDidNotUpdateGrid;
+        public int countVolumesUpdatedGrid;
 
-        public uint countVolumesDidNotUpdateGrid;
-        public uint countVolumesUpdatedGrid;
+        public int numVolumes;
 
-        public int numDynamicVolumes;
-        public int numStaticVolumes;
+        public int totalVolumeCells;
 
-        public int totalDynamicVolumeCells;
-        public int totalStaticVolumeCells;
-
-        public uint maxCellsPerVolumeDynamic;
-        public uint maxCellsPerVolumeStatic;
+        public int maxCellsPerVolume;
     }
 }
