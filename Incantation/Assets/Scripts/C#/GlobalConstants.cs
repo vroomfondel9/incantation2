@@ -16,13 +16,17 @@ public class GlobalConstants
 
     public static readonly uint PER_VOXEL_BUFFER_UPDATE_SWAP_DELAY_FRAMES = 1;
 
-    public static readonly float MIN_CHUNK_GRID_CELL_SIZE = VOXEL_SCALE * 16.0f;     //Anything 16^3 voxels or smaller can fit in only one grid cell
+    public static readonly float BROADPHASE_GRID_CELL_SIZE = VOXEL_SCALE * 64.0f;     //Anything 16^3 voxels or smaller can fit in only one grid cell
 
-    public static readonly uint3 MIN_GRID_CELLS_PER_CHUNK = new uint3(16, 16, 16);
+    public static readonly uint3 BROADPHASE_GRID_CELLS_PER_CHUNK = new uint3(8, 8, 8);
 
     public static readonly float3 CHUNK_SIZE = new float3(
-        MIN_GRID_CELLS_PER_CHUNK.x * MIN_CHUNK_GRID_CELL_SIZE,
-        MIN_GRID_CELLS_PER_CHUNK.y * MIN_CHUNK_GRID_CELL_SIZE,
-        MIN_GRID_CELLS_PER_CHUNK.z * MIN_CHUNK_GRID_CELL_SIZE
+        BROADPHASE_GRID_CELLS_PER_CHUNK.x * BROADPHASE_GRID_CELL_SIZE,
+        BROADPHASE_GRID_CELLS_PER_CHUNK.y * BROADPHASE_GRID_CELL_SIZE,
+        BROADPHASE_GRID_CELLS_PER_CHUNK.z * BROADPHASE_GRID_CELL_SIZE
     );
+
+    public static readonly uint MAX_VOXEL_SIZE_PER_DIM = 255;
+
+    public static readonly uint3 MAX_VOXEL_SIZE = new uint3(MAX_VOXEL_SIZE_PER_DIM, MAX_VOXEL_SIZE_PER_DIM, MAX_VOXEL_SIZE_PER_DIM);
 }

@@ -58,8 +58,8 @@ namespace Incantation.Engine.Voxels.Systems
                 {
                     ecb.AddComponent(entity, new PhysicsVelocity
                     {
-                        Linear = new float3(UnityEngine.Random.Range(-1.0f, 1.0f), UnityEngine.Random.Range(-1.0f, 1.0f), UnityEngine.Random.Range(-1.0f, 1.0f)),
-                        Angular = new float3(UnityEngine.Random.Range(-1.0f, 1.0f), UnityEngine.Random.Range(-1.0f, 1.0f), UnityEngine.Random.Range(-1.0f, 1.0f))
+                        Angular = new float3(UnityEngine.Random.Range(-1.0f, 1.0f), UnityEngine.Random.Range(-1.0f, 1.0f), UnityEngine.Random.Range(-1.0f, 1.0f)),
+                        Linear = new float3(UnityEngine.Random.Range(-1.0f, 1.0f), UnityEngine.Random.Range(-1.0f, 1.0f), UnityEngine.Random.Range(-1.0f, 1.0f))
                     });
 
                     ecb.AddComponent(entity, new PrevBroadphaseCellIndices
@@ -80,6 +80,9 @@ namespace Incantation.Engine.Voxels.Systems
                     EasingFunction.LINEAR, 1000, CompletionFunction.REMOVE));
 
                 // --- Enableables ---
+                ecb.AddComponent<IsVoxelVolume>(entity);
+                ecb.SetComponentEnabled<IsVoxelVolume>(entity, true);
+
                 ecb.AddComponent<NeedsDeletion>(entity);
                 ecb.SetComponentEnabled<NeedsDeletion>(entity, false);
 

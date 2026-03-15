@@ -6,18 +6,48 @@ namespace Incantation.Engine.Voxels.Systems.Physics.Support
     // Used to hold cell -> entity mappings for fast lookup during broadphase collision detection
     public struct BroadphaseCell : IEquatable<BroadphaseCell>
     {
-        public uint x;
-        public uint y;
-        public uint z;
+        // Signed grid coordinates
+        public int x;
+        public int y;
+        public int z;
 
+        // Morton key used for hashing
         public uint Morton;
 
-        public BroadphaseCell(uint x, uint y, uint z)
+        private const float SQRT3 = 1.7320508f;
+        private const uint SAFETY_MARGIN = 0;       // In case items actually extend slightly out of bounds and haven't been corrected by boundary systems yet (such as mid solver, etc)
+
+        private const int MORTON_AXIS_BITS = 10;
+        private const int MORTON_AXIS_SIZE = 1 << MORTON_AXIS_BITS;   // 1024
+
+        private static readonly float MAX_EXTENTS_SIZE_WORLD =
+            GlobalConstants.VOXEL_SCALE * GlobalConstants.MAX_VOXEL_SIZE_PER_DIM / 2.0f;
+
+        // Perfect diagonal rotation case
+        private static readonly float WORST_CASE_AABB_EXTENTS =
+            MAX_EXTENTS_SIZE_WORLD * SQRT3;
+
+        private static readonly float MAX_DIST_AABB_CAN_EXTEND_OUTSIDE_GRID =
+            WORST_CASE_AABB_EXTENTS - MAX_EXTENTS_SIZE_WORLD;
+
+        private static readonly uint NEGATIVE_SPACE_TO_RESERVE =
+            ((uint)math.ceil(MAX_DIST_AABB_CAN_EXTEND_OUTSIDE_GRID /
+                GlobalConstants.BROADPHASE_GRID_CELL_SIZE))
+                    + SAFETY_MARGIN;
+
+        private const uint MORTON_MAX_COORD = MORTON_AXIS_SIZE - 1;
+
+        public BroadphaseCell(int x, int y, int z)
         {
             this.x = x;
             this.y = y;
             this.z = z;
-            Morton = EncodeMorton(x, y, z);
+
+            uint ex = EncodeSigned(x);
+            uint ey = EncodeSigned(y);
+            uint ez = EncodeSigned(z);
+
+            Morton = EncodeMorton(ex, ey, ez);
         }
 
         public bool Equals(BroadphaseCell other)
@@ -28,6 +58,35 @@ namespace Incantation.Engine.Voxels.Systems.Physics.Support
         public override int GetHashCode()
         {
             return (int)Morton;
+        }
+
+        // ---------------------------------------------------------
+        // Morton Space Helpers
+        // ---------------------------------------------------------
+
+        private static uint EncodeSigned(int value)
+        {
+            return (uint)(value + NEGATIVE_SPACE_TO_RESERVE);
+        }
+
+        private static int DecodeSigned(uint value)
+        {
+            return (int)value - (int)NEGATIVE_SPACE_TO_RESERVE;
+        }
+
+        /// <summary>
+        /// Returns true if the given signed coordinates can be represented
+        /// inside the 10-bit Morton axis space.
+        /// </summary>
+        public static bool IsWithinMortonSpace(int x, int y, int z)
+        {
+            int min = -(int)NEGATIVE_SPACE_TO_RESERVE;
+            int max = (int)MORTON_MAX_COORD - (int)NEGATIVE_SPACE_TO_RESERVE;
+
+            return
+                x >= min && x <= max &&
+                y >= min && y <= max &&
+                z >= min && z <= max;
         }
 
         // ---------------------------------------------------------
@@ -61,12 +120,19 @@ namespace Incantation.Engine.Voxels.Systems.Physics.Support
             return n;
         }
 
-        public static uint3 DecodeMorton(uint code)
+        /// <summary>
+        /// Decode Morton code back into signed grid coordinates.
+        /// </summary>
+        public static int3 DecodeMorton(uint code)
         {
-            return new uint3(
-                Compact1By2(code),
-                Compact1By2(code >> 1),
-                Compact1By2(code >> 2)
+            uint ux = Compact1By2(code);
+            uint uy = Compact1By2(code >> 1);
+            uint uz = Compact1By2(code >> 2);
+
+            return new int3(
+                DecodeSigned(ux),
+                DecodeSigned(uy),
+                DecodeSigned(uz)
             );
         }
     }

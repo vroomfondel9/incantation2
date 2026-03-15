@@ -27,7 +27,7 @@ namespace Incantation.Engine.Voxels.Systems
             // Delta time is not needed for this, just positions
             foreach (var (translation, bounds, linearVelocity, entity) in
                      SystemAPI.Query<RefRW<LocalTransform>, RefRW<WorldRenderBounds>, RefRW<PhysicsVelocity>>()
-                              .WithAll<OriginalVoxelVolumeID>()
+                              .WithAll<IsVoxelVolume>()
                               .WithEntityAccess())
             {
                 float3 minBound = -halfChunk;

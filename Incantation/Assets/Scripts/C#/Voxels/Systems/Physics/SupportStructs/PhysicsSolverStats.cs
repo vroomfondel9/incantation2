@@ -26,8 +26,8 @@ namespace Incantation.Engine.Voxels.Systems.Physics.Support
             20+ cells → grid is badly wrong
         */
 
-        public float cellsPerVolumeDynamic;
-        public float cellsPerVolumeStatic;
+        public float AvgCellsPerVolumeDynamic;
+        public float AvgCellsPerVolumeStatic;
 
         /*
          * 2–8 → normal
@@ -43,6 +43,6 @@ namespace Incantation.Engine.Voxels.Systems.Physics.Support
             20–50% → heavy movement
             >50% → something unusual
         */
-        public float updateRateDynamic;
+        public float updateRateDynamicPercent;
     }
 }

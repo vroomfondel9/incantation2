@@ -37,9 +37,9 @@ namespace Incantation.Engine.Voxels.Systems.Physics
         public void OnCreate(ref SystemState state)
         {
             int totalCells =
-                (int)(GlobalConstants.MIN_GRID_CELLS_PER_CHUNK.x *
-                      GlobalConstants.MIN_GRID_CELLS_PER_CHUNK.y *
-                      GlobalConstants.MIN_GRID_CELLS_PER_CHUNK.z);
+                (int)(GlobalConstants.BROADPHASE_GRID_CELLS_PER_CHUNK.x *
+                      GlobalConstants.BROADPHASE_GRID_CELLS_PER_CHUNK.y *
+                      GlobalConstants.BROADPHASE_GRID_CELLS_PER_CHUNK.z);
 
             int capacity = totalCells * 4;
 
@@ -55,7 +55,6 @@ namespace Incantation.Engine.Voxels.Systems.Physics
             threadStatsSpawnStatic = new NativeArray<PhysicsSolverStatsThreadLocal>(JobsUtility.MaxJobThreadCount, Allocator.Persistent);
             threadStatsDespawnDynamic = new NativeArray<PhysicsSolverStatsThreadLocal>(JobsUtility.MaxJobThreadCount, Allocator.Persistent);
             threadStatsDespawnStatic = new NativeArray<PhysicsSolverStatsThreadLocal>(JobsUtility.MaxJobThreadCount, Allocator.Persistent);
-
 
             // Create Singletons
             state.EntityManager.CreateSingleton<PhysicsSolverStats>();
@@ -149,7 +148,7 @@ namespace Incantation.Engine.Voxels.Systems.Physics
         // ------------------------------------------------------------
         private void onUpdateBroadphaseSetup(ref SystemState state)
         {
-            float cellSize = GlobalConstants.MIN_CHUNK_GRID_CELL_SIZE;
+            float cellSize = GlobalConstants.BROADPHASE_GRID_CELL_SIZE;
             float3 worldHalf = GlobalConstants.CHUNK_SIZE * 0.5f;
 
             var ecbDynamic = new EntityCommandBuffer(Allocator.TempJob);
@@ -267,6 +266,7 @@ namespace Incantation.Engine.Voxels.Systems.Physics
         // -------------------------------------------------
 
         [BurstCompile]
+        [WithAll(typeof(IsVoxelVolume))]
         [WithAll(typeof(IsDynamic))]
         [WithNone(typeof(NeedsDeletion))]
         [WithAll(typeof(IsBroadphaseRecorded))]
@@ -286,13 +286,8 @@ namespace Incantation.Engine.Voxels.Systems.Physics
             void Execute(
                 Entity entity,
                 ref PrevBroadphaseCellIndices prevIndices,
-                in WorldRenderBounds bounds,
-                EnabledRefRO<IsDynamic> isDynamic,
-                EnabledRefRO<IsBroadphaseRecorded> recorded)
+                in WorldRenderBounds bounds)
             {
-                if (!isDynamic.ValueRO || !recorded.ValueRO)
-                    return;
-
                 var stats = ThreadStats[threadIndex];
 
                 float3 min = bounds.Value.Center - bounds.Value.Extents;
@@ -301,8 +296,8 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                 int3 minCell = (int3)math.floor((min + WorldHalf) / CellSize);
                 int3 maxCell = (int3)math.floor((max + WorldHalf) / CellSize);
 
-                BroadphaseCell minCellStruct = new BroadphaseCell((uint)minCell.x, (uint)minCell.y, (uint)minCell.z);
-                BroadphaseCell maxCellStruct = new BroadphaseCell((uint)maxCell.x, (uint)maxCell.y, (uint)maxCell.z);
+                BroadphaseCell minCellStruct = new BroadphaseCell(minCell.x, minCell.y, minCell.z);
+                BroadphaseCell maxCellStruct = new BroadphaseCell(maxCell.x, maxCell.y, maxCell.z);
 
                 uint newMinMorton = minCellStruct.Morton;
                 uint newMaxMorton = maxCellStruct.Morton;
@@ -311,32 +306,38 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                     newMaxMorton == prevIndices.maxExtentCellIndex)
                 {
                     stats.countVolumesDidNotUpdateGrid++;
+                    ThreadStats[threadIndex] = stats;
                     return;
                 }
 
                 stats.countVolumesUpdatedGrid++;
 
-                uint3 prevMin = BroadphaseCell.DecodeMorton(prevIndices.minExtentCellIndex);
-                uint3 prevMax = BroadphaseCell.DecodeMorton(prevIndices.maxExtentCellIndex);
+                int3 prevMin = BroadphaseCell.DecodeMorton(prevIndices.minExtentCellIndex);
+                int3 prevMax = BroadphaseCell.DecodeMorton(prevIndices.maxExtentCellIndex);
 
-                uint3 prevCellVolumeDims = prevMax - prevMin;
-                int3 curCellVolumeDims = maxCell - minCell;
-                int prevCellVolume = (int)(prevCellVolumeDims.x * prevCellVolumeDims.y * prevCellVolumeDims.z);
+                int3 prevCellVolumeDims = prevMax - prevMin + 1;
+                int3 curCellVolumeDims = maxCell - minCell + 1;
+                int prevCellVolume = prevCellVolumeDims.x * prevCellVolumeDims.y * prevCellVolumeDims.z;
                 int curCellVolume = curCellVolumeDims.x * curCellVolumeDims.y * curCellVolumeDims.z;
                 int volumeDiff = curCellVolume - prevCellVolume;
                 stats.totalVolumeCells += volumeDiff;
                 stats.maxCellsPerVolume = math.max(stats.maxCellsPerVolume, curCellVolume);
 
-                uint3 intersectMin = math.max(prevMin, (uint3)minCell);
-                uint3 intersectMax = math.min(prevMax, (uint3)maxCell);
+                int3 intersectMin = math.max(prevMin, minCell);
+                int3 intersectMax = math.min(prevMax, maxCell);
 
-                for (uint x = prevMin.x; x <= prevMax.x; x++)
-                    for (uint y = prevMin.y; y <= prevMax.y; y++)
-                        for (uint z = prevMin.z; z <= prevMax.z; z++)
+                for (int x = prevMin.x; x <= prevMax.x; x++)
+                    for (int y = prevMin.y; y <= prevMax.y; y++)
+                        for (int z = prevMin.z; z <= prevMax.z; z++)
                         {
                             if (x >= intersectMin.x && x <= intersectMax.x &&
                                 y >= intersectMin.y && y <= intersectMax.y &&
                                 z >= intersectMin.z && z <= intersectMax.z)
+                                continue;
+
+                            if ((x < 0) || (x >= GlobalConstants.BROADPHASE_GRID_CELLS_PER_CHUNK.x) ||
+                                    (y < 0) || (y >= GlobalConstants.BROADPHASE_GRID_CELLS_PER_CHUNK.y) ||
+                                    (z < 0) || (z >= GlobalConstants.BROADPHASE_GRID_CELLS_PER_CHUNK.z))
                                 continue;
 
                             RemovalQueue.Enqueue(new BroadphaseEntityInCell(
@@ -345,13 +346,18 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                             stats.broadphaseCellRemovals++;
                         }
 
-                for (uint x = (uint)minCell.x; x <= (uint)maxCell.x; x++)
-                    for (uint y = (uint)minCell.y; y <= (uint)maxCell.y; y++)
-                        for (uint z = (uint)minCell.z; z <= (uint)maxCell.z; z++)
+                for (int x = minCell.x; x <= maxCell.x; x++)
+                    for (int y = minCell.y; y <= maxCell.y; y++)
+                        for (int z = minCell.z; z <= maxCell.z; z++)
                         {
                             if (x >= intersectMin.x && x <= intersectMax.x &&
                                 y >= intersectMin.y && y <= intersectMax.y &&
                                 z >= intersectMin.z && z <= intersectMax.z)
+                                continue;
+
+                            if ((x < 0) || (x >= GlobalConstants.BROADPHASE_GRID_CELLS_PER_CHUNK.x) ||
+                                    (y < 0) || (y >= GlobalConstants.BROADPHASE_GRID_CELLS_PER_CHUNK.y) ||
+                                    (z < 0) || (z >= GlobalConstants.BROADPHASE_GRID_CELLS_PER_CHUNK.z))
                                 continue;
 
                             BroadphaseDynamic.Add(new BroadphaseCell(x, y, z), entity);
@@ -371,6 +377,7 @@ namespace Incantation.Engine.Voxels.Systems.Physics
         // -------------------------------------------------
 
         [BurstCompile]
+        [WithAll(typeof(IsVoxelVolume))]
         [WithAll(typeof(IsDynamic))]
         [WithNone(typeof(NeedsDeletion))]
         [WithNone(typeof(IsBroadphaseRecorded))]
@@ -404,7 +411,7 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                 int3 minCell = (int3)math.floor((min + WorldHalf) / CellSize);
                 int3 maxCell = (int3)math.floor((max + WorldHalf) / CellSize);
 
-                int3 curCellVolumeDims = maxCell - minCell;
+                int3 curCellVolumeDims = maxCell - minCell + 1;
                 int curCellVolume = curCellVolumeDims.x * curCellVolumeDims.y * curCellVolumeDims.z;
                 stats.totalVolumeCells += curCellVolume;
                 stats.maxCellsPerVolume = math.max(stats.maxCellsPerVolume, curCellVolume);
@@ -413,13 +420,18 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                     for (int y = minCell.y; y <= maxCell.y; y++)
                         for (int z = minCell.z; z <= maxCell.z; z++)
                         {
-                            BroadphaseDynamic.Add(new BroadphaseCell((uint)x, (uint)y, (uint)z), entity);
+                            if ((x < 0) || (x >= GlobalConstants.BROADPHASE_GRID_CELLS_PER_CHUNK.x) ||
+                                    (y < 0) || (y >= GlobalConstants.BROADPHASE_GRID_CELLS_PER_CHUNK.y) ||
+                                    (z < 0) || (z >= GlobalConstants.BROADPHASE_GRID_CELLS_PER_CHUNK.z))
+                                continue;
+
+                            BroadphaseDynamic.Add(new BroadphaseCell(x, y, z), entity);
 
                             stats.broadphaseCellAdds++;
                         }
 
-                BroadphaseCell minCellStruct = new BroadphaseCell((uint)minCell.x, (uint)minCell.y, (uint)minCell.z);
-                BroadphaseCell maxCellStruct = new BroadphaseCell((uint)maxCell.x, (uint)maxCell.y, (uint)maxCell.z);
+                BroadphaseCell minCellStruct = new BroadphaseCell(minCell.x, minCell.y, minCell.z);
+                BroadphaseCell maxCellStruct = new BroadphaseCell(maxCell.x, maxCell.y, maxCell.z);
 
                 prevIndices.minExtentCellIndex = minCellStruct.Morton;
                 prevIndices.maxExtentCellIndex = maxCellStruct.Morton;
@@ -435,6 +447,7 @@ namespace Incantation.Engine.Voxels.Systems.Physics
         // -------------------------------------------------
 
         [BurstCompile]
+        [WithAll(typeof(IsVoxelVolume))]
         [WithNone(typeof(IsDynamic))]
         [WithNone(typeof(NeedsDeletion))]
         [WithNone(typeof(IsBroadphaseRecorded))]
@@ -459,7 +472,6 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                 var stats = ThreadStats[threadIndex];
 
                 stats.numVolumes++;
-                stats.countVolumesUpdatedGrid++;
 
                 float3 min = bounds.Value.Center - bounds.Value.Extents;
                 float3 max = bounds.Value.Center + bounds.Value.Extents;
@@ -467,7 +479,7 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                 int3 minCell = (int3)math.floor((min + WorldHalf) / CellSize);
                 int3 maxCell = (int3)math.floor((max + WorldHalf) / CellSize);
 
-                int3 curCellVolumeDims = maxCell - minCell;
+                int3 curCellVolumeDims = maxCell - minCell + 1;
                 int curCellVolume = curCellVolumeDims.x * curCellVolumeDims.y * curCellVolumeDims.z;
                 stats.totalVolumeCells += curCellVolume;
                 stats.maxCellsPerVolume = math.max(stats.maxCellsPerVolume, curCellVolume);
@@ -476,7 +488,12 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                     for (int y = minCell.y; y <= maxCell.y; y++)
                         for (int z = minCell.z; z <= maxCell.z; z++)
                         {
-                            BroadphaseStatic.Add(new BroadphaseCell((uint)x, (uint)y, (uint)z), entity);
+                            if ((x < 0) || (x >= GlobalConstants.BROADPHASE_GRID_CELLS_PER_CHUNK.x) ||
+                                    (y < 0) || (y >= GlobalConstants.BROADPHASE_GRID_CELLS_PER_CHUNK.y) ||
+                                    (z < 0) || (z >= GlobalConstants.BROADPHASE_GRID_CELLS_PER_CHUNK.z))
+                                continue;
+
+                            BroadphaseStatic.Add(new BroadphaseCell(x, y, z), entity);
 
                             stats.broadphaseCellAdds++;
                         }
@@ -492,6 +509,7 @@ namespace Incantation.Engine.Voxels.Systems.Physics
         // -------------------------------------------------
 
         [BurstCompile]
+        [WithAll(typeof(IsVoxelVolume))]
         [WithAll(typeof(IsDynamic))]
         [WithAll(typeof(NeedsDeletion))]
         partial struct CleanupDynamicBroadphaseJob : IJobEntity
@@ -516,17 +534,22 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                 stats.numVolumes--;
                 stats.countVolumesUpdatedGrid++;
 
-                uint3 min = BroadphaseCell.DecodeMorton(prev.minExtentCellIndex);
-                uint3 max = BroadphaseCell.DecodeMorton(prev.maxExtentCellIndex);
+                int3 min = BroadphaseCell.DecodeMorton(prev.minExtentCellIndex);
+                int3 max = BroadphaseCell.DecodeMorton(prev.maxExtentCellIndex);
 
-                uint3 curCellVolumeDims = max - min;
+                int3 curCellVolumeDims = max - min + 1;
                 int curCellVolume = (int)(curCellVolumeDims.x * curCellVolumeDims.y * curCellVolumeDims.z);
                 stats.totalVolumeCells -= curCellVolume;
 
-                for (uint x = min.x; x <= max.x; x++)
-                    for (uint y = min.y; y <= max.y; y++)
-                        for (uint z = min.z; z <= max.z; z++)
+                for (int x = min.x; x <= max.x; x++)
+                    for (int y = min.y; y <= max.y; y++)
+                        for (int z = min.z; z <= max.z; z++)
                         {
+                            if ((x < 0) || (x >= GlobalConstants.BROADPHASE_GRID_CELLS_PER_CHUNK.x) ||
+                                    (y < 0) || (y >= GlobalConstants.BROADPHASE_GRID_CELLS_PER_CHUNK.y) ||
+                                    (z < 0) || (z >= GlobalConstants.BROADPHASE_GRID_CELLS_PER_CHUNK.z))
+                                continue;
+
                             RemovalQueue.Enqueue(new BroadphaseEntityInCell(
                                 new BroadphaseCell(x, y, z), entity));
 
@@ -542,6 +565,7 @@ namespace Incantation.Engine.Voxels.Systems.Physics
         // -------------------------------------------------
 
         [BurstCompile]
+        [WithAll(typeof(IsVoxelVolume))]
         [WithNone(typeof(IsDynamic))]
         [WithAll(typeof(NeedsDeletion))]
         partial struct CleanupStaticBroadphaseJob : IJobEntity
@@ -563,7 +587,6 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                 var stats = ThreadStats[threadIndex];
 
                 stats.numVolumes--;
-                stats.countVolumesUpdatedGrid++;
 
                 float3 min = bounds.Value.Center - bounds.Value.Extents;
                 float3 max = bounds.Value.Center + bounds.Value.Extents;
@@ -571,7 +594,7 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                 int3 minCell = (int3)math.floor((min + WorldHalf) / CellSize);
                 int3 maxCell = (int3)math.floor((max + WorldHalf) / CellSize);
 
-                int3 curCellVolumeDims = maxCell - minCell;
+                int3 curCellVolumeDims = maxCell - minCell + 1;
                 int curCellVolume = curCellVolumeDims.x * curCellVolumeDims.y * curCellVolumeDims.z;
                 stats.totalVolumeCells -= curCellVolume;
 
@@ -579,8 +602,13 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                     for (int y = minCell.y; y <= maxCell.y; y++)
                         for (int z = minCell.z; z <= maxCell.z; z++)
                         {
+                            if ((x < 0) || (x >= GlobalConstants.BROADPHASE_GRID_CELLS_PER_CHUNK.x) ||
+                                    (y < 0) || (y >= GlobalConstants.BROADPHASE_GRID_CELLS_PER_CHUNK.y) ||
+                                    (z < 0) || (z >= GlobalConstants.BROADPHASE_GRID_CELLS_PER_CHUNK.z))
+                                continue;
+
                             RemovalQueue.Enqueue(new BroadphaseEntityInCell(
-                                new BroadphaseCell((uint)x, (uint)y, (uint)z), entity));
+                                new BroadphaseCell(x, y, z), entity));
 
                             stats.broadphaseCellRemovals++;
                         }
@@ -617,6 +645,7 @@ namespace Incantation.Engine.Voxels.Systems.Physics
             ref var existingStats = ref existingStatsRW.ValueRW;
             PhysicsSolverStats finalStats = default;
 
+            // Aggregate per-thread values
             for (int i = 0; i < threadStatsUpdatesDynamic.Length; i++)
             {
                 var s = threadStatsUpdatesDynamic[i];
@@ -646,10 +675,9 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                 var s = threadStatsSpawnStatic[i];
 
                 finalStats.broadphaseCellAddsStatic += s.broadphaseCellAdds;
-                finalStats.countVolumesUpdatedGrid += s.countVolumesUpdatedGrid;
                 finalStats.totalStaticVolumeCells += s.totalVolumeCells;
                 finalStats.numStaticVolumes += s.numVolumes;
-                finalStats.maxCellsPerVolumeStatic = math.max(finalStats.maxCellsPerVolumeDynamic, s.maxCellsPerVolume);
+                finalStats.maxCellsPerVolumeStatic = math.max(finalStats.maxCellsPerVolumeStatic, s.maxCellsPerVolume);
             }
 
             for (int i = 0; i < threadStatsDespawnDynamic.Length; i++)
@@ -667,27 +695,25 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                 var s = threadStatsDespawnStatic[i];
 
                 finalStats.broadphaseCellRemovalsStatic += s.broadphaseCellRemovals;
-                finalStats.countVolumesUpdatedGrid += s.countVolumesUpdatedGrid;
                 finalStats.totalStaticVolumeCells += s.totalVolumeCells;
                 finalStats.numStaticVolumes += s.numVolumes;
             }
 
+            // Relative to last frame's stats
             finalStats.totalDynamicVolumeCells += existingStats.totalDynamicVolumeCells;
             finalStats.totalStaticVolumeCells += existingStats.totalStaticVolumeCells;
-
             finalStats.numDynamicVolumes += existingStats.numDynamicVolumes;
             finalStats.numStaticVolumes += existingStats.numStaticVolumes;
-
             finalStats.maxCellsPerVolumeDynamic = math.max(finalStats.maxCellsPerVolumeDynamic, existingStats.maxCellsPerVolumeDynamic);
             finalStats.maxCellsPerVolumeStatic = math.max(finalStats.maxCellsPerVolumeStatic, existingStats.maxCellsPerVolumeStatic);
 
-            finalStats.cellsPerVolumeDynamic = finalStats.numDynamicVolumes > 0 ? 
+            // Derived stats
+            finalStats.AvgCellsPerVolumeDynamic = finalStats.numDynamicVolumes > 0 ? 
                 finalStats.totalDynamicVolumeCells / ((float)finalStats.numDynamicVolumes) : 0.0f;
-            finalStats.cellsPerVolumeStatic = finalStats.numStaticVolumes > 0 ?
+            finalStats.AvgCellsPerVolumeStatic = finalStats.numStaticVolumes > 0 ?
                 finalStats.totalStaticVolumeCells / ((float)finalStats.numStaticVolumes) : 0.0f;
-
-            finalStats.updateRateDynamic = finalStats.numDynamicVolumes > 0 ?
-                finalStats.countVolumesUpdatedGrid / ((float)finalStats.numDynamicVolumes) : 0.0f;
+            finalStats.updateRateDynamicPercent = finalStats.numDynamicVolumes > 0 ?
+                100.0f * finalStats.countVolumesUpdatedGrid / ((float)finalStats.numDynamicVolumes) : 0.0f;
 
             //Assign to values to singleton
             existingStats = finalStats;

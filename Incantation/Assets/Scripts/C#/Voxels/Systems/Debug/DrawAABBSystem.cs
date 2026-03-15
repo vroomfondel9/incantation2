@@ -14,7 +14,7 @@ public partial struct DrawAABBSystem : ISystem
         {
             foreach (var bounds in
                 SystemAPI.Query<RefRO<WorldRenderBounds>>()
-                .WithAll<OriginalVoxelVolumeID>())
+                .WithAll<IsVoxelVolume>())
             {
                 AABB aabb = bounds.ValueRO.Value;
                 float3 min = aabb.Min;

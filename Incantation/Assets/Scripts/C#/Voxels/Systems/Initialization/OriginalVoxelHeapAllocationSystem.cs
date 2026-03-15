@@ -111,7 +111,7 @@ namespace Incantation.Engine.Voxels.Components
                         RefRW<OriginalVoxelVolumeGlobalOffset>,
                         RefRO<OriginalVoxelVolumeID>,
                         RefRO<GridDimensions>>()
-                    .WithAll<InitializationColorTopologyPackedVoxel>()
+                    .WithAll<InitializationColorTopologyPackedVoxel, IsVoxelVolume>()
                     .WithEntityAccess())
             {
                 ulong hash = volumeId.ValueRO.Hash;
@@ -231,7 +231,7 @@ namespace Incantation.Engine.Voxels.Components
                 in SystemAPI.Query<
                         RefRW<OriginalVoxelVolumeGlobalOffset>,
                         RefRO<OriginalVoxelVolumeID>>()
-                    .WithAll<NeedsDeletion>()
+                    .WithAll<NeedsDeletion, IsVoxelVolume>()
                     .WithEntityAccess())
             {
                 ulong hash = volumeId.ValueRO.Hash;
