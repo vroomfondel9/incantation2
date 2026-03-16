@@ -110,7 +110,6 @@ namespace Incantation.Engine.Voxels.Systems.Physics
         {
             #region Init
             clearStats();
-            var mainThreadStats = broadphaseSingleThreadedStats.Value;
 
             float cellSize = GlobalConstants.BROADPHASE_GRID_CELL_SIZE;
             float3 worldHalf = GlobalConstants.BROADPHASE_GRID_SIZE * 0.5f;
@@ -392,13 +391,14 @@ namespace Incantation.Engine.Voxels.Systems.Physics
             // ------------------------------
             // BROADPHASE SETUP - ROUND 5 - Remaining map keys (>1 cell count) are broadphase pairs
             // ------------------------------
-
             var broadphasePairs = broadphasePairsToCellCount.GetKeyValueArrays(Allocator.TempJob);
+
+            var mainThreadStats = broadphaseSingleThreadedStats.Value;
             mainThreadStats.totalBroadphasePairs = broadphasePairs.Keys.Length;
+            broadphaseSingleThreadedStats.Value = mainThreadStats;
 
             drawDebugBroadphasePairResults(ref state, broadphasePairs);
 
-            broadphaseSingleThreadedStats.Value = mainThreadStats;
             aggregateStats(ref state);
 
             return broadphasePairs.Keys;
