@@ -20,7 +20,7 @@ namespace Incantation.Engine.Voxels.Systems
         public void OnUpdate(ref SystemState state)
         {
             // Get chunk extents
-            float3 halfChunk = GlobalConstants.CHUNK_SIZE * 0.5f;
+            float3 halfChunk = GlobalConstants.BROADPHASE_GRID_SIZE * 0.5f;
 
             var ecb = new EntityCommandBuffer(Allocator.Temp);
 

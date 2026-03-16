@@ -20,7 +20,8 @@ public class GlobalConstants
 
     public static readonly uint3 BROADPHASE_GRID_CELLS_PER_CHUNK = new uint3(8, 8, 8);
 
-    public static readonly float3 CHUNK_SIZE = new float3(
+    // Note: Chunk size must be <= this size.
+    public static readonly float3 BROADPHASE_GRID_SIZE = new float3(
         BROADPHASE_GRID_CELLS_PER_CHUNK.x * BROADPHASE_GRID_CELL_SIZE,
         BROADPHASE_GRID_CELLS_PER_CHUNK.y * BROADPHASE_GRID_CELL_SIZE,
         BROADPHASE_GRID_CELLS_PER_CHUNK.z * BROADPHASE_GRID_CELL_SIZE

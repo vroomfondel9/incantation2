@@ -4,6 +4,13 @@ namespace Incantation.Engine.Voxels.Systems.Physics.Support
 {
     public struct PhysicsSolverStats : IComponentData
     {
+        public int totalBroadphasePairs;
+
+        public int newPairsGenerated;
+        public int existingPairsRemoved;
+        public int existingPairsUpdated;
+        public int totalPairIterations;
+
         public int broadphaseCellAddsDynamic;
         public int broadphaseCellAddsStatic;
 

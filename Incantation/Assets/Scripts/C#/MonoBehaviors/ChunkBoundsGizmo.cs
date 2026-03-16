@@ -8,7 +8,7 @@ public class ChunkBoundsGizmo : MonoBehaviour
 
     private void OnDrawGizmos()
     {
-        if (GlobalConstants.CHUNK_SIZE.Equals(float3.zero))
+        if (GlobalConstants.BROADPHASE_GRID_SIZE.Equals(float3.zero))
             return;
 
         Gizmos.color = boundaryColor;
@@ -18,9 +18,9 @@ public class ChunkBoundsGizmo : MonoBehaviour
 
         // Convert float3 to Vector3 for Gizmos
         Vector3 size = new Vector3(
-            GlobalConstants.CHUNK_SIZE.x,
-            GlobalConstants.CHUNK_SIZE.y,
-            GlobalConstants.CHUNK_SIZE.z
+            GlobalConstants.BROADPHASE_GRID_SIZE.x,
+            GlobalConstants.BROADPHASE_GRID_SIZE.y,
+            GlobalConstants.BROADPHASE_GRID_SIZE.z
         );
 
         // Draw wireframe cube
