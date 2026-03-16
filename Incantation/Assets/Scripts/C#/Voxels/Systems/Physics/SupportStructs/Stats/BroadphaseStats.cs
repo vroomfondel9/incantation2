@@ -2,7 +2,7 @@
 
 namespace Incantation.Engine.Voxels.Systems.Physics.Support
 {
-    public struct PhysicsSolverStats : IComponentData
+    public struct BroadphaseStats : IComponentData
     {
         public int totalBroadphasePairs;
 

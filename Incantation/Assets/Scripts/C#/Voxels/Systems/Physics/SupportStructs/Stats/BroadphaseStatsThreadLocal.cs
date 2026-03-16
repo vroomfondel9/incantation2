@@ -2,7 +2,7 @@ using Unity.Entities;
 
 namespace Incantation.Engine.Voxels.Systems.Physics.Support
 {
-    public struct PhysicsSolverStatsThreadLocal
+    public struct BroadphaseStatsThreadLocal
     {
         public int broadphaseCellAdds;
         public int broadphaseCellRemovals;
