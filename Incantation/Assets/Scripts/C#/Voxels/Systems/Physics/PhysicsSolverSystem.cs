@@ -1103,5 +1103,310 @@ namespace Incantation.Engine.Voxels.Systems.Physics
         #endregion
 
         #endregion
+
+        #region COLLISION DETECTION - NARROWPHASE
+        // -------------------------------------------------
+        // BROADPHASE
+        // -------------------------------------------------
+        public static void findCollisionNarrowphaseContacts(ref SystemState state,
+            NativeArray<PotentiallyCollidingPair> broadphasePairs)
+        {
+            // TODO return an empty list if early exit on no broadphase pairs
+
+            if (!broadphasePairs.IsCreated || broadphasePairs.Length == 0)
+                return;
+
+            var localToWorldLookup = state.GetComponentLookup<LocalToWorld>(true);
+            var renderBoundsLookup = state.GetComponentLookup<RenderBounds>(true);
+
+            var job = new NarrowphasePairJob
+            {
+                Pairs = broadphasePairs,
+                LocalToWorldLookup = localToWorldLookup,
+                RenderBoundsLookup = renderBoundsLookup
+            };
+
+            state.Dependency = job.ScheduleParallel(broadphasePairs.Length, 64, state.Dependency);
+        }
+
+        #region Job Structs
+        [BurstCompile]
+        private struct NarrowphasePairJob : IJobFor
+        {
+            const float epsilon = 1e-6f;
+
+            [ReadOnly] public NativeArray<PotentiallyCollidingPair> Pairs;
+            [ReadOnly] public ComponentLookup<LocalToWorld> LocalToWorldLookup;
+            [ReadOnly] public ComponentLookup<RenderBounds> RenderBoundsLookup;
+
+            public void Execute(int index)
+            {
+                PotentiallyCollidingPair pair = Pairs[index];
+                Entity entityA = pair.A;
+                Entity entityB = pair.B;
+
+                if (!LocalToWorldLookup.HasComponent(entityA) ||
+                    !LocalToWorldLookup.HasComponent(entityB) ||
+                    !RenderBoundsLookup.HasComponent(entityA) ||
+                    !RenderBoundsLookup.HasComponent(entityB))
+                {
+                    return;
+                }
+
+                LocalToWorld ltwA = LocalToWorldLookup[entityA];
+                LocalToWorld ltwB = LocalToWorldLookup[entityB];
+
+                AABB localBoundsA = RenderBoundsLookup[entityA].Value;
+                AABB localBoundsB = RenderBoundsLookup[entityB].Value;
+
+                checkForSphereCollision(ltwA, ltwB, localBoundsA, localBoundsB);
+            }
+
+            #region Narrow Phase - Sphere
+            private static void checkForSphereCollision(LocalToWorld ltwA, LocalToWorld ltwB, AABB localBoundsA, AABB localBoundsB)
+            {
+                // Calcs needed by subsequent checks too
+                float3 localCenterA = localBoundsA.Center;
+                float3 localCenterB = localBoundsB.Center;
+
+                float3 localExtentsA = localBoundsA.Extents;
+                float3 localExtentsB = localBoundsB.Extents;
+
+                float3 worldCenterA = math.transform(ltwA.Value, localCenterA);
+                float3 worldCenterB = math.transform(ltwB.Value, localCenterB);
+
+                float3 rightA = ltwA.Right;
+                float3 rightB = ltwB.Right;
+                float3 upA = ltwA.Up;
+                float3 upB = ltwB.Up;
+                float3 forwardA = ltwA.Forward;
+                float3 forwardB = ltwB.Forward;
+
+                // Calcs specific for sphere check
+                float maxAxisScaleA = math.max(math.length(rightA), math.max(math.length(upA), math.length(forwardA)));
+                float maxAxisScaleB = math.max(math.length(rightB), math.max(math.length(upB), math.length(forwardB)));
+
+                float localRadiusA = math.length(localExtentsA);
+                float localRadiusB = math.length(localExtentsB);
+
+                float radiusA = localRadiusA * maxAxisScaleA;
+                float radiusB = localRadiusB * maxAxisScaleB;
+                float combinedRadius = radiusA + radiusB;
+
+                // Sphere collision early exit
+                if (math.lengthsq(worldCenterA - worldCenterB) <= combinedRadius * combinedRadius) return;
+
+                checkForAABBCollision(worldCenterA, worldCenterB, rightA, rightB, upA, upB,
+                    forwardA, forwardB, localExtentsA, localExtentsB);
+            }
+            #endregion
+
+            #region Narrow Phase - AABB Check
+            private static void checkForAABBCollision(float3 worldCenterA, float3 worldCenterB, float3 rightA, float3 rightB,
+                float3 upA, float3 upB, float3 forwardA, float3 forwardB, float3 localExtentsA, float3 localExtentsB)
+            {
+                // Calcs specific for world AABB check
+                float3 worldExtentsA =
+                    math.abs(rightA) * localExtentsA.x +
+                    math.abs(upA) * localExtentsA.y +
+                    math.abs(forwardA) * localExtentsA.z;
+                float3 worldExtentsB =
+                    math.abs(rightB) * localExtentsB.x +
+                    math.abs(upB) * localExtentsB.y +
+                    math.abs(forwardB) * localExtentsB.z;
+
+                float3 minA = worldCenterA - worldExtentsA;
+                float3 minB = worldCenterB - worldExtentsB;
+
+                float3 maxA = worldCenterA + worldExtentsA;
+                float3 maxB = worldCenterB + worldExtentsB;
+
+                // AABB collision early exits
+                if (maxA.x < minB.x || minA.x > maxB.x) return;
+                if (maxA.y < minB.y || minA.y > maxB.y) return;
+                if (maxA.z < minB.z || minA.z > maxB.z) return;
+
+                checkForOBBCollision(worldCenterA, worldCenterB, rightA, rightB, upA, upB, 
+                    forwardA, forwardB, localExtentsA, localExtentsB);
+            }
+            #endregion
+
+            #region Narrow Phase - OBB check
+
+            private static void checkForOBBCollision(float3 worldCenterA, float3 worldCenterB, float3 rightA, float3 rightB,
+                float3 upA, float3 upB, float3 forwardA, float3 forwardB, float3 localExtentsA, float3 localExtentsB)
+            {
+                float lenXA = math.length(rightA);
+                float lenYA = math.length(upA);
+                float lenZA = math.length(forwardA);
+
+                float lenXB = math.length(rightB);
+                float lenYB = math.length(upB);
+                float lenZB = math.length(forwardB);
+
+                float invLenXA = lenXA > epsilon ? 1.0f / lenXA : 0.0f;
+                float invLenYA = lenYA > epsilon ? 1.0f / lenYA : 0.0f;
+                float invLenZA = lenZA > epsilon ? 1.0f / lenZA : 0.0f;
+
+                float invLenXB = lenXB > epsilon ? 1.0f / lenXB : 0.0f;
+                float invLenYB = lenYB > epsilon ? 1.0f / lenYB : 0.0f;
+                float invLenZB = lenZB > epsilon ? 1.0f / lenZB : 0.0f;
+
+                float3 A0 = rightA * invLenXA;
+                float3 A1 = upA * invLenYA;
+                float3 A2 = forwardA * invLenZA;
+
+                float3 B0 = rightB * invLenXB;
+                float3 B1 = upB * invLenYB;
+                float3 B2 = forwardB * invLenZB;
+
+                float3 HalfExtentsA = new float3(
+                    localExtentsA.x * lenXA,
+                    localExtentsA.y * lenYA,
+                    localExtentsA.z * lenZA);
+                float3 HalfExtentsB = new float3(
+                    localExtentsB.x * lenXB,
+                    localExtentsB.y * lenYB,
+                    localExtentsB.z * lenZB);
+
+                float3 tWorld = worldCenterB - worldCenterA;
+
+                // Translation expressed in A's basis
+                float t0 = math.dot(tWorld, A0);
+                float t1 = math.dot(tWorld, A1);
+                float t2 = math.dot(tWorld, A2);
+
+                // Rotation matrix R = transpose(A) * B
+                float R00 = math.dot(A0, B0);
+                float R01 = math.dot(A0, B1);
+                float R02 = math.dot(A0, B2);
+
+                float R10 = math.dot(A1, B0);
+                float R11 = math.dot(A1, B1);
+                float R12 = math.dot(A1, B2);
+
+                float R20 = math.dot(A2, B0);
+                float R21 = math.dot(A2, B1);
+                float R22 = math.dot(A2, B2);
+
+                float AR00 = math.abs(R00) + epsilon;
+                float AR01 = math.abs(R01) + epsilon;
+                float AR02 = math.abs(R02) + epsilon;
+
+                float AR10 = math.abs(R10) + epsilon;
+                float AR11 = math.abs(R11) + epsilon;
+                float AR12 = math.abs(R12) + epsilon;
+
+                float AR20 = math.abs(R20) + epsilon;
+                float AR21 = math.abs(R21) + epsilon;
+                float AR22 = math.abs(R22) + epsilon;
+
+                float a0 = HalfExtentsA.x;
+                float a1 = HalfExtentsA.y;
+                float a2 = HalfExtentsA.z;
+
+                float b0 = HalfExtentsB.x;
+                float b1 = HalfExtentsB.y;
+                float b2 = HalfExtentsB.z;
+
+                float ra, rb, t;
+
+                // ---------------------
+                // 15 SAT checks
+                // ---------------------
+
+                // Test A's local axes
+                ra = a0;
+                rb = b0 * AR00 + b1 * AR01 + b2 * AR02;
+                if (math.abs(t0) > ra + rb) return;
+
+                ra = a1;
+                rb = b0 * AR10 + b1 * AR11 + b2 * AR12;
+                if (math.abs(t1) > ra + rb) return;
+
+                ra = a2;
+                rb = b0 * AR20 + b1 * AR21 + b2 * AR22;
+                if (math.abs(t2) > ra + rb) return;
+
+                // Test B's local axes
+                ra = a0 * AR00 + a1 * AR10 + a2 * AR20;
+                rb = b0;
+                t = math.abs(t0 * R00 + t1 * R10 + t2 * R20);
+                if (t > ra + rb) return;
+
+                ra = a0 * AR01 + a1 * AR11 + a2 * AR21;
+                rb = b1;
+                t = math.abs(t0 * R01 + t1 * R11 + t2 * R21);
+                if (t > ra + rb) return;
+
+                ra = a0 * AR02 + a1 * AR12 + a2 * AR22;
+                rb = b2;
+                t = math.abs(t0 * R02 + t1 * R12 + t2 * R22);
+                if (t > ra + rb) return;
+
+                // Test cross products A0 x Bj
+                ra = a1 * AR20 + a2 * AR10;
+                rb = b1 * AR02 + b2 * AR01;
+                t = math.abs(t2 * R10 - t1 * R20);
+                if (t > ra + rb) return;
+
+                ra = a1 * AR21 + a2 * AR11;
+                rb = b0 * AR02 + b2 * AR00;
+                t = math.abs(t2 * R11 - t1 * R21);
+                if (t > ra + rb) return;
+
+                ra = a1 * AR22 + a2 * AR12;
+                rb = b0 * AR01 + b1 * AR00;
+                t = math.abs(t2 * R12 - t1 * R22);
+                if (t > ra + rb) return;
+
+                // Test cross products A1 x Bj
+                ra = a0 * AR20 + a2 * AR00;
+                rb = b1 * AR12 + b2 * AR11;
+                t = math.abs(t0 * R20 - t2 * R00);
+                if (t > ra + rb) return;
+
+                ra = a0 * AR21 + a2 * AR01;
+                rb = b0 * AR12 + b2 * AR10;
+                t = math.abs(t0 * R21 - t2 * R01);
+                if (t > ra + rb) return;
+
+                ra = a0 * AR22 + a2 * AR02;
+                rb = b0 * AR11 + b1 * AR10;
+                t = math.abs(t0 * R22 - t2 * R02);
+                if (t > ra + rb) return;
+
+                // Test cross products A2 x Bj
+                ra = a0 * AR10 + a1 * AR00;
+                rb = b1 * AR22 + b2 * AR21;
+                t = math.abs(t1 * R00 - t0 * R10);
+                if (t > ra + rb) return;
+
+                ra = a0 * AR11 + a1 * AR01;
+                rb = b0 * AR22 + b2 * AR20;
+                t = math.abs(t1 * R01 - t0 * R11);
+                if (t > ra + rb) return;
+
+                ra = a0 * AR12 + a1 * AR02;
+                rb = b0 * AR21 + b1 * AR20;
+                t = math.abs(t1 * R02 - t0 * R12);
+                if (t > ra + rb) return;
+
+                checkForVoxelCollisions();
+            }
+            #endregion
+
+            #region Narrow Phase - Voxel Check
+
+            private static void checkForVoxelCollisions()
+            {
+                // TODO implement this
+            }
+
+            #endregion
+        }
+        #endregion
+
+        #endregion
     }
 }
