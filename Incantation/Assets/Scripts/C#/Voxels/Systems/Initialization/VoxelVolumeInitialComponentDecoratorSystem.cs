@@ -75,9 +75,17 @@ namespace Incantation.Engine.Voxels.Systems
                     Value = 0
                 });
 
-                ecb.AddComponent(entity, new VolumeWideConstantColorOverride(255, 0, 0));
-                ecb.AddComponent(entity, new VolumeWideConstantColorOverrideEffect(0, 0.5f, false, 1000, 
-                    EasingFunction.LINEAR, 1000, CompletionFunction.REMOVE));
+                ecb.AddComponent(entity, new VolumeWideConstantColorOverride(0, 0, 0));
+
+                // --- Dynamic Buffers ---
+                DynamicBuffer<VolumeWideConstantColorOverrideEffect> effectBuffer = 
+                    ecb.AddBuffer<VolumeWideConstantColorOverrideEffect>(entity);
+
+                // Example for adding a damage effect
+                //effectBuffer.Add(new VolumeWideConstantColorOverrideEffect(255, 0, 0,
+                //    0.5f, 0.0f, false,
+                //    1000, EasingFunction.LINEAR,
+                //    1000, CompletionFunction.REMOVE));
 
                 // --- Enableables ---
                 ecb.AddComponent<IsVoxelVolume>(entity);

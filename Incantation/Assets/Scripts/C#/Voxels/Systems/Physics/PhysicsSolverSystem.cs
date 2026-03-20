@@ -96,7 +96,7 @@ namespace Incantation.Engine.Voxels.Systems.Physics
         {
             NativeArray<PotentiallyCollidingPair> broadphasePairs = findCollisionBroadphasePairs(ref state);
 
-            broadphasePairs.Dispose(state.Dependency);
+            state.Dependency = broadphasePairs.Dispose(state.Dependency);
         }
 
         #endregion
@@ -398,6 +398,7 @@ namespace Incantation.Engine.Voxels.Systems.Physics
             broadphaseSingleThreadedStats.Value = mainThreadStats;
 
             drawDebugBroadphasePairResults(ref state, broadphasePairs);
+            state.Dependency = broadphasePairs.Values.Dispose(state.Dependency);
 
             aggregateStats(ref state);
 

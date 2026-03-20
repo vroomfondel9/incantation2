@@ -1,8 +1,6 @@
 
 EVENTUALLY
 ==========
-- LOW - Multiple simulatenous volume-wide blinking effects aren't supported now. Need to move base color and alpha into each effect component and compute results per each of those, then have another system that runs after which blends the results into the material property.
-
 - LOW - Can't import pngs from MagicaVoxel over around 190x190x190. No clue why. Not a Unity issue as mspaint can't even resave them. Maybe consider trying to update MagicaVoxel later and see if it fixes it.
 
 - VERY LOW - Rendering - Flickering when far from the origin.
