@@ -1077,6 +1077,7 @@ namespace Incantation.Engine.Voxels.Systems.Physics
         {
             if (DebugConstants.ENABLE_BROADPHASE_DRAW_PAIRS)
             {
+#pragma warning disable CS0162 // Unreachable code detected
                 for (int i = 0; i < broadphasePairs.Keys.Length; i++)
                 {
                     var cellCount = broadphasePairs.Values[i];
@@ -1094,8 +1095,9 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                     var greenMult = cellCount > 0 ? 1 : 0;
                     Color color = new Color(redMult * magnitude, greenMult * magnitude, 0.0f, 0.25f);
 
-                    Debug.DrawLine(posA, posB, color, Time.fixedDeltaTime);
+                    UnityEngine.Debug.DrawLine(posA, posB, color, Time.fixedDeltaTime);
                 }
+#pragma warning restore CS0162 // Unreachable code detected
             }
         }
         #endregion

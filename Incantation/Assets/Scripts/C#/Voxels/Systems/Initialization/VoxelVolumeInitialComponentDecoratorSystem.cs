@@ -1,4 +1,5 @@
 using Incantation.Engine.Voxels.Components;
+using Incantation.Engine.Voxels.Components.Debug;
 using Incantation.Engine.Voxels.Components.Physics.RigidBody;
 using System;
 using Unity.Entities;
@@ -96,6 +97,14 @@ namespace Incantation.Engine.Voxels.Systems
 
                 ecb.AddComponent<IsBroadphaseRecorded>(entity);
                 ecb.SetComponentEnabled<IsBroadphaseRecorded>(entity, false);
+
+                // --- Debug Components ---
+                if (DebugConstants.ENABLE_NARROWPHASE_DRAW_SPHERES 
+                    || DebugConstants.ENABLE_NARROWPHASE_DRAW_AABBS 
+                        || DebugConstants.ENABLE_NARROWPHASE_DRAW_OBBS)
+                {
+                    ecb.AddComponent<DebugCollisionComponent>(entity, new DebugCollisionComponent());
+                }
 
                 // Hack to fix GPU instancing because Entitles Graphics is dumb
                 matMeshInfo.ValueRW.Material = -1;
