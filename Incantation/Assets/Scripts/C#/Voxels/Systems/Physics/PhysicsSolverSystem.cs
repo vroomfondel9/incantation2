@@ -42,6 +42,8 @@ namespace Incantation.Engine.Voxels.Systems.Physics
 
         #region Collections - Narrowphase
         NativeList<PotentiallyCollidingPair> narrowphasePairsNeedingVoxelLevelCheck;
+
+        NativeArray<NarrowphaseStatsThreadLocal> narrowThreadStats;
         #endregion
 
         #region Component Lookups - Narrowphase
@@ -75,16 +77,19 @@ namespace Incantation.Engine.Voxels.Systems.Physics
 
             #region Init Collections - Narrowphase
             narrowphasePairsNeedingVoxelLevelCheck = new NativeList<PotentiallyCollidingPair>(maxEntitiesPerScenePairsCapacity, Allocator.Persistent);
+
+            narrowThreadStats = new NativeArray<NarrowphaseStatsThreadLocal>(JobsUtility.MaxJobThreadCount, Allocator.Persistent);
             #endregion
 
             // Create Component Lookups
-            #region Init Component Lookups - Narrowphase
+            #region Init Component Lookups
             localToWorldLookup = state.GetComponentLookup<LocalToWorld>(true);
             #endregion
 
             // Create Singletons
-            #region Init Singletons - Broadphase
+            #region Init Singletons
             state.EntityManager.CreateSingleton<BroadphaseStats>();
+            state.EntityManager.CreateSingleton<NarrowphaseStats>();
             #endregion
         }
 
@@ -111,6 +116,8 @@ namespace Incantation.Engine.Voxels.Systems.Physics
 
             #region Collection Disposal - Narrowphase
             if (narrowphasePairsNeedingVoxelLevelCheck.IsCreated) narrowphasePairsNeedingVoxelLevelCheck.Dispose();
+
+            if (narrowThreadStats.IsCreated) narrowThreadStats.Dispose();
             #endregion
         }
 
@@ -132,7 +139,7 @@ namespace Incantation.Engine.Voxels.Systems.Physics
         public NativeArray<PotentiallyCollidingPair> findCollisionBroadphasePairs(ref SystemState state)
         {
             #region Init
-            clearStats();
+            clearBroadphaseStats();
 
             float cellSize = GlobalConstants.BROADPHASE_GRID_CELL_SIZE;
             float3 worldHalf = GlobalConstants.BROADPHASE_GRID_SIZE * 0.5f;
@@ -423,7 +430,7 @@ namespace Incantation.Engine.Voxels.Systems.Physics
             drawDebugBroadphasePairResults(ref state, broadphasePairs);
             state.Dependency = broadphasePairs.Values.Dispose(state.Dependency);
 
-            aggregateStats(ref state);
+            aggregateBroadphaseStats(ref state);
 
             return broadphasePairs.Keys;
             #endregion
@@ -987,7 +994,7 @@ namespace Incantation.Engine.Voxels.Systems.Physics
 
         #region PHYSICS STATS COLLECTION
         // This is 32-128 items so don't worry about parallelizing
-        private void clearStats()
+        private void clearBroadphaseStats()
         {
             for (int i = 0; i < broadphaseThreadStatsUpdatesDynamic.Length; i++)
                 broadphaseThreadStatsUpdatesDynamic[i] = default;
@@ -1007,7 +1014,7 @@ namespace Incantation.Engine.Voxels.Systems.Physics
             broadphaseSingleThreadedStats.Value = default;
         }
 
-        private void aggregateStats(ref SystemState state)
+        private void aggregateBroadphaseStats(ref SystemState state)
         {
             var existingStatsRW = SystemAPI.GetSingletonRW<BroadphaseStats>();
             ref var existingStats = ref existingStatsRW.ValueRW;
@@ -1141,13 +1148,15 @@ namespace Incantation.Engine.Voxels.Systems.Physics
             localToWorldLookup.Update(ref state);
             narrowphasePairsNeedingVoxelLevelCheck.Clear();
             clearDebugVisualizationFlags(ref state);
+            clearNarrowphaseStats();
 
             var volumeWideNarrowphaseJob = new NarrowphaseVolumeWidePairJob
             {
                 PairsToCheck = broadphasePairs,
                 LocalToWorldLookup = localToWorldLookup,
                 ECB = ecb.AsParallelWriter(),
-                VoxelCheckPairs = narrowphasePairsNeedingVoxelLevelCheck.AsParallelWriter()
+                VoxelCheckPairs = narrowphasePairsNeedingVoxelLevelCheck.AsParallelWriter(),
+                ThreadStats = narrowThreadStats
             };
 
             state.Dependency = volumeWideNarrowphaseJob.ScheduleParallel(broadphasePairs.Length, 64, state.Dependency);
@@ -1157,6 +1166,7 @@ namespace Incantation.Engine.Voxels.Systems.Physics
             ecb.Dispose();
 
             // TODO voxel-level check
+            aggregateNarrowphaseStats(ref state);
         }
 
         #region Job Structs
@@ -1175,9 +1185,17 @@ namespace Incantation.Engine.Voxels.Systems.Physics
             public EntityCommandBuffer.ParallelWriter ECB;
             public NativeList<PotentiallyCollidingPair>.ParallelWriter VoxelCheckPairs;
 
+            [NativeDisableParallelForRestriction]
+            public NativeArray<NarrowphaseStatsThreadLocal> ThreadStats;
+
+            [NativeSetThreadIndex] int threadIndex;
+
             public void Execute(int index)
             {
                 #region Compute Shared Values
+                var stats = ThreadStats[threadIndex];
+                stats.totalPairsFromBroadphase++;
+
                 PotentiallyCollidingPair pair = PairsToCheck[index];
                 Entity entityA = pair.A;
                 Entity entityB = pair.B;
@@ -1185,6 +1203,7 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                 if (!LocalToWorldLookup.HasComponent(entityA) ||
                     !LocalToWorldLookup.HasComponent(entityB))
                 {
+                    ThreadStats[threadIndex] = stats;
                     return;
                 }
 
@@ -1214,6 +1233,7 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                 if (!isSphereCollision(worldCenterA, worldCenterB, rightALength, rightBLength, 
                     upALength, upBLength, forwardALength, forwardBLength))
                 {
+                    ThreadStats[threadIndex] = stats;
                     return;
                 }
                 else if (DebugConstants.ENABLE_NARROWPHASE_DRAW_SPHERES)
@@ -1221,9 +1241,11 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                     ECB.SetComponentEnabled<DebugCollNearSphereHit>(index, entityA, true);
                     ECB.SetComponentEnabled<DebugCollNearSphereHit>(index, entityB, true);
                 }
+                stats.spherePassed++;
 
                 if (!isAABBCollision(worldCenterA, worldCenterB, rightA, rightB, upA, upB, forwardA, forwardB))
                 {
+                    ThreadStats[threadIndex] = stats;
                     return;
                 }
                 else if (DebugConstants.ENABLE_NARROWPHASE_DRAW_AABBS)
@@ -1231,11 +1253,13 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                     ECB.SetComponentEnabled<DebugCollNearAABBHit>(index, entityA, true);
                     ECB.SetComponentEnabled<DebugCollNearAABBHit>(index, entityB, true);
                 }
+                stats.aabbPassed++;
 
                 if (!isOBBCollision(worldCenterA, worldCenterB, rightA, rightB,
                     upA, upB, forwardA, forwardB, rightALength, rightBLength,
                     upALength, upBLength, forwardALength, forwardBLength))
                 {
+                    ThreadStats[threadIndex] = stats;
                     return;
                 }
                 else if (DebugConstants.ENABLE_NARROWPHASE_DRAW_OBBS)
@@ -1243,11 +1267,14 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                     ECB.SetComponentEnabled<DebugCollNearOBBHit>(index, entityA, true);
                     ECB.SetComponentEnabled<DebugCollNearOBBHit>(index, entityB, true);
                 }
+                stats.obbPassed++;
                 #endregion
 
                 #region Write Results
                 // Write results
                 VoxelCheckPairs.AddNoResize(pair);
+
+                ThreadStats[threadIndex] = stats;
                 #endregion
             }
 
@@ -1475,6 +1502,51 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                         SystemAPI.SetComponentEnabled<DebugCollNearOBBHit>(entity, false);
                 }
             }
+        }
+
+        private void clearNarrowphaseStats()
+        {
+            for (int i = 0; i < narrowThreadStats.Length; i++)
+                narrowThreadStats[i] = default;
+        }
+
+        private void aggregateNarrowphaseStats(ref SystemState state)
+        {
+            var existingStatsRW = SystemAPI.GetSingletonRW<NarrowphaseStats>();
+            var existingStats = existingStatsRW.ValueRW;
+
+            existingStats = default;
+
+            // Aggregate per-thread stat values
+            for (int i = 0; i < narrowThreadStats.Length; i++)
+            {
+                var s = narrowThreadStats[i];
+
+                existingStats.startingPairs += s.totalPairsFromBroadphase;
+                existingStats.eliminatedBySphereCheck += s.totalPairsFromBroadphase - s.spherePassed;
+                existingStats.eliminatedByAABBCheck += s.spherePassed - s.aabbPassed;
+                existingStats.eliminatedByOBBCheck += s.aabbPassed - s.obbPassed;
+                existingStats.voxelCheckPairs += s.obbPassed;
+            }
+
+            // Derived stats
+            int leftover;
+
+            existingStats.voxelCheckRate = existingStats.startingPairs > 0
+                ? existingStats.voxelCheckPairs / (float)existingStats.startingPairs * 100.0f : 0.0f;
+
+            existingStats.sphereCheckFilterRate = existingStats.startingPairs > 0 
+                ? existingStats.eliminatedBySphereCheck / (float)existingStats.startingPairs * 100.0f : 0.0f;
+
+            leftover = existingStats.startingPairs - existingStats.eliminatedBySphereCheck;
+            existingStats.aabbCheckFilterRate = leftover > 0
+                ? existingStats.eliminatedByAABBCheck / (float)leftover * 100.0f : 0.0f;
+
+            leftover = leftover - existingStats.eliminatedByAABBCheck;
+            existingStats.obbCheckFilterRate = leftover > 0
+                ? existingStats.eliminatedByOBBCheck / (float)leftover * 100.0f : 0.0f;
+
+            existingStatsRW.ValueRW = existingStats;
         }
         #endregion
 
