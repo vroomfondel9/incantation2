@@ -1,4 +1,5 @@
 ﻿using Incantation.Engine.Voxels.Components;
+using Incantation.Engine.Voxels.Components.Debug;
 using Incantation.Engine.Voxels.Components.Physics.RigidBody;
 using Incantation.Engine.Voxels.Systems.Physics.Support;
 using Unity.Burst;
@@ -39,6 +40,14 @@ namespace Incantation.Engine.Voxels.Systems.Physics
         NativeReference<BroadphaseStatsSingleThreaded> broadphaseSingleThreadedStats;
         #endregion
 
+        #region Collections - Narrowphase
+        NativeList<PotentiallyCollidingPair> narrowphasePairsNeedingVoxelLevelCheck;
+        #endregion
+
+        #region Component Lookups - Narrowphase
+        private ComponentLookup<LocalToWorld> localToWorldLookup;
+        #endregion
+
         public void OnCreate(ref SystemState state)
         {
             int maxEntitiesPerSceneCapacity = GlobalConstants.MAX_UNIQUE_ORIG_VOX_VOLS_PER_SCENE;
@@ -62,6 +71,15 @@ namespace Incantation.Engine.Voxels.Systems.Physics
             broadphaseThreadStatsDespawnDynamic = new NativeArray<BroadphaseStatsThreadLocal>(JobsUtility.MaxJobThreadCount, Allocator.Persistent);
             broadphaseThreadStatsDespawnStatic = new NativeArray<BroadphaseStatsThreadLocal>(JobsUtility.MaxJobThreadCount, Allocator.Persistent);
             broadphaseSingleThreadedStats = new NativeReference<BroadphaseStatsSingleThreaded>(Allocator.Persistent);
+            #endregion
+
+            #region Init Collections - Narrowphase
+            narrowphasePairsNeedingVoxelLevelCheck = new NativeList<PotentiallyCollidingPair>(maxEntitiesPerScenePairsCapacity, Allocator.Persistent);
+            #endregion
+
+            // Create Component Lookups
+            #region Init Component Lookups - Narrowphase
+            localToWorldLookup = state.GetComponentLookup<LocalToWorld>(true);
             #endregion
 
             // Create Singletons
@@ -90,11 +108,16 @@ namespace Incantation.Engine.Voxels.Systems.Physics
             if (broadphaseThreadStatsDespawnStatic.IsCreated) broadphaseThreadStatsDespawnStatic.Dispose();
             if (broadphaseSingleThreadedStats.IsCreated) broadphaseSingleThreadedStats.Dispose();
             #endregion
+
+            #region Collection Disposal - Narrowphase
+            if (narrowphasePairsNeedingVoxelLevelCheck.IsCreated) narrowphasePairsNeedingVoxelLevelCheck.Dispose();
+            #endregion
         }
 
         public void OnUpdate(ref SystemState state)
         {
             NativeArray<PotentiallyCollidingPair> broadphasePairs = findCollisionBroadphasePairs(ref state);
+            findCollisionNarrowphaseContacts(ref state, broadphasePairs);
 
             state.Dependency = broadphasePairs.Dispose(state.Dependency);
         }
@@ -1077,7 +1100,6 @@ namespace Incantation.Engine.Voxels.Systems.Physics
         {
             if (DebugConstants.ENABLE_BROADPHASE_DRAW_PAIRS)
             {
-#pragma warning disable CS0162 // Unreachable code detected
                 for (int i = 0; i < broadphasePairs.Keys.Length; i++)
                 {
                     var cellCount = broadphasePairs.Values[i];
@@ -1097,7 +1119,6 @@ namespace Incantation.Engine.Voxels.Systems.Physics
 
                     UnityEngine.Debug.DrawLine(posA, posB, color, Time.fixedDeltaTime);
                 }
-#pragma warning restore CS0162 // Unreachable code detected
             }
         }
         #endregion
@@ -1106,9 +1127,9 @@ namespace Incantation.Engine.Voxels.Systems.Physics
 
         #region COLLISION DETECTION - NARROWPHASE
         // -------------------------------------------------
-        // BROADPHASE
+        // NARROWPHASE
         // -------------------------------------------------
-        public static void findCollisionNarrowphaseContacts(ref SystemState state,
+        public void findCollisionNarrowphaseContacts(ref SystemState state,
             NativeArray<PotentiallyCollidingPair> broadphasePairs)
         {
             // TODO return an empty list if early exit on no broadphase pairs
@@ -1116,64 +1137,61 @@ namespace Incantation.Engine.Voxels.Systems.Physics
             if (!broadphasePairs.IsCreated || broadphasePairs.Length == 0)
                 return;
 
-            var localToWorldLookup = state.GetComponentLookup<LocalToWorld>(true);
-            var renderBoundsLookup = state.GetComponentLookup<RenderBounds>(true);
+            var ecb = new EntityCommandBuffer(Allocator.TempJob);
+            localToWorldLookup.Update(ref state);
+            narrowphasePairsNeedingVoxelLevelCheck.Clear();
+            clearDebugVisualizationFlags(ref state);
 
-            var job = new NarrowphasePairJob
+            var volumeWideNarrowphaseJob = new NarrowphaseVolumeWidePairJob
             {
-                Pairs = broadphasePairs,
+                PairsToCheck = broadphasePairs,
                 LocalToWorldLookup = localToWorldLookup,
-                RenderBoundsLookup = renderBoundsLookup
+                ECB = ecb.AsParallelWriter(),
+                VoxelCheckPairs = narrowphasePairsNeedingVoxelLevelCheck.AsParallelWriter()
             };
 
-            state.Dependency = job.ScheduleParallel(broadphasePairs.Length, 64, state.Dependency);
+            state.Dependency = volumeWideNarrowphaseJob.ScheduleParallel(broadphasePairs.Length, 64, state.Dependency);
+            state.Dependency.Complete();
+
+            ecb.Playback(state.EntityManager);
+            ecb.Dispose();
+
+            // TODO voxel-level check
         }
 
         #region Job Structs
         [BurstCompile]
-        private struct NarrowphasePairJob : IJobFor
+        private struct NarrowphaseVolumeWidePairJob : IJobFor
         {
-            const float epsilon = 1e-6f;
+            private const float epsilon = 1e-6f;
 
-            [ReadOnly] public NativeArray<PotentiallyCollidingPair> Pairs;
+            private readonly static float3 LOCAL_EXTENTS = new float3(0.5f, 0.5f, 0.5f);
+            private readonly static float LOCAL_EXTENTS_LENGTH = math.length(LOCAL_EXTENTS);
+
+            [ReadOnly] public NativeArray<PotentiallyCollidingPair> PairsToCheck;
             [ReadOnly] public ComponentLookup<LocalToWorld> LocalToWorldLookup;
-            [ReadOnly] public ComponentLookup<RenderBounds> RenderBoundsLookup;
+            public EntityCommandBuffer.ParallelWriter ECB;
+            public NativeList<PotentiallyCollidingPair>.ParallelWriter VoxelCheckPairs;
 
             public void Execute(int index)
             {
-                PotentiallyCollidingPair pair = Pairs[index];
+                #region Compute Shared Values
+                PotentiallyCollidingPair pair = PairsToCheck[index];
                 Entity entityA = pair.A;
                 Entity entityB = pair.B;
 
                 if (!LocalToWorldLookup.HasComponent(entityA) ||
-                    !LocalToWorldLookup.HasComponent(entityB) ||
-                    !RenderBoundsLookup.HasComponent(entityA) ||
-                    !RenderBoundsLookup.HasComponent(entityB))
+                    !LocalToWorldLookup.HasComponent(entityB))
                 {
                     return;
                 }
 
+                // Commonly shared value calculation
                 LocalToWorld ltwA = LocalToWorldLookup[entityA];
                 LocalToWorld ltwB = LocalToWorldLookup[entityB];
 
-                AABB localBoundsA = RenderBoundsLookup[entityA].Value;
-                AABB localBoundsB = RenderBoundsLookup[entityB].Value;
-
-                checkForSphereCollision(ltwA, ltwB, localBoundsA, localBoundsB);
-            }
-
-            #region Narrow Phase - Sphere
-            private static void checkForSphereCollision(LocalToWorld ltwA, LocalToWorld ltwB, AABB localBoundsA, AABB localBoundsB)
-            {
-                // Calcs needed by subsequent checks too
-                float3 localCenterA = localBoundsA.Center;
-                float3 localCenterB = localBoundsB.Center;
-
-                float3 localExtentsA = localBoundsA.Extents;
-                float3 localExtentsB = localBoundsB.Extents;
-
-                float3 worldCenterA = math.transform(ltwA.Value, localCenterA);
-                float3 worldCenterB = math.transform(ltwB.Value, localCenterB);
+                float3 worldCenterA = ltwA.Position;
+                float3 worldCenterB = ltwB.Position;
 
                 float3 rightA = ltwA.Right;
                 float3 rightB = ltwB.Right;
@@ -1182,38 +1200,81 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                 float3 forwardA = ltwA.Forward;
                 float3 forwardB = ltwB.Forward;
 
-                // Calcs specific for sphere check
-                float maxAxisScaleA = math.max(math.length(rightA), math.max(math.length(upA), math.length(forwardA)));
-                float maxAxisScaleB = math.max(math.length(rightB), math.max(math.length(upB), math.length(forwardB)));
+                float rightALength = math.length(rightA);
+                float rightBLength = math.length(rightB);
+                float upALength = math.length(upA);
+                float upBLength = math.length(upB);
+                float forwardALength = math.length(forwardA);
+                float forwardBLength = math.length(forwardB);
+                #endregion
 
-                float localRadiusA = math.length(localExtentsA);
-                float localRadiusB = math.length(localExtentsB);
+                if (!isSphereCollision(worldCenterA, worldCenterB, rightALength, rightBLength, 
+                    upALength, upBLength, forwardALength, forwardBLength))
+                {
+                    return;
+                }
+                else if (DebugConstants.ENABLE_NARROWPHASE_DRAW_SPHERES)
+                {
+                    ECB.SetComponentEnabled<DebugCollNearSphereHit>(index, entityA, true);
+                    ECB.SetComponentEnabled<DebugCollNearSphereHit>(index, entityB, true);
+                }
 
-                float radiusA = localRadiusA * maxAxisScaleA;
-                float radiusB = localRadiusB * maxAxisScaleB;
+                if (!isAABBCollision(worldCenterA, worldCenterB, rightA, rightB, upA, upB, forwardA, forwardB))
+                {
+                    return;
+                }
+                else if (DebugConstants.ENABLE_NARROWPHASE_DRAW_AABBS)
+                {
+                    ECB.SetComponentEnabled<DebugCollNearAABBHit>(index, entityA, true);
+                    ECB.SetComponentEnabled<DebugCollNearAABBHit>(index, entityB, true);
+                }
+
+                if (!isOBBCollision(worldCenterA, worldCenterB, rightA, rightB,
+                    upA, upB, forwardA, forwardB, rightALength, rightBLength,
+                    upALength, upBLength, forwardALength, forwardBLength))
+                {
+                    return;
+                }
+                else if (DebugConstants.ENABLE_NARROWPHASE_DRAW_OBBS)
+                {
+                    ECB.SetComponentEnabled<DebugCollNearOBBHit>(index, entityA, true);
+                    ECB.SetComponentEnabled<DebugCollNearOBBHit>(index, entityB, true);
+                }
+
+                #region Write Results
+                // Write results
+                VoxelCheckPairs.AddNoResize(pair);
+                #endregion
+            }
+
+            #region Narrow Phase - Sphere
+            private static bool isSphereCollision(float3 worldCenterA, float3 worldCenterB, float rightALength, float rightBLength, 
+                float upALength, float upBLength, float forwardALength, float forwardBLength)
+            {
+                float maxAxisScaleA = math.max(rightALength, math.max(upALength, forwardALength));
+                float maxAxisScaleB = math.max(rightBLength, math.max(upBLength, forwardBLength));
+
+                float radiusA = LOCAL_EXTENTS_LENGTH * maxAxisScaleA;
+                float radiusB = LOCAL_EXTENTS_LENGTH * maxAxisScaleB;
                 float combinedRadius = radiusA + radiusB;
 
-                // Sphere collision early exit
-                if (math.lengthsq(worldCenterA - worldCenterB) <= combinedRadius * combinedRadius) return;
-
-                checkForAABBCollision(worldCenterA, worldCenterB, rightA, rightB, upA, upB,
-                    forwardA, forwardB, localExtentsA, localExtentsB);
+                return math.lengthsq(worldCenterA - worldCenterB) <= combinedRadius * combinedRadius;
             }
             #endregion
 
             #region Narrow Phase - AABB Check
-            private static void checkForAABBCollision(float3 worldCenterA, float3 worldCenterB, float3 rightA, float3 rightB,
-                float3 upA, float3 upB, float3 forwardA, float3 forwardB, float3 localExtentsA, float3 localExtentsB)
+            private static bool isAABBCollision(float3 worldCenterA, float3 worldCenterB, 
+                float3 rightA, float3 rightB, float3 upA, float3 upB, float3 forwardA, float3 forwardB)
             {
-                // Calcs specific for world AABB check
                 float3 worldExtentsA =
-                    math.abs(rightA) * localExtentsA.x +
-                    math.abs(upA) * localExtentsA.y +
-                    math.abs(forwardA) * localExtentsA.z;
+                    math.abs(rightA) * LOCAL_EXTENTS.x +
+                    math.abs(upA) * LOCAL_EXTENTS.y +
+                    math.abs(forwardA) * LOCAL_EXTENTS.z;
+
                 float3 worldExtentsB =
-                    math.abs(rightB) * localExtentsB.x +
-                    math.abs(upB) * localExtentsB.y +
-                    math.abs(forwardB) * localExtentsB.z;
+                    math.abs(rightB) * LOCAL_EXTENTS.x +
+                    math.abs(upB) * LOCAL_EXTENTS.y +
+                    math.abs(forwardB) * LOCAL_EXTENTS.z;
 
                 float3 minA = worldCenterA - worldExtentsA;
                 float3 minB = worldCenterB - worldExtentsB;
@@ -1221,53 +1282,36 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                 float3 maxA = worldCenterA + worldExtentsA;
                 float3 maxB = worldCenterB + worldExtentsB;
 
-                // AABB collision early exits
-                if (maxA.x < minB.x || minA.x > maxB.x) return;
-                if (maxA.y < minB.y || minA.y > maxB.y) return;
-                if (maxA.z < minB.z || minA.z > maxB.z) return;
+                if (maxA.x < minB.x || minA.x > maxB.x) return false;
+                if (maxA.y < minB.y || minA.y > maxB.y) return false;
+                if (maxA.z < minB.z || minA.z > maxB.z) return false;
 
-                checkForOBBCollision(worldCenterA, worldCenterB, rightA, rightB, upA, upB, 
-                    forwardA, forwardB, localExtentsA, localExtentsB);
+                return true;
             }
             #endregion
 
             #region Narrow Phase - OBB check
 
-            private static void checkForOBBCollision(float3 worldCenterA, float3 worldCenterB, float3 rightA, float3 rightB,
-                float3 upA, float3 upB, float3 forwardA, float3 forwardB, float3 localExtentsA, float3 localExtentsB)
+            private static bool isOBBCollision(float3 worldCenterA, float3 worldCenterB, float3 rightA, float3 rightB,
+                float3 upA, float3 upB, float3 forwardA, float3 forwardB, float rightALength, float rightBLength,
+                float upALength, float upBLength, float forwardALength, float forwardBLength)
             {
-                float lenXA = math.length(rightA);
-                float lenYA = math.length(upA);
-                float lenZA = math.length(forwardA);
+                float3 A0 = math.normalizesafe(rightA);
+                float3 A1 = math.normalizesafe(upA);
+                float3 A2 = math.normalizesafe(forwardA);
 
-                float lenXB = math.length(rightB);
-                float lenYB = math.length(upB);
-                float lenZB = math.length(forwardB);
-
-                float invLenXA = lenXA > epsilon ? 1.0f / lenXA : 0.0f;
-                float invLenYA = lenYA > epsilon ? 1.0f / lenYA : 0.0f;
-                float invLenZA = lenZA > epsilon ? 1.0f / lenZA : 0.0f;
-
-                float invLenXB = lenXB > epsilon ? 1.0f / lenXB : 0.0f;
-                float invLenYB = lenYB > epsilon ? 1.0f / lenYB : 0.0f;
-                float invLenZB = lenZB > epsilon ? 1.0f / lenZB : 0.0f;
-
-                float3 A0 = rightA * invLenXA;
-                float3 A1 = upA * invLenYA;
-                float3 A2 = forwardA * invLenZA;
-
-                float3 B0 = rightB * invLenXB;
-                float3 B1 = upB * invLenYB;
-                float3 B2 = forwardB * invLenZB;
+                float3 B0 = math.normalizesafe(rightB);
+                float3 B1 = math.normalizesafe(upB);
+                float3 B2 = math.normalizesafe(forwardB);
 
                 float3 HalfExtentsA = new float3(
-                    localExtentsA.x * lenXA,
-                    localExtentsA.y * lenYA,
-                    localExtentsA.z * lenZA);
+                    LOCAL_EXTENTS.x * rightALength,
+                    LOCAL_EXTENTS.y * upALength,
+                    LOCAL_EXTENTS.z * forwardALength);
                 float3 HalfExtentsB = new float3(
-                    localExtentsB.x * lenXB,
-                    localExtentsB.y * lenYB,
-                    localExtentsB.z * lenZB);
+                    LOCAL_EXTENTS.x * rightBLength,
+                    LOCAL_EXTENTS.y * upBLength,
+                    LOCAL_EXTENTS.z * forwardBLength);
 
                 float3 tWorld = worldCenterB - worldCenterA;
 
@@ -1318,92 +1362,114 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                 // Test A's local axes
                 ra = a0;
                 rb = b0 * AR00 + b1 * AR01 + b2 * AR02;
-                if (math.abs(t0) > ra + rb) return;
+                if (math.abs(t0) > ra + rb) return false;
 
                 ra = a1;
                 rb = b0 * AR10 + b1 * AR11 + b2 * AR12;
-                if (math.abs(t1) > ra + rb) return;
+                if (math.abs(t1) > ra + rb) return false;
 
                 ra = a2;
                 rb = b0 * AR20 + b1 * AR21 + b2 * AR22;
-                if (math.abs(t2) > ra + rb) return;
+                if (math.abs(t2) > ra + rb) return false;
 
                 // Test B's local axes
                 ra = a0 * AR00 + a1 * AR10 + a2 * AR20;
                 rb = b0;
                 t = math.abs(t0 * R00 + t1 * R10 + t2 * R20);
-                if (t > ra + rb) return;
+                if (t > ra + rb) return false;
 
                 ra = a0 * AR01 + a1 * AR11 + a2 * AR21;
                 rb = b1;
                 t = math.abs(t0 * R01 + t1 * R11 + t2 * R21);
-                if (t > ra + rb) return;
+                if (t > ra + rb) return false;
 
                 ra = a0 * AR02 + a1 * AR12 + a2 * AR22;
                 rb = b2;
                 t = math.abs(t0 * R02 + t1 * R12 + t2 * R22);
-                if (t > ra + rb) return;
+                if (t > ra + rb) return false;
 
                 // Test cross products A0 x Bj
                 ra = a1 * AR20 + a2 * AR10;
                 rb = b1 * AR02 + b2 * AR01;
                 t = math.abs(t2 * R10 - t1 * R20);
-                if (t > ra + rb) return;
+                if (t > ra + rb) return false;
 
                 ra = a1 * AR21 + a2 * AR11;
                 rb = b0 * AR02 + b2 * AR00;
                 t = math.abs(t2 * R11 - t1 * R21);
-                if (t > ra + rb) return;
+                if (t > ra + rb) return false;
 
                 ra = a1 * AR22 + a2 * AR12;
                 rb = b0 * AR01 + b1 * AR00;
                 t = math.abs(t2 * R12 - t1 * R22);
-                if (t > ra + rb) return;
+                if (t > ra + rb) return false;
 
                 // Test cross products A1 x Bj
                 ra = a0 * AR20 + a2 * AR00;
                 rb = b1 * AR12 + b2 * AR11;
                 t = math.abs(t0 * R20 - t2 * R00);
-                if (t > ra + rb) return;
+                if (t > ra + rb) return false;
 
                 ra = a0 * AR21 + a2 * AR01;
                 rb = b0 * AR12 + b2 * AR10;
                 t = math.abs(t0 * R21 - t2 * R01);
-                if (t > ra + rb) return;
+                if (t > ra + rb) return false;
 
                 ra = a0 * AR22 + a2 * AR02;
                 rb = b0 * AR11 + b1 * AR10;
                 t = math.abs(t0 * R22 - t2 * R02);
-                if (t > ra + rb) return;
+                if (t > ra + rb) return false;
 
                 // Test cross products A2 x Bj
                 ra = a0 * AR10 + a1 * AR00;
                 rb = b1 * AR22 + b2 * AR21;
                 t = math.abs(t1 * R00 - t0 * R10);
-                if (t > ra + rb) return;
+                if (t > ra + rb) return false;
 
                 ra = a0 * AR11 + a1 * AR01;
                 rb = b0 * AR22 + b2 * AR20;
                 t = math.abs(t1 * R01 - t0 * R11);
-                if (t > ra + rb) return;
+                if (t > ra + rb) return false;
 
                 ra = a0 * AR12 + a1 * AR02;
                 rb = b0 * AR21 + b1 * AR20;
                 t = math.abs(t1 * R02 - t0 * R12);
-                if (t > ra + rb) return;
+                if (t > ra + rb) return false;
 
-                checkForVoxelCollisions();
+                return true;
             }
             #endregion
+        }
+        #endregion
 
-            #region Narrow Phase - Voxel Check
-
-            private static void checkForVoxelCollisions()
+        #region Debug and Stat Collection
+        private void clearDebugVisualizationFlags(ref SystemState state)
+        {
+            if (DebugConstants.ENABLE_NARROWPHASE_DRAW_SPHERES ||
+                    DebugConstants.ENABLE_NARROWPHASE_DRAW_AABBS ||
+                    DebugConstants.ENABLE_NARROWPHASE_DRAW_OBBS)
             {
-                // TODO implement this
-            }
+                // Clear all debug flags on the main thread because we're not concerned about perf
+                // if these flags are set
+                foreach (var (localToWorld, entity) in
+                    SystemAPI.Query<RefRO<LocalToWorld>>()
+                        .WithAll<IsVoxelVolume>()
+                        .WithAny<
+                            DebugCollNearSphereHit,
+                            DebugCollNearAABBHit,
+                            DebugCollNearOBBHit>()
+                        .WithEntityAccess())
+                {
+                    if (SystemAPI.IsComponentEnabled<DebugCollNearSphereHit>(entity))
+                        SystemAPI.SetComponentEnabled<DebugCollNearSphereHit>(entity, false);
 
-            #endregion
+                    if (SystemAPI.IsComponentEnabled<DebugCollNearAABBHit>(entity))
+                        SystemAPI.SetComponentEnabled<DebugCollNearAABBHit>(entity, false);
+
+                    if (SystemAPI.IsComponentEnabled<DebugCollNearOBBHit>(entity))
+                        SystemAPI.SetComponentEnabled<DebugCollNearOBBHit>(entity, false);
+                }
+            }
         }
         #endregion
 

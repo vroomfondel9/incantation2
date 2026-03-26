@@ -1,0 +1,9 @@
+Guiding Principal Above All Else
+================================
+The purpose of this game is to deliver on the fantasy of what it's like to really be a wizard and have powers that can alter the laws of reality.
+
+Ideas
+=====
+-The player stumbles upon fragments of instructions in the language of magic. 
+	-Some parts are fixed, some variable. The player must figure out what they do themselves through experimentation.
+	-They can record notes in their spellbook of what they think the spell fragment does. They can then build spells based on this fragment.

@@ -103,7 +103,14 @@ namespace Incantation.Engine.Voxels.Systems
                     || DebugConstants.ENABLE_NARROWPHASE_DRAW_AABBS 
                         || DebugConstants.ENABLE_NARROWPHASE_DRAW_OBBS)
                 {
-                    ecb.AddComponent<DebugCollisionComponent>(entity, new DebugCollisionComponent());
+                    ecb.AddComponent<DebugCollNearSphereHit>(entity);
+                    ecb.SetComponentEnabled<DebugCollNearSphereHit>(entity, false);
+
+                    ecb.AddComponent<DebugCollNearAABBHit>(entity);
+                    ecb.SetComponentEnabled<DebugCollNearAABBHit>(entity, false);
+
+                    ecb.AddComponent<DebugCollNearOBBHit>(entity);
+                    ecb.SetComponentEnabled<DebugCollNearOBBHit>(entity, false);
                 }
 
                 // Hack to fix GPU instancing because Entitles Graphics is dumb

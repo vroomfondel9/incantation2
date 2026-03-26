@@ -9,6 +9,7 @@ using UnityEngine;
 
 namespace Incantation.Engine.Voxels.Systems.Debug
 {
+
     [UpdateInGroup(typeof(PresentationSystemGroup))]
     public partial struct DebugVisualizeCollisionsSystem : ISystem
     {
@@ -25,13 +26,17 @@ namespace Incantation.Engine.Voxels.Systems.Debug
                 DebugConstants.ENABLE_NARROWPHASE_DRAW_AABBS ||
                     DebugConstants.ENABLE_NARROWPHASE_DRAW_OBBS)
             {
-                foreach (var (ltw, localAABBBounds, worldAABBBounds, collisionCounts) in
+                foreach (var (ltw, localAABBBounds, worldAABBBounds, entity) in
                     SystemAPI.Query<
                         RefRO<LocalToWorld>,
                         RefRO<RenderBounds>,
-                        RefRO<WorldRenderBounds>,
-                        RefRO<DebugCollisionComponent>>()
-                    .WithAll<IsVoxelVolume>())
+                        RefRO<WorldRenderBounds>>()
+                    .WithAll<IsVoxelVolume>()
+                    .WithAny<
+                        DebugCollNearSphereHit,
+                        DebugCollNearAABBHit,
+                        DebugCollNearOBBHit>()
+                    .WithEntityAccess())
                 {
                     AABB localAABB = localAABBBounds.ValueRO.Value;
                     float3 localAABBMin = localAABB.Min;
@@ -41,44 +46,39 @@ namespace Incantation.Engine.Voxels.Systems.Debug
                     float3 worldAABBMin = worldAABB.Min;
                     float3 worldAABBMax = worldAABB.Max;
 
-                    uint sphereCollisionNum = collisionCounts.ValueRO.sphereCollisions;
-                    uint aabbCollisionNum = collisionCounts.ValueRO.aabbCollisions;
-                    uint obbCollisionNum = collisionCounts.ValueRO.obbCollisions;
+                    bool hasSphereComponentOn = SystemAPI.HasComponent<DebugCollNearSphereHit>(entity) 
+                        && SystemAPI.IsComponentEnabled<DebugCollNearSphereHit>(entity);
+                    bool hasAABBComponentOn = SystemAPI.HasComponent<DebugCollNearAABBHit>(entity)
+                        && SystemAPI.IsComponentEnabled<DebugCollNearAABBHit>(entity);
+                    bool hasOBBComponentOn = SystemAPI.HasComponent<DebugCollNearOBBHit>(entity)
+                        && SystemAPI.IsComponentEnabled<DebugCollNearOBBHit>(entity);
 
-                    bool drawSphere = (sphereCollisionNum > 0) && (aabbCollisionNum == 0) && (obbCollisionNum == 0);
-                    bool drawAABB = (aabbCollisionNum > 0) && (obbCollisionNum == 0);
-                    bool drawOOB = (obbCollisionNum > 0);
+                    bool drawSphere = hasSphereComponentOn && !hasAABBComponentOn && !hasOBBComponentOn;
+                    bool drawAABB = hasAABBComponentOn && !hasOBBComponentOn;
+                    bool drawOOB = hasOBBComponentOn;
 
                     drawSphere &= DebugConstants.ENABLE_NARROWPHASE_DRAW_SPHERES;
                     drawAABB &= DebugConstants.ENABLE_NARROWPHASE_DRAW_AABBS;
                     drawOOB &= DebugConstants.ENABLE_NARROWPHASE_DRAW_OBBS;
 
+                    Color color = new Color(0.75f, 0.75f, 0.75f, 0.75f);
+
                     if (drawSphere)
                     {
-                        DrawWireSphere(worldAABB.Center, math.length(worldAABB.Extents), collisionNumToColor(sphereCollisionNum));
+                        DrawWireSphere(worldAABB.Center, math.length(worldAABB.Extents), color);
                     }
 
                     if (drawAABB)
                     {
-                        DrawBox(worldAABBMin, worldAABBMax, collisionNumToColor(aabbCollisionNum), float4x4.identity);
+                        DrawBox(worldAABBMin, worldAABBMax, color, float4x4.identity);
                     }
 
                     if (drawOOB)
                     {
-                        DrawBox(localAABBMin, localAABBMax, collisionNumToColor(obbCollisionNum), ltw.ValueRO.Value);
+                        DrawBox(localAABBMin, localAABBMax, color, ltw.ValueRO.Value);
                     }
                 }
             }
-        }
-
-        private static Color collisionNumToColor(uint num)
-        {
-            float MAX_COLLISIONS = 4.0f;
-            float greyscale = 0.5f + 0.5f * (num / MAX_COLLISIONS);
-            greyscale = math.saturate(greyscale);
-
-            Color c = new Color(greyscale, greyscale, greyscale, 0.75f);
-            return c;
         }
 
         public static void DrawWireSphere(Vector3 center, float radius, Color color, float duration = 0f, int segments = 24)
