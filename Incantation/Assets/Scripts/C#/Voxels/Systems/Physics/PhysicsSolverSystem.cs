@@ -1160,6 +1160,8 @@ namespace Incantation.Engine.Voxels.Systems.Physics
         }
 
         #region Job Structs
+
+        #region Volume-Wide Narrowphase
         [BurstCompile]
         private struct NarrowphaseVolumeWidePairJob : IJobFor
         {
@@ -1208,6 +1210,7 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                 float forwardBLength = math.length(forwardB);
                 #endregion
 
+                #region Shape-Based Checks
                 if (!isSphereCollision(worldCenterA, worldCenterB, rightALength, rightBLength, 
                     upALength, upBLength, forwardALength, forwardBLength))
                 {
@@ -1240,6 +1243,7 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                     ECB.SetComponentEnabled<DebugCollNearOBBHit>(index, entityA, true);
                     ECB.SetComponentEnabled<DebugCollNearOBBHit>(index, entityB, true);
                 }
+                #endregion
 
                 #region Write Results
                 // Write results
@@ -1247,7 +1251,7 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                 #endregion
             }
 
-            #region Narrow Phase - Sphere
+            #region Narrow Phase - Sphere Check
             private static bool isSphereCollision(float3 worldCenterA, float3 worldCenterB, float rightALength, float rightBLength, 
                 float upALength, float upBLength, float forwardALength, float forwardBLength)
             {
@@ -1440,6 +1444,7 @@ namespace Incantation.Engine.Voxels.Systems.Physics
             }
             #endregion
         }
+        #endregion
         #endregion
 
         #region Debug and Stat Collection

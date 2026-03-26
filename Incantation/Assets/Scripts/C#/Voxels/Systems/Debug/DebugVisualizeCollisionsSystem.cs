@@ -61,7 +61,7 @@ namespace Incantation.Engine.Voxels.Systems.Debug
                     drawAABB &= DebugConstants.ENABLE_NARROWPHASE_DRAW_AABBS;
                     drawOOB &= DebugConstants.ENABLE_NARROWPHASE_DRAW_OBBS;
 
-                    Color color = new Color(0.75f, 0.75f, 0.75f, 0.75f);
+                    Color color = new Color(0.25f, 0.75f, 0.25f, 0.5f);
 
                     if (drawSphere)
                     {
