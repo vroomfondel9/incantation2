@@ -27,10 +27,10 @@ Game engine prototype that should support destructable, voxel-based environments
 
 ### Collision Detection
 <p align="center">
-<img src="https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExaXluNzVseXZ6dnoxdjRqd3UzNWpzbDh4Z2Z5NDdta29oYzJ3dDN2NSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/wgG0q7wb58TJfUMuhA/giphy.gif" />
+  <img src="https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjExZDlpemljanVmeGlxaDJncWl6YnhqeHZ6MHJubDNpMm1sN25mOGZmcSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/wgG0q7wb58TJfUMuhA/giphy.gif" width="90%" />
 </p>
 
 ### Fluid Simulation Optimizations
 <p align="center">
-<img src="https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExcmFxd2s4MW9tNWF5a3BzN3FkYnNlNzM5emtxNjNsd3VjNTl1OHp1YiZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/Kz2MNmh6BzJ4QXrffa/giphy.gif" />
+  <img src="https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExcmFxd2s4MW9tNWF5a3BzN3FkYnNlNzM5emtxNjNsd3VjNTl1OHp1YiZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/Kz2MNmh6BzJ4QXrffa/giphy.gif" width="90%" />
 </p>
