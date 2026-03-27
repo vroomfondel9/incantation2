@@ -27,10 +27,10 @@ Game engine prototype that should support destructable, voxel-based environments
 
 ### Collision Detection
 <p align="center">
-  <img src="https://i.giphy.com/wgG0q7wb58TJfUMuhA.gif" width="90%" />
+  <img src="https://i.giphy.com/U3GuGz8ZPoOfAyRzCS.gif" width="45%" />
 </p>
 
 ### Fluid Simulation Optimizations
 <p align="center">
-  <img src="https://i.giphy.com/A0gRIMpKZq4qRiuuS2.gif" width="90%" />
+  <img src="https://i.giphy.com/A0gRIMpKZq4qRiuuS2.gif" width="45%" />
 </p>
