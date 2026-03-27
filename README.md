@@ -32,5 +32,5 @@ Game engine prototype that should support destructable, voxel-based environments
 
 ### Fluid Simulation Optimizations
 <p align="center">
-  <img src="https://i.giphy.com/Kz2MNmh6BzJ4QXrffa.gif" width="90%" />
+  <img src="https://i.giphy.com/MQQVceyKeaGmo3htsS.gif" width="90%" />
 </p>
