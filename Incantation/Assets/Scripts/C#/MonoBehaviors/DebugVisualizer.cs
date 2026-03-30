@@ -13,7 +13,8 @@ public class DebugVisualizer : MonoBehaviour
         DEPTH = 3,
         VOXEL_TOPOLOGY = 4,
         RAYMARCH_ITERATIONS = 5,
-        RAYMARCH_SAMPLES = 6
+        RAYMARCH_SAMPLES = 6,
+        COLLISION_DETECTION = 7
     }
 
     // Debug properties
@@ -53,6 +54,7 @@ public class DebugVisualizer : MonoBehaviour
         CheckKey(KeyCode.Alpha4, DEBUG_VISUALIZATION_MODES.VOXEL_TOPOLOGY);
         CheckKey(KeyCode.Alpha5, DEBUG_VISUALIZATION_MODES.RAYMARCH_ITERATIONS);
         CheckKey(KeyCode.Alpha6, DEBUG_VISUALIZATION_MODES.RAYMARCH_SAMPLES);
+        CheckKey(KeyCode.Alpha7, DEBUG_VISUALIZATION_MODES.COLLISION_DETECTION);
     }
 
     void CheckKey(KeyCode key, DEBUG_VISUALIZATION_MODES mode)
@@ -65,14 +67,14 @@ public class DebugVisualizer : MonoBehaviour
 
     void SetDebugMode(DEBUG_VISUALIZATION_MODES mode)
     {
-        DebugConstants.DRAW_AABBS = false;
-
         debugVisualizationMode = (int)mode;
+
+        // Set GPU-based global shader property
         Shader.SetGlobalFloat("_DebugVisualizationMode", (int)mode);
-        if (mode == DEBUG_VISUALIZATION_MODES.BOUNDING_BOXES)
-        {
-            DebugConstants.DRAW_AABBS = true;
-        }
+
+        // Set CPU-based static switches
+        DebugSwitches.DRAW_BROADPHASE = mode == DEBUG_VISUALIZATION_MODES.COLLISION_DETECTION;
+        DebugSwitches.DRAW_NARROWPHASE = mode == DEBUG_VISUALIZATION_MODES.COLLISION_DETECTION;
 
         Debug.Log($"Global Debug Mode set to: {mode}");
     }

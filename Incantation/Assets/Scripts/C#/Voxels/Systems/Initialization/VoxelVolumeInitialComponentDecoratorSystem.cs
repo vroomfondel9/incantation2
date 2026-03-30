@@ -1,4 +1,5 @@
 using Incantation.Engine.Voxels.Components;
+using Incantation.Engine.Voxels.Components.Debug;
 using Incantation.Engine.Voxels.Components.Physics.RigidBody;
 using System;
 using Unity.Entities;
@@ -75,9 +76,17 @@ namespace Incantation.Engine.Voxels.Systems
                     Value = 0
                 });
 
-                ecb.AddComponent(entity, new VolumeWideConstantColorOverride(255, 0, 0));
-                ecb.AddComponent(entity, new VolumeWideConstantColorOverrideEffect(0, 0.5f, false, 1000, 
-                    EasingFunction.LINEAR, 1000, CompletionFunction.REMOVE));
+                ecb.AddComponent(entity, new VolumeWideConstantColorOverride(0, 0, 0));
+
+                // --- Dynamic Buffers ---
+                DynamicBuffer<VolumeWideConstantColorOverrideEffect> effectBuffer = 
+                    ecb.AddBuffer<VolumeWideConstantColorOverrideEffect>(entity);
+
+                // Example for adding a damage effect
+                //effectBuffer.Add(new VolumeWideConstantColorOverrideEffect(255, 0, 0,
+                //    0.5f, 0.0f, false,
+                //    1000, EasingFunction.LINEAR,
+                //    1000, CompletionFunction.REMOVE));
 
                 // --- Enableables ---
                 ecb.AddComponent<IsVoxelVolume>(entity);
@@ -88,6 +97,18 @@ namespace Incantation.Engine.Voxels.Systems
 
                 ecb.AddComponent<IsBroadphaseRecorded>(entity);
                 ecb.SetComponentEnabled<IsBroadphaseRecorded>(entity, false);
+
+                // --- Debug Components ---
+#if DEBUG_DRAW_NARROWPHASE
+                ecb.AddComponent<DebugCollNearSphereHit>(entity);
+                ecb.SetComponentEnabled<DebugCollNearSphereHit>(entity, false);
+
+                ecb.AddComponent<DebugCollNearAABBHit>(entity);
+                ecb.SetComponentEnabled<DebugCollNearAABBHit>(entity, false);
+
+                ecb.AddComponent<DebugCollNearOBBHit>(entity);
+                ecb.SetComponentEnabled<DebugCollNearOBBHit>(entity, false);
+#endif
 
                 // Hack to fix GPU instancing because Entitles Graphics is dumb
                 matMeshInfo.ValueRW.Material = -1;

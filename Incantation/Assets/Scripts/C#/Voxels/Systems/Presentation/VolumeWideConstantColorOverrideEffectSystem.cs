@@ -19,63 +19,83 @@ namespace Incantation.Engine.Voxels.Systems
 
             var ecb = new EntityCommandBuffer(Allocator.Temp);
 
-            foreach (var (effect, overrideColor, entity) in
-                     SystemAPI.Query<RefRW<VolumeWideConstantColorOverrideEffect>, RefRW<VolumeWideConstantColorOverride>>()
+            foreach (var (effectsRO, overrideColor, entity) in
+                     SystemAPI.Query<DynamicBuffer<VolumeWideConstantColorOverrideEffect>, RefRW<VolumeWideConstantColorOverride>>()
                                .WithEntityAccess())
             {
-                ref var eff = ref effect.ValueRW;
-                ref var ovr = ref overrideColor.ValueRW;
+                var effects = effectsRO;
 
-                // 1. Subtract deltaTime
-                eff.remainingTime -= (int)deltaTimeMs;
+                uint maxAlpha = 0;
+                uint3 maxAlphaColor = new uint3(0, 0, 0);
 
-                // 2. Transition from easing to completion
-                if ((eff.remainingTime <= 0) && (eff.Easing))
+                for (var i = effects.Length - 1; i >= 0; i--)
                 {
-                    eff.Easing = false;
-                    eff.remainingTime = eff.completionDuration;
-                }
+                    var eff = effects[i];
 
-                // 3. Handle completion functions
-                if ((eff.remainingTime <= 0) && (!eff.Easing))
-                {
-                    switch (eff.completionFunction)
+                    // 1. Subtract deltaTime
+                    eff.remainingTime -= deltaTimeMs;
+
+                    // 2. Transition from easing to completion
+                    if ((eff.remainingTime <= 0) && (eff.Easing))
                     {
-                        case CompletionFunction.REPEAT:
-                            eff.remainingTime = eff.easingDuration;
-                            eff.Easing = true;
-                            break;
-
-                        case CompletionFunction.REMOVE_EFFECT_ONLY:
-                            ecb.RemoveComponent<VolumeWideConstantColorOverrideEffect>(entity);
-                            continue;
-
-                        case CompletionFunction.REMOVE:
-                            ecb.RemoveComponent<VolumeWideConstantColorOverrideEffect>(entity);
-                            ecb.RemoveComponent<VolumeWideConstantColorOverride>(entity);
-                            continue;
-                    }
-                }
-
-                if (eff.Easing)
-                {
-                    // 4. Compute blend fraction
-                    float blendDenom = eff.Easing ? eff.easingDuration : eff.completionDuration;
-                    float blend = blendDenom > 0 ? (float)eff.remainingTime / blendDenom : 1f;
-
-                    // 5. Apply InOut if needed
-                    if (eff.InOut)
-                    {
-                        blend *= 2;
-                        blend = (blend > 1) ? 1 - (blend - 1) : blend;
+                        eff.Easing = false;
+                        eff.remainingTime = eff.completionDuration - math.abs(eff.remainingTime);
                     }
 
-                    // 6. Apply easing function
-                    blend = ApplyEasing(blend, eff.easingFunction);
+                    // 3. Handle completion functions
+                    if ((eff.remainingTime <= 0) && (!eff.Easing))
+                    {
+                        switch (eff.completionFunction)
+                        {
+                            case CompletionFunction.REPEAT:
+                                eff.remainingTime = eff.easingDuration - math.abs(eff.remainingTime);
+                                eff.Easing = true;
+                                break;
 
-                    // 7. Interpolate alpha and update override
-                    uint alpha = (uint)math.lerp(eff.startAlpha, eff.endAlpha, blend);
-                    ovr.A = alpha;
+                            case CompletionFunction.REMOVE:
+                                effects.RemoveAt(i);
+                                continue;
+                        }
+                    }
+
+                    if (eff.Easing)
+                    {
+                        // 4. Compute blend fraction
+                        float blend = eff.easingDuration > 0 ? (float)eff.remainingTime / eff.easingDuration : 1f;
+                        blend = math.saturate(1.0f - blend);
+
+                        // 5. Apply InOut if needed
+                        if (eff.InOut)
+                        {
+                            blend *= 2;
+                            blend = (blend > 1) ? 1 - (blend - 1) : blend;
+                        }
+
+                        // 6. Apply easing function
+                        blend = ApplyEasing(blend, eff.easingFunction);
+
+                        // 7. Interpolate alpha and update override
+                        uint alpha = (uint)math.lerp(eff.startAlpha, eff.endAlpha, blend);
+
+                        // 8. For multiple effects simultaenously, max wins
+                        if (alpha > maxAlpha)
+                        {
+                            maxAlpha = alpha;
+                            maxAlphaColor = new uint3(eff.R, eff.G, eff.B);
+                        }
+                    }
+
+                    effects[i] = eff;
+                }
+
+                if (maxAlpha > 0.0f)
+                {
+                    ref var ovr = ref overrideColor.ValueRW;
+
+                    ovr.A = maxAlpha;
+                    ovr.R = maxAlphaColor.x;
+                    ovr.G = maxAlphaColor.y;
+                    ovr.B = maxAlphaColor.z;
                 }
             }
 

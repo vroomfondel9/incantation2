@@ -19,17 +19,20 @@ namespace Incantation.Engine.Voxels.Components
      * flags             : LS bit stores `InOut`, LS bit +1 stores `isEasing`.
      * completionFunction: Determines what happens when completionTime is finished.
      */
-
-    public struct VolumeWideConstantColorOverrideEffect : IComponentData
+    [InternalBufferCapacity(0)]
+    public struct VolumeWideConstantColorOverrideEffect : IBufferElementData
     {
-        public int easingDuration;
-        public int completionDuration;
-        public int remainingTime;
+        public float easingDuration;
+        public float completionDuration;
+        public float remainingTime;
         public EasingFunction easingFunction;
         private byte flags;
         public CompletionFunction completionFunction;
         private byte endA;
         private byte startA;
+        private byte r;
+        private byte g;
+        private byte b;
 
         // -----------------------------
         // Flag accessors (hot loop friendly)
@@ -98,10 +101,60 @@ namespace Incantation.Engine.Voxels.Components
             }
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public VolumeWideConstantColorOverrideEffect(float startAlpha, float endAlpha, bool inOut, 
-            int easingDur, EasingFunction easingFun, int completionDur, CompletionFunction completionFun)
+        public uint R
         {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            readonly get
+            {
+                return (uint)r;
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            set
+            {
+                r = (byte)value;
+            }
+        }
+
+        public uint G
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            readonly get
+            {
+                return (uint)g;
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            set
+            {
+                g = (byte)value;
+            }
+        }
+
+        public uint B
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            readonly get
+            {
+                return (uint)b;
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            set
+            {
+                b = (byte)value;
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public VolumeWideConstantColorOverrideEffect(uint red, uint green, uint blue,
+            float startAlpha, float endAlpha, bool inOut, int easingDur, EasingFunction easingFun, 
+                int completionDur, CompletionFunction completionFun)
+        {
+            r = (byte)red;
+            g = (byte)green;
+            b = (byte)blue;
+
             startA = (byte)((uint)math.round(startAlpha * 255));
             endA = (byte)((uint)math.round(endAlpha * 255));
 
@@ -127,7 +180,6 @@ namespace Incantation.Engine.Voxels.Components
     public enum CompletionFunction : byte
     {
         REPEAT = 0,
-        REMOVE_EFFECT_ONLY,
         REMOVE
     }
 }

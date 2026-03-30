@@ -7,7 +7,7 @@ using Unity.Mathematics;
 using Unity.Rendering;
 using Unity.Transforms;
 
-namespace Incantation.Engine.Voxels.Systems
+namespace Incantation.Engine.Voxels.Systems.Debug
 {
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [BurstCompile]
