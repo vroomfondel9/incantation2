@@ -99,19 +99,16 @@ namespace Incantation.Engine.Voxels.Systems
                 ecb.SetComponentEnabled<IsBroadphaseRecorded>(entity, false);
 
                 // --- Debug Components ---
-                if (DebugConstants.ENABLE_NARROWPHASE_DRAW_SPHERES 
-                    || DebugConstants.ENABLE_NARROWPHASE_DRAW_AABBS 
-                        || DebugConstants.ENABLE_NARROWPHASE_DRAW_OBBS)
-                {
-                    ecb.AddComponent<DebugCollNearSphereHit>(entity);
-                    ecb.SetComponentEnabled<DebugCollNearSphereHit>(entity, false);
+#if DEBUG_DRAW_NARROWPHASE
+                ecb.AddComponent<DebugCollNearSphereHit>(entity);
+                ecb.SetComponentEnabled<DebugCollNearSphereHit>(entity, false);
 
-                    ecb.AddComponent<DebugCollNearAABBHit>(entity);
-                    ecb.SetComponentEnabled<DebugCollNearAABBHit>(entity, false);
+                ecb.AddComponent<DebugCollNearAABBHit>(entity);
+                ecb.SetComponentEnabled<DebugCollNearAABBHit>(entity, false);
 
-                    ecb.AddComponent<DebugCollNearOBBHit>(entity);
-                    ecb.SetComponentEnabled<DebugCollNearOBBHit>(entity, false);
-                }
+                ecb.AddComponent<DebugCollNearOBBHit>(entity);
+                ecb.SetComponentEnabled<DebugCollNearOBBHit>(entity, false);
+#endif
 
                 // Hack to fix GPU instancing because Entitles Graphics is dumb
                 matMeshInfo.ValueRW.Material = -1;

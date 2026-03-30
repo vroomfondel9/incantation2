@@ -32,18 +32,22 @@ namespace Incantation.Engine.Voxels.Systems.Physics
 
         NativeParallelHashMap<PotentiallyCollidingPair, int> broadphasePairsToCellCount;
 
+#if STATS_BROADPHASE
         NativeArray<BroadphaseStatsThreadLocal> broadphaseThreadStatsUpdatesDynamic;
         NativeArray<BroadphaseStatsThreadLocal> broadphaseThreadStatsSpawnDynamic;
         NativeArray<BroadphaseStatsThreadLocal> broadphaseThreadStatsSpawnStatic;
         NativeArray<BroadphaseStatsThreadLocal> broadphaseThreadStatsDespawnDynamic;
         NativeArray<BroadphaseStatsThreadLocal> broadphaseThreadStatsDespawnStatic;
         NativeReference<BroadphaseStatsSingleThreaded> broadphaseSingleThreadedStats;
+#endif
         #endregion
 
         #region Collections - Narrowphase
         NativeList<PotentiallyCollidingPair> narrowphasePairsNeedingVoxelLevelCheck;
 
+#if STATS_NARROWPHASE
         NativeArray<NarrowphaseStatsThreadLocal> narrowThreadStats;
+#endif
         #endregion
 
         #region Component Lookups - Narrowphase
@@ -67,18 +71,22 @@ namespace Incantation.Engine.Voxels.Systems.Physics
 
             broadphasePairsToCellCount = new NativeParallelHashMap<PotentiallyCollidingPair, int>(maxEntitiesPerScenePairsCapacity, Allocator.Persistent);
 
+#if STATS_BROADPHASE
             broadphaseThreadStatsUpdatesDynamic = new NativeArray<BroadphaseStatsThreadLocal>(JobsUtility.MaxJobThreadCount,Allocator.Persistent);
             broadphaseThreadStatsSpawnDynamic = new NativeArray<BroadphaseStatsThreadLocal>(JobsUtility.MaxJobThreadCount, Allocator.Persistent);
             broadphaseThreadStatsSpawnStatic = new NativeArray<BroadphaseStatsThreadLocal>(JobsUtility.MaxJobThreadCount, Allocator.Persistent);
             broadphaseThreadStatsDespawnDynamic = new NativeArray<BroadphaseStatsThreadLocal>(JobsUtility.MaxJobThreadCount, Allocator.Persistent);
             broadphaseThreadStatsDespawnStatic = new NativeArray<BroadphaseStatsThreadLocal>(JobsUtility.MaxJobThreadCount, Allocator.Persistent);
             broadphaseSingleThreadedStats = new NativeReference<BroadphaseStatsSingleThreaded>(Allocator.Persistent);
+#endif
             #endregion
 
             #region Init Collections - Narrowphase
             narrowphasePairsNeedingVoxelLevelCheck = new NativeList<PotentiallyCollidingPair>(maxEntitiesPerScenePairsCapacity, Allocator.Persistent);
 
+#if STATS_NARROWPHASE
             narrowThreadStats = new NativeArray<NarrowphaseStatsThreadLocal>(JobsUtility.MaxJobThreadCount, Allocator.Persistent);
+#endif
             #endregion
 
             // Create Component Lookups
@@ -88,8 +96,13 @@ namespace Incantation.Engine.Voxels.Systems.Physics
 
             // Create Singletons
             #region Init Singletons
+
+#if STATS_BROADPHASE
             state.EntityManager.CreateSingleton<BroadphaseStats>();
+#endif
+#if STATS_NARROWPHASE
             state.EntityManager.CreateSingleton<NarrowphaseStats>();
+#endif
             #endregion
         }
 
@@ -106,18 +119,22 @@ namespace Incantation.Engine.Voxels.Systems.Physics
 
             if (broadphasePairsToCellCount.IsCreated) broadphasePairsToCellCount.Dispose();
 
+#if STATS_BROADPHASE
             if (broadphaseThreadStatsUpdatesDynamic.IsCreated) broadphaseThreadStatsUpdatesDynamic.Dispose();
             if (broadphaseThreadStatsSpawnDynamic.IsCreated) broadphaseThreadStatsSpawnDynamic.Dispose();
             if (broadphaseThreadStatsSpawnStatic.IsCreated) broadphaseThreadStatsSpawnStatic.Dispose();
             if (broadphaseThreadStatsDespawnDynamic.IsCreated) broadphaseThreadStatsDespawnDynamic.Dispose();
             if (broadphaseThreadStatsDespawnStatic.IsCreated) broadphaseThreadStatsDespawnStatic.Dispose();
             if (broadphaseSingleThreadedStats.IsCreated) broadphaseSingleThreadedStats.Dispose();
+#endif
             #endregion
 
             #region Collection Disposal - Narrowphase
             if (narrowphasePairsNeedingVoxelLevelCheck.IsCreated) narrowphasePairsNeedingVoxelLevelCheck.Dispose();
 
+#if STATS_NARROWPHASE
             if (narrowThreadStats.IsCreated) narrowThreadStats.Dispose();
+#endif
             #endregion
         }
 
@@ -139,7 +156,9 @@ namespace Incantation.Engine.Voxels.Systems.Physics
         public NativeArray<PotentiallyCollidingPair> findCollisionBroadphasePairs(ref SystemState state)
         {
             #region Init
+#if STATS_BROADPHASE
             clearBroadphaseStats();
+#endif
 
             float cellSize = GlobalConstants.BROADPHASE_GRID_CELL_SIZE;
             float3 worldHalf = GlobalConstants.BROADPHASE_GRID_SIZE * 0.5f;
@@ -172,7 +191,9 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                 WorldHalf = worldHalf,
                 RemovalList = dynamicRemovalWriter,
                 AddedList = dynamicAddedWriter,
+#if STATS_BROADPHASE
                 ThreadStats = broadphaseThreadStatsUpdatesDynamic
+#endif
             };
 
             var h1 = q1.ScheduleParallel(state.Dependency);
@@ -187,7 +208,9 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                 WorldHalf = worldHalf,
                 AddedList = dynamicAddedWriter,
                 ECB = ecbDynamic.AsParallelWriter(),
+#if STATS_BROADPHASE
                 ThreadStats = broadphaseThreadStatsSpawnDynamic
+#endif
             };
 
             var h2 = q2.ScheduleParallel(h1);
@@ -202,7 +225,9 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                 WorldHalf = worldHalf,
                 AddedList = staticAddedWriter,
                 ECB = ecbStatic.AsParallelWriter(),
+#if STATS_BROADPHASE
                 ThreadStats = broadphaseThreadStatsSpawnStatic
+#endif
             };
 
             var h3 = q3.ScheduleParallel(state.Dependency);
@@ -216,7 +241,9 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                 CellSize = cellSize,
                 WorldHalf = worldHalf,
                 RemovalList = dynamicRemovalWriter,
+#if STATS_BROADPHASE
                 ThreadStats = broadphaseThreadStatsDespawnDynamic
+#endif
             };
 
             var h4 = q4.ScheduleParallel(h2);
@@ -230,7 +257,9 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                 CellSize = cellSize,
                 WorldHalf = worldHalf,
                 RemovalList = staticRemovalWriter,
+#if STATS_BROADPHASE
                 ThreadStats = broadphaseThreadStatsDespawnStatic
+#endif
             };
 
             var h5 = q5.ScheduleParallel(state.Dependency);
@@ -284,7 +313,9 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                 PairCounts = broadphasePairsToCellCount,
                 Increment = -1,
                 ChangedEntitiesAreDynamic = true,
+#if STATS_BROADPHASE
                 Stats = broadphaseSingleThreadedStats
+#endif
             };
 
             var removeDynamicAgainstUnmovingH = removeDynamicAgainstUnmovingJ.Schedule(allRemovalsHandle);
@@ -298,7 +329,9 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                 PairCounts = broadphasePairsToCellCount,
                 Increment = -1,
                 ChangedEntitiesAreDynamic = false,
+#if STATS_BROADPHASE
                 Stats = broadphaseSingleThreadedStats
+#endif
             };
 
             var removeStaticAgainstUnmovingH = removeStaticAgainstUnmovingJ.Schedule(removeDynamicAgainstUnmovingH);
@@ -312,7 +345,9 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                 PairCounts = broadphasePairsToCellCount,
                 Increment = +1,
                 ChangedEntitiesAreDynamic = true,
+#if STATS_BROADPHASE
                 Stats = broadphaseSingleThreadedStats
+#endif
             };
 
             var addDynamicAgainstUnmovingH = addDynamicAgainstUnmovingJ.Schedule(removeStaticAgainstUnmovingH);
@@ -325,7 +360,9 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                 PairCounts = broadphasePairsToCellCount,
                 Increment = +1,
                 ChangedEntitiesAreDynamic = false,
+#if STATS_BROADPHASE
                 Stats = broadphaseSingleThreadedStats
+#endif
             };
 
             var addStaticAgainstUnmovingH = addStaticAgainstUnmovingJ.Schedule(addDynamicAgainstUnmovingH);
@@ -346,7 +383,9 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                 PairCounts = broadphasePairsToCellCount,
                 Increment = -1,
                 SameList = true,
+#if STATS_BROADPHASE
                 Stats = broadphaseSingleThreadedStats
+#endif
             };
 
             var removeDyVsDyAgainstMovingH = removeDyVsDyAgainstMovingJ.Schedule(addStaticAgainstUnmovingH);
@@ -358,7 +397,9 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                 PairCounts = broadphasePairsToCellCount,
                 Increment = -1,
                 SameList = false,
+#if STATS_BROADPHASE
                 Stats = broadphaseSingleThreadedStats
+#endif
             };
 
             var removeDyVsStAgainstMovingH = removeDyVsStAgainstMovingJ.Schedule(removeDyVsDyAgainstMovingH);
@@ -370,7 +411,9 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                 PairCounts = broadphasePairsToCellCount,
                 Increment = +1,
                 SameList = true,
+#if STATS_BROADPHASE
                 Stats = broadphaseSingleThreadedStats
+#endif
             };
 
             var addDyVsDyAgainstMovingH = addDyVsDyAgainstMovingJ.Schedule(removeDyVsStAgainstMovingH);
@@ -382,7 +425,9 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                 PairCounts = broadphasePairsToCellCount,
                 Increment = +1,
                 SameList = false,
+#if STATS_BROADPHASE
                 Stats = broadphaseSingleThreadedStats
+#endif
             };
 
             var addDyVsStAgainstMovingH = addDyVsStAgainstMovingJ.Schedule(addDyVsDyAgainstMovingH);
@@ -421,18 +466,26 @@ namespace Incantation.Engine.Voxels.Systems.Physics
             // ------------------------------
             // BROADPHASE SETUP - ROUND 5 - Remaining map keys (>1 cell count) are broadphase pairs
             // ------------------------------
-            var broadphasePairs = broadphasePairsToCellCount.GetKeyValueArrays(Allocator.TempJob);
+            NativeArray<PotentiallyCollidingPair> broadphasePairs;
 
+#if DEBUG_DRAW_BROADPHASE
+            var broadphasePairsAndOccuranceCounts = broadphasePairsToCellCount.GetKeyValueArrays(Allocator.TempJob);
+            drawDebugBroadphasePairResults(ref state, broadphasePairsAndOccuranceCounts);
+            state.Dependency = broadphasePairsAndOccuranceCounts.Values.Dispose(state.Dependency);
+            broadphasePairs = broadphasePairsAndOccuranceCounts.Keys;
+#else
+            broadphasePairs = broadphasePairsToCellCount.GetKeyArray(Allocator.TempJob);
+#endif
+
+#if STATS_BROADPHASE
             var mainThreadStats = broadphaseSingleThreadedStats.Value;
-            mainThreadStats.totalBroadphasePairs = broadphasePairs.Keys.Length;
+            mainThreadStats.totalBroadphasePairs = broadphasePairs.Length;
             broadphaseSingleThreadedStats.Value = mainThreadStats;
 
-            drawDebugBroadphasePairResults(ref state, broadphasePairs);
-            state.Dependency = broadphasePairs.Values.Dispose(state.Dependency);
-
             aggregateBroadphaseStats(ref state);
+#endif
 
-            return broadphasePairs.Keys;
+            return broadphasePairs;
             #endregion
         }
 
@@ -454,17 +507,21 @@ namespace Incantation.Engine.Voxels.Systems.Physics
             public NativeList<BroadphaseEntityInCell>.ParallelWriter RemovalList;
             public NativeList<BroadphaseEntityInCell>.ParallelWriter AddedList;
 
+#if STATS_BROADPHASE
             [NativeDisableParallelForRestriction]
             public NativeArray<BroadphaseStatsThreadLocal> ThreadStats;
 
             [NativeSetThreadIndex] int threadIndex;
+#endif
 
             void Execute(
                 Entity entity,
                 ref PrevBroadphaseCellIndices prevIndices,
                 in WorldRenderBounds bounds)
             {
+#if STATS_BROADPHASE
                 var stats = ThreadStats[threadIndex];
+#endif
 
                 float3 min = bounds.Value.Center - bounds.Value.Extents;
                 float3 max = bounds.Value.Center + bounds.Value.Extents;
@@ -481,12 +538,16 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                 if (newMinMorton == prevIndices.minExtentCellIndex &&
                     newMaxMorton == prevIndices.maxExtentCellIndex)
                 {
+#if STATS_BROADPHASE
                     stats.countVolumesDidNotUpdateGrid++;
                     ThreadStats[threadIndex] = stats;
+#endif
                     return;
                 }
 
+#if STATS_BROADPHASE
                 stats.countVolumesUpdatedGrid++;
+#endif
 
                 int3 prevMin = BroadphaseCell.DecodeMorton(prevIndices.minExtentCellIndex);
                 int3 prevMax = BroadphaseCell.DecodeMorton(prevIndices.maxExtentCellIndex);
@@ -496,8 +557,11 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                 int prevCellVolume = prevCellVolumeDims.x * prevCellVolumeDims.y * prevCellVolumeDims.z;
                 int curCellVolume = curCellVolumeDims.x * curCellVolumeDims.y * curCellVolumeDims.z;
                 int volumeDiff = curCellVolume - prevCellVolume;
+
+#if STATS_BROADPHASE
                 stats.totalVolumeCells += volumeDiff;
                 stats.maxCellsPerVolume = math.max(stats.maxCellsPerVolume, curCellVolume);
+#endif
 
                 int3 intersectMin = math.max(prevMin, minCell);
                 int3 intersectMax = math.min(prevMax, maxCell);
@@ -518,8 +582,9 @@ namespace Incantation.Engine.Voxels.Systems.Physics
 
                             RemovalList.AddNoResize(new BroadphaseEntityInCell(
                                 new BroadphaseCell(x, y, z), entity));
-
+#if STATS_BROADPHASE
                             stats.broadphaseCellRemovals++;
+#endif
                         }
 
                 for (int x = minCell.x; x <= maxCell.x; x++)
@@ -539,13 +604,17 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                             AddedList.AddNoResize(new BroadphaseEntityInCell(
                                 new BroadphaseCell(x, y, z), entity));
 
+#if STATS_BROADPHASE
                             stats.broadphaseCellAdds++;
+#endif
                         }
 
                 prevIndices.minExtentCellIndex = newMinMorton;
                 prevIndices.maxExtentCellIndex = newMaxMorton;
 
+#if STATS_BROADPHASE
                 ThreadStats[threadIndex] = stats;
+#endif
             }
         }
 
@@ -566,10 +635,12 @@ namespace Incantation.Engine.Voxels.Systems.Physics
             public NativeList<BroadphaseEntityInCell>.ParallelWriter AddedList;
             public EntityCommandBuffer.ParallelWriter ECB;
 
+#if STATS_BROADPHASE
             [NativeDisableParallelForRestriction]
             public NativeArray<BroadphaseStatsThreadLocal> ThreadStats;
 
             [NativeSetThreadIndex] int threadIndex;
+#endif
 
             void Execute(
                 [ChunkIndexInQuery] int chunkIndex,
@@ -577,10 +648,12 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                 ref PrevBroadphaseCellIndices prevIndices,
                 in WorldRenderBounds bounds)
             {
+#if STATS_BROADPHASE
                 var stats = ThreadStats[threadIndex];
 
                 stats.numVolumes++;
                 stats.countVolumesUpdatedGrid++;
+#endif
 
                 float3 min = bounds.Value.Center - bounds.Value.Extents;
                 float3 max = bounds.Value.Center + bounds.Value.Extents;
@@ -590,8 +663,11 @@ namespace Incantation.Engine.Voxels.Systems.Physics
 
                 int3 curCellVolumeDims = maxCell - minCell + 1;
                 int curCellVolume = curCellVolumeDims.x * curCellVolumeDims.y * curCellVolumeDims.z;
+
+#if STATS_BROADPHASE
                 stats.totalVolumeCells += curCellVolume;
                 stats.maxCellsPerVolume = math.max(stats.maxCellsPerVolume, curCellVolume);
+#endif
 
                 for (int x = minCell.x; x <= maxCell.x; x++)
                     for (int y = minCell.y; y <= maxCell.y; y++)
@@ -605,7 +681,9 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                             AddedList.AddNoResize(new BroadphaseEntityInCell(
                                 new BroadphaseCell(x, y, z), entity));
 
+#if STATS_BROADPHASE
                             stats.broadphaseCellAdds++;
+#endif
                         }
 
                 BroadphaseCell minCellStruct = new BroadphaseCell(minCell.x, minCell.y, minCell.z);
@@ -616,7 +694,9 @@ namespace Incantation.Engine.Voxels.Systems.Physics
 
                 ECB.SetComponentEnabled<IsBroadphaseRecorded>(chunkIndex, entity, true);
 
+#if STATS_BROADPHASE
                 ThreadStats[threadIndex] = stats;
+#endif
             }
         }
 
@@ -637,19 +717,23 @@ namespace Incantation.Engine.Voxels.Systems.Physics
             public NativeList<BroadphaseEntityInCell>.ParallelWriter AddedList;
             public EntityCommandBuffer.ParallelWriter ECB;
 
+#if STATS_BROADPHASE
             [NativeDisableParallelForRestriction]
             public NativeArray<BroadphaseStatsThreadLocal> ThreadStats;
 
             [NativeSetThreadIndex] int threadIndex;
+#endif
 
             void Execute(
                 [ChunkIndexInQuery] int chunkIndex,
                 Entity entity,
                 in WorldRenderBounds bounds)
             {
+#if STATS_BROADPHASE
                 var stats = ThreadStats[threadIndex];
 
                 stats.numVolumes++;
+#endif
 
                 float3 min = bounds.Value.Center - bounds.Value.Extents;
                 float3 max = bounds.Value.Center + bounds.Value.Extents;
@@ -659,8 +743,11 @@ namespace Incantation.Engine.Voxels.Systems.Physics
 
                 int3 curCellVolumeDims = maxCell - minCell + 1;
                 int curCellVolume = curCellVolumeDims.x * curCellVolumeDims.y * curCellVolumeDims.z;
+
+#if STATS_BROADPHASE
                 stats.totalVolumeCells += curCellVolume;
                 stats.maxCellsPerVolume = math.max(stats.maxCellsPerVolume, curCellVolume);
+#endif
 
                 for (int x = minCell.x; x <= maxCell.x; x++)
                     for (int y = minCell.y; y <= maxCell.y; y++)
@@ -674,12 +761,16 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                             AddedList.AddNoResize(new BroadphaseEntityInCell(
                                 new BroadphaseCell(x, y, z), entity));
 
+#if STATS_BROADPHASE
                             stats.broadphaseCellAdds++;
+#endif
                         }
 
                 ECB.SetComponentEnabled<IsBroadphaseRecorded>(chunkIndex, entity, true);
 
+#if STATS_BROADPHASE
                 ThreadStats[threadIndex] = stats;
+#endif
             }
         }
 
@@ -698,27 +789,34 @@ namespace Incantation.Engine.Voxels.Systems.Physics
 
             public NativeList<BroadphaseEntityInCell>.ParallelWriter RemovalList;
 
+#if STATS_BROADPHASE
             [NativeDisableParallelForRestriction]
             public NativeArray<BroadphaseStatsThreadLocal> ThreadStats;
 
             [NativeSetThreadIndex] int threadIndex;
+#endif
 
             void Execute(
                 Entity entity,
                 in WorldRenderBounds bounds,
                 in PrevBroadphaseCellIndices prev)
             {
+#if STATS_BROADPHASE
                 var stats = ThreadStats[threadIndex];
 
                 stats.numVolumes--;
                 stats.countVolumesUpdatedGrid++;
+#endif
 
                 int3 min = BroadphaseCell.DecodeMorton(prev.minExtentCellIndex);
                 int3 max = BroadphaseCell.DecodeMorton(prev.maxExtentCellIndex);
 
                 int3 curCellVolumeDims = max - min + 1;
                 int curCellVolume = (int)(curCellVolumeDims.x * curCellVolumeDims.y * curCellVolumeDims.z);
+
+#if STATS_BROADPHASE
                 stats.totalVolumeCells -= curCellVolume;
+#endif
 
                 for (int x = min.x; x <= max.x; x++)
                     for (int y = min.y; y <= max.y; y++)
@@ -732,10 +830,13 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                             RemovalList.AddNoResize(new BroadphaseEntityInCell(
                                 new BroadphaseCell(x, y, z), entity));
 
+#if STATS_BROADPHASE
                             stats.broadphaseCellRemovals++;
+#endif
                         }
-
+#if STATS_BROADPHASE
                 ThreadStats[threadIndex] = stats;
+#endif
             }
         }
 
@@ -754,18 +855,22 @@ namespace Incantation.Engine.Voxels.Systems.Physics
 
             public NativeList<BroadphaseEntityInCell>.ParallelWriter RemovalList;
 
+#if STATS_BROADPHASE
             [NativeDisableParallelForRestriction]
             public NativeArray<BroadphaseStatsThreadLocal> ThreadStats;
 
             [NativeSetThreadIndex] int threadIndex;
+#endif
 
             void Execute(
                 Entity entity,
                 in WorldRenderBounds bounds)
             {
+#if STATS_BROADPHASE
                 var stats = ThreadStats[threadIndex];
 
                 stats.numVolumes--;
+#endif
 
                 float3 min = bounds.Value.Center - bounds.Value.Extents;
                 float3 max = bounds.Value.Center + bounds.Value.Extents;
@@ -775,7 +880,10 @@ namespace Incantation.Engine.Voxels.Systems.Physics
 
                 int3 curCellVolumeDims = maxCell - minCell + 1;
                 int curCellVolume = curCellVolumeDims.x * curCellVolumeDims.y * curCellVolumeDims.z;
+
+#if STATS_BROADPHASE
                 stats.totalVolumeCells -= curCellVolume;
+#endif
 
                 for (int x = minCell.x; x <= maxCell.x; x++)
                     for (int y = minCell.y; y <= maxCell.y; y++)
@@ -789,10 +897,14 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                             RemovalList.AddNoResize(new BroadphaseEntityInCell(
                                 new BroadphaseCell(x, y, z), entity));
 
+#if STATS_BROADPHASE
                             stats.broadphaseCellRemovals++;
+#endif
                         }
 
+#if STATS_BROADPHASE
                 ThreadStats[threadIndex] = stats;
+#endif
             }
         }
 
@@ -834,11 +946,15 @@ namespace Incantation.Engine.Voxels.Systems.Physics
             public int Increment;
             public bool ChangedEntitiesAreDynamic;
 
+#if STATS_BROADPHASE
             public NativeReference<BroadphaseStatsSingleThreaded> Stats;
+#endif
 
             public void Execute()
             {
+#if STATS_BROADPHASE
                 var stats = Stats.Value;
+#endif
 
                 for (int i = 0; i < ChangedEntitiesInCells.Length; i++)
                 {
@@ -859,7 +975,11 @@ namespace Incantation.Engine.Voxels.Systems.Physics
 
                             var pair = new PotentiallyCollidingPair(entity, other);
 
-                            UpdatePair(pair, ref stats);
+                            UpdatePair(pair
+#if STATS_BROADPHASE
+                                , ref stats
+#endif
+                            );
 
                         } while (DynamicMap.TryGetNextValue(out other, ref it));
                     }
@@ -881,16 +1001,26 @@ namespace Incantation.Engine.Voxels.Systems.Physics
 
                             var pair = new PotentiallyCollidingPair(entity, otherStatic);
 
-                            UpdatePair(pair, ref stats);
+                            UpdatePair(pair
+#if STATS_BROADPHASE
+                                , ref stats
+#endif
+                            );
 
                         } while (StaticMap.TryGetNextValue(out otherStatic, ref it2));
                     }
                 }
 
+#if STATS_BROADPHASE
                 Stats.Value = stats;
+#endif
             }
 
-            private void UpdatePair(PotentiallyCollidingPair pair, ref BroadphaseStatsSingleThreaded stats)
+            private void UpdatePair(PotentiallyCollidingPair pair
+#if STATS_BROADPHASE
+                , ref BroadphaseStatsSingleThreaded stats
+#endif
+            )
             {
                 if (PairCounts.TryGetValue(pair, out int count))
                 {
@@ -899,18 +1029,24 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                     if (count == 0)
                     {
                         PairCounts.Remove(pair);
+#if STATS_BROADPHASE
                         stats.existingPairsRemoved++;
+#endif
                     }
                     else
                     {
                         PairCounts[pair] = count;
+#if STATS_BROADPHASE
                         stats.existingPairsUpdated++;
+#endif
                     }
                 }
                 else
                 {
                     PairCounts.Add(pair, Increment);
+#if STATS_BROADPHASE
                     stats.newPairsGenerated++;
+#endif
                 }
             }
         }
@@ -931,11 +1067,15 @@ namespace Incantation.Engine.Voxels.Systems.Physics
             // so we avoid duplicate pairs using Entity.Index ordering
             public bool SameList;
 
+#if STATS_BROADPHASE
             public NativeReference<BroadphaseStatsSingleThreaded> Stats;
+#endif
 
             public void Execute()
             {
+#if STATS_BROADPHASE
                 var stats = Stats.Value;
+#endif
 
                 for (int i = 0; i < ListA.Length; i++)
                 {
@@ -959,14 +1099,23 @@ namespace Incantation.Engine.Voxels.Systems.Physics
 
                         var pair = new PotentiallyCollidingPair(a.Entity, b.Entity);
 
-                        UpdatePair(pair, ref stats);
+                        UpdatePair(pair
+#if STATS_BROADPHASE
+                            , ref stats
+#endif
+                        );
                     }
                 }
-
+#if STATS_BROADPHASE
                 Stats.Value = stats;
+#endif
             }
 
-            private void UpdatePair(PotentiallyCollidingPair pair, ref BroadphaseStatsSingleThreaded stats)
+            private void UpdatePair(PotentiallyCollidingPair pair
+#if STATS_BROADPHASE
+                , ref BroadphaseStatsSingleThreaded stats
+#endif
+            )
             {
                 if (PairCounts.TryGetValue(pair, out int count))
                 {
@@ -975,24 +1124,31 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                     if (count == 0)
                     {
                         PairCounts.Remove(pair);
+#if STATS_BROADPHASE
                         stats.existingPairsRemoved++;
+#endif
                     }
                     else
                     {
                         PairCounts[pair] = count;
+#if STATS_BROADPHASE
                         stats.existingPairsUpdated++;
+#endif
                     }
                 }
                 else
                 {
                     PairCounts.Add(pair, Increment);
+#if STATS_BROADPHASE
                     stats.newPairsGenerated++;
+#endif
                 }
             }
         }
         #endregion
 
-        #region PHYSICS STATS COLLECTION
+        #region STATS COLLECTION AND DEBUG VISUALIZATION
+#if STATS_BROADPHASE
         // This is 32-128 items so don't worry about parallelizing
         private void clearBroadphaseStats()
         {
@@ -1103,9 +1259,12 @@ namespace Incantation.Engine.Voxels.Systems.Physics
             existingStats = finalStats;
         }
 
+#endif
+
+#if DEBUG_DRAW_BROADPHASE
         private void drawDebugBroadphasePairResults(ref SystemState state, NativeKeyValueArrays<PotentiallyCollidingPair, int> broadphasePairs)
         {
-            if (DebugConstants.ENABLE_BROADPHASE_DRAW_PAIRS)
+            if (DebugSwitches.DRAW_BROADPHASE)
             {
                 for (int i = 0; i < broadphasePairs.Keys.Length; i++)
                 {
@@ -1128,6 +1287,7 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                 }
             }
         }
+#endif
         #endregion
 
         #endregion
@@ -1144,29 +1304,46 @@ namespace Incantation.Engine.Voxels.Systems.Physics
             if (!broadphasePairs.IsCreated || broadphasePairs.Length == 0)
                 return;
 
-            var ecb = new EntityCommandBuffer(Allocator.TempJob);
+#if DEBUG_DRAW_NARROWPHASE
+            EntityCommandBuffer ecb = new EntityCommandBuffer(Allocator.TempJob);
+            clearDebugVisualizationFlags(ref state);
+#endif
+
             localToWorldLookup.Update(ref state);
             narrowphasePairsNeedingVoxelLevelCheck.Clear();
-            clearDebugVisualizationFlags(ref state);
+#if STATS_NARROWPHASE
             clearNarrowphaseStats();
+#endif
 
             var volumeWideNarrowphaseJob = new NarrowphaseVolumeWidePairJob
             {
                 PairsToCheck = broadphasePairs,
                 LocalToWorldLookup = localToWorldLookup,
+#if DEBUG_DRAW_NARROWPHASE
                 ECB = ecb.AsParallelWriter(),
+#endif
                 VoxelCheckPairs = narrowphasePairsNeedingVoxelLevelCheck.AsParallelWriter(),
+#if STATS_NARROWPHASE
                 ThreadStats = narrowThreadStats
+#endif
             };
 
             state.Dependency = volumeWideNarrowphaseJob.ScheduleParallel(broadphasePairs.Length, 64, state.Dependency);
             state.Dependency.Complete();
 
-            ecb.Playback(state.EntityManager);
+#if DEBUG_DRAW_NARROWPHASE
+            if (DebugSwitches.DRAW_NARROWPHASE)
+            {
+                ecb.Playback(state.EntityManager);
+            }
             ecb.Dispose();
+#endif
 
             // TODO voxel-level check
+
+#if STATS_NARROWPHASE
             aggregateNarrowphaseStats(ref state);
+#endif
         }
 
         #region Job Structs
@@ -1182,19 +1359,25 @@ namespace Incantation.Engine.Voxels.Systems.Physics
 
             [ReadOnly] public NativeArray<PotentiallyCollidingPair> PairsToCheck;
             [ReadOnly] public ComponentLookup<LocalToWorld> LocalToWorldLookup;
+#if DEBUG_DRAW_NARROWPHASE
             public EntityCommandBuffer.ParallelWriter ECB;
+#endif
             public NativeList<PotentiallyCollidingPair>.ParallelWriter VoxelCheckPairs;
 
+#if STATS_NARROWPHASE
             [NativeDisableParallelForRestriction]
             public NativeArray<NarrowphaseStatsThreadLocal> ThreadStats;
 
             [NativeSetThreadIndex] int threadIndex;
+#endif
 
             public void Execute(int index)
             {
                 #region Compute Shared Values
+#if STATS_NARROWPHASE
                 var stats = ThreadStats[threadIndex];
                 stats.totalPairsFromBroadphase++;
+#endif
 
                 PotentiallyCollidingPair pair = PairsToCheck[index];
                 Entity entityA = pair.A;
@@ -1203,7 +1386,9 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                 if (!LocalToWorldLookup.HasComponent(entityA) ||
                     !LocalToWorldLookup.HasComponent(entityB))
                 {
+#if STATS_NARROWPHASE
                     ThreadStats[threadIndex] = stats;
+#endif
                     return;
                 }
 
@@ -1233,48 +1418,71 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                 if (!isSphereCollision(worldCenterA, worldCenterB, rightALength, rightBLength, 
                     upALength, upBLength, forwardALength, forwardBLength))
                 {
+#if STATS_NARROWPHASE
                     ThreadStats[threadIndex] = stats;
+#endif
                     return;
                 }
-                else if (DebugConstants.ENABLE_NARROWPHASE_DRAW_SPHERES)
+#if DEBUG_DRAW_NARROWPHASE
+                else
                 {
                     ECB.SetComponentEnabled<DebugCollNearSphereHit>(index, entityA, true);
                     ECB.SetComponentEnabled<DebugCollNearSphereHit>(index, entityB, true);
                 }
+#endif
+
+#if STATS_NARROWPHASE
                 stats.spherePassed++;
+#endif
 
                 if (!isAABBCollision(worldCenterA, worldCenterB, rightA, rightB, upA, upB, forwardA, forwardB))
                 {
+#if STATS_NARROWPHASE
                     ThreadStats[threadIndex] = stats;
+#endif
                     return;
                 }
-                else if (DebugConstants.ENABLE_NARROWPHASE_DRAW_AABBS)
+#if DEBUG_DRAW_NARROWPHASE
+                else
                 {
                     ECB.SetComponentEnabled<DebugCollNearAABBHit>(index, entityA, true);
                     ECB.SetComponentEnabled<DebugCollNearAABBHit>(index, entityB, true);
                 }
+#endif
+
+#if STATS_NARROWPHASE
                 stats.aabbPassed++;
+#endif
 
                 if (!isOBBCollision(worldCenterA, worldCenterB, rightA, rightB,
                     upA, upB, forwardA, forwardB, rightALength, rightBLength,
                     upALength, upBLength, forwardALength, forwardBLength))
                 {
+#if STATS_NARROWPHASE
                     ThreadStats[threadIndex] = stats;
+#endif
                     return;
                 }
-                else if (DebugConstants.ENABLE_NARROWPHASE_DRAW_OBBS)
+#if DEBUG_DRAW_NARROWPHASE
+                else
                 {
                     ECB.SetComponentEnabled<DebugCollNearOBBHit>(index, entityA, true);
                     ECB.SetComponentEnabled<DebugCollNearOBBHit>(index, entityB, true);
                 }
+#endif
+
+#if STATS_NARROWPHASE
                 stats.obbPassed++;
+#endif
                 #endregion
 
                 #region Write Results
                 // Write results
                 VoxelCheckPairs.AddNoResize(pair);
 
+#if STATS_NARROWPHASE
                 ThreadStats[threadIndex] = stats;
+#endif
                 #endregion
             }
 
@@ -1474,12 +1682,11 @@ namespace Incantation.Engine.Voxels.Systems.Physics
         #endregion
         #endregion
 
-        #region Debug and Stat Collection
+        #region Stat Collection and Debug Visualization
+#if DEBUG_DRAW_NARROWPHASE
         private void clearDebugVisualizationFlags(ref SystemState state)
         {
-            if (DebugConstants.ENABLE_NARROWPHASE_DRAW_SPHERES ||
-                    DebugConstants.ENABLE_NARROWPHASE_DRAW_AABBS ||
-                    DebugConstants.ENABLE_NARROWPHASE_DRAW_OBBS)
+            if (DebugSwitches.DRAW_NARROWPHASE)
             {
                 // Clear all debug flags on the main thread because we're not concerned about perf
                 // if these flags are set
@@ -1503,7 +1710,9 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                 }
             }
         }
+#endif
 
+#if STATS_NARROWPHASE
         private void clearNarrowphaseStats()
         {
             for (int i = 0; i < narrowThreadStats.Length; i++)
@@ -1548,6 +1757,7 @@ namespace Incantation.Engine.Voxels.Systems.Physics
 
             existingStatsRW.ValueRW = existingStats;
         }
+#endif
         #endregion
 
         #endregion

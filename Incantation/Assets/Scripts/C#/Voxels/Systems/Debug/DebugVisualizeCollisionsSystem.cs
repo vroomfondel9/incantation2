@@ -7,24 +7,15 @@ using Unity.Transforms;
 using UnityEditor;
 using UnityEngine;
 
+#if DEBUG_DRAW_NARROWPHASE
 namespace Incantation.Engine.Voxels.Systems.Debug
 {
-
     [UpdateInGroup(typeof(PresentationSystemGroup))]
-    public partial struct DebugVisualizeCollisionsSystem : ISystem
+    public partial struct DebugVisualizeNarrowphaseCollisionShapesSystem : ISystem
     {
-        public void OnCreate(ref SystemState state)
-        {
-            state.Enabled = DebugConstants.ENABLE_NARROWPHASE_DRAW_SPHERES ||
-                DebugConstants.ENABLE_NARROWPHASE_DRAW_AABBS ||
-                    DebugConstants.ENABLE_NARROWPHASE_DRAW_OBBS;
-        }
-
         public void OnUpdate(ref SystemState state)
         {
-            if (DebugConstants.ENABLE_NARROWPHASE_DRAW_SPHERES ||
-                DebugConstants.ENABLE_NARROWPHASE_DRAW_AABBS ||
-                    DebugConstants.ENABLE_NARROWPHASE_DRAW_OBBS)
+            if (DebugSwitches.DRAW_NARROWPHASE)
             {
                 foreach (var (ltw, localAABBBounds, worldAABBBounds, entity) in
                     SystemAPI.Query<
@@ -56,10 +47,6 @@ namespace Incantation.Engine.Voxels.Systems.Debug
                     bool drawSphere = hasSphereComponentOn && !hasAABBComponentOn && !hasOBBComponentOn;
                     bool drawAABB = hasAABBComponentOn && !hasOBBComponentOn;
                     bool drawOOB = hasOBBComponentOn;
-
-                    drawSphere &= DebugConstants.ENABLE_NARROWPHASE_DRAW_SPHERES;
-                    drawAABB &= DebugConstants.ENABLE_NARROWPHASE_DRAW_AABBS;
-                    drawOOB &= DebugConstants.ENABLE_NARROWPHASE_DRAW_OBBS;
 
                     Color color = new Color(0.25f, 0.75f, 0.25f, 0.5f);
 
@@ -139,3 +126,4 @@ namespace Incantation.Engine.Voxels.Systems.Debug
         }
     }
 }
+#endif

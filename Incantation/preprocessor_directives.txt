@@ -1,0 +1,3 @@
+DEBUG_DRAW_BROADPHASE - Draws broadphase pairs (editor only)
+DEBUG_DRAW_NARROWPHASE - Draws narrowphase bounding shapes (editor only)
+DEBUG_DRAW_CONTACT_POINTS - Draws resulting contact points (editor only)
