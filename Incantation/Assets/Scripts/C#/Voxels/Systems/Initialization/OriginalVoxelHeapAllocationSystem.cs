@@ -225,6 +225,7 @@ namespace Incantation.Engine.Voxels.Components
                         newAlloc.consumers = 1 + clones;
 
                         allocations.Add(hash, newAlloc);
+                        SystemAPI.SetComponentEnabled<ShouldUploadVoxelData>(entity, true);
                     }
                     // No existing free region big enough - add to end
                     else
@@ -239,6 +240,7 @@ namespace Incantation.Engine.Voxels.Components
                             newAlloc.consumers = 1 + clones;
 
                             allocations.Add(hash, newAlloc);
+                            SystemAPI.SetComponentEnabled<ShouldUploadVoxelData>(entity, true);
                         }
                         // Exceeded voxel memory size
                         else

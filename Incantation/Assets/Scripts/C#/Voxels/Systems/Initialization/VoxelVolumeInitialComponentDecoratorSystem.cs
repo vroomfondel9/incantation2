@@ -95,6 +95,9 @@ namespace Incantation.Engine.Voxels.Systems
                 ecb.AddComponent<NeedsDeletion>(entity);
                 ecb.SetComponentEnabled<NeedsDeletion>(entity, false);
 
+                ecb.AddComponent<ShouldUploadVoxelData>(entity);
+                ecb.SetComponentEnabled<ShouldUploadVoxelData>(entity, false);
+
                 ecb.AddComponent<IsBroadphaseRecorded>(entity);
                 ecb.SetComponentEnabled<IsBroadphaseRecorded>(entity, false);
 
