@@ -27,6 +27,8 @@ namespace Incantation.Engine.Voxels.Utils.Import
             public Vector3 centerOfMass;
             public float mass;
             public Vector3 momentOfInertia;
+
+            public uint[] packedValues;
         }
 
         /// <summary>
@@ -36,8 +38,7 @@ namespace Incantation.Engine.Voxels.Utils.Import
         /// Empty voxels get distance to nearest filled voxel OR grid boundary.
         /// Output is a 1-byte R8 Texture3D.
         /// </summary>
-        public static uint[] GetPackedValuesFromMagicaVoxelPng(
-            Texture3D source, out TopologyAnalysisResults topologyCounts)
+        public static TopologyAnalysisResults GetPackedValuesFromMagicaVoxelPng(Texture3D source)
         {
             if (source == null)
                 throw new ArgumentNullException(nameof(source));
@@ -173,9 +174,9 @@ namespace Incantation.Engine.Voxels.Utils.Import
             // Final Pass to Merge, Cap, Normalize, Pack Values
             // And count topology features
             // --------------------------------------------
-            topologyCounts = new TopologyAnalysisResults();
-            topologyCounts.centerOfMass = new Vector3(0, 0, 0);
-            topologyCounts.momentOfInertia = new Vector3(0, 0, 0);
+            TopologyAnalysisResults results = new TopologyAnalysisResults();
+            results.centerOfMass = new Vector3(0, 0, 0);
+            results.momentOfInertia = new Vector3(0, 0, 0);
 
             ulong hash = FNV_OFFSET_BASIS;
 
@@ -226,14 +227,14 @@ namespace Incantation.Engine.Voxels.Utils.Import
 
                         if (d == 0)
                         {
-                            if (numDimsWithBothDirsFilled == 0) topologyCounts.corners++;
-                            if (numDimsWithBothDirsFilled == 1) topologyCounts.edges++;
-                            if (numDimsWithBothDirsFilled == 2) topologyCounts.faces++;
-                            if (numDimsWithBothDirsFilled == 3) topologyCounts.interiors++;
+                            if (numDimsWithBothDirsFilled == 0) results.corners++; 
+                            if (numDimsWithBothDirsFilled == 1) results.edges++; 
+                            if (numDimsWithBothDirsFilled == 2) results.faces++; 
+                            if (numDimsWithBothDirsFilled == 3) results.interiors++;
                         }
                         else if (d > 0)
                         {
-                            topologyCounts.empties++;
+                            results.empties++;
                         }
 
                         // Analyze mass values
@@ -251,9 +252,9 @@ namespace Incantation.Engine.Voxels.Utils.Import
                             );
 
                             //Assume constant mass of 1 per voxel for now (every 1.0f placeholder here)
-                            topologyCounts.mass += 1.0f;
-                            topologyCounts.centerOfMass += voxelCenter * 1.0f;
-                            topologyCounts.momentOfInertia += new Vector3(
+                            results.mass += 1.0f;
+                            results.centerOfMass += voxelCenter * 1.0f;
+                            results.momentOfInertia += new Vector3(
                                 (voxelSqCenter.y + voxelSqCenter.z) * 1.0f,
                                 (voxelSqCenter.x + voxelSqCenter.z) * 1.0f,
                                 (voxelSqCenter.x + voxelSqCenter.y) * 1.0f
@@ -263,30 +264,33 @@ namespace Incantation.Engine.Voxels.Utils.Import
                 }
             }
 
-            topologyCounts.total = topologyCounts.corners + topologyCounts.edges + topologyCounts.faces + topologyCounts.interiors + topologyCounts.empties;
-            if (topologyCounts.total != total)
+            results.total = results.corners + results.edges + results.faces + results.interiors + results.empties;
+            if (results.total != total)
                 throw new Exception("Mismatch between number of classified topology voxels and total voxels in volume.");
 
-            topologyCounts.hash = hash;
-            topologyCounts.centerOfMass /= (topologyCounts.mass == 0) ? 1.0f : topologyCounts.mass;
+            results.hash = hash;
+            results.centerOfMass /= (results.mass == 0) ? 1.0f : results.mass;
 
             // parallel axis theorem
             Vector3 centerOfMassSq = new Vector3(
-                topologyCounts.centerOfMass.x * topologyCounts.centerOfMass.x,
-                topologyCounts.centerOfMass.y * topologyCounts.centerOfMass.y,
-                topologyCounts.centerOfMass.z * topologyCounts.centerOfMass.z
+                results.centerOfMass.x * results.centerOfMass.x,
+                results.centerOfMass.y * results.centerOfMass.y,
+                results.centerOfMass.z * results.centerOfMass.z
             );
-            topologyCounts.momentOfInertia -= (topologyCounts.mass * new Vector3(
+            results.momentOfInertia -= (results.mass * new Vector3(
                 centerOfMassSq.y + centerOfMassSq.z,
                 centerOfMassSq.x + centerOfMassSq.z,
                 centerOfMassSq.x + centerOfMassSq.y
             ));
 
             // Scaling to world space
-            topologyCounts.centerOfMass *= GlobalConstants.VOXEL_SCALE;
-            topologyCounts.momentOfInertia *= GlobalConstants.VOXEL_SCALE * GlobalConstants.VOXEL_SCALE;
+            results.centerOfMass *= GlobalConstants.VOXEL_SCALE;
+            results.momentOfInertia *= GlobalConstants.VOXEL_SCALE * GlobalConstants.VOXEL_SCALE;
 
-            return dist;
+            // Set final arrays (resized)
+            results.packedValues = dist;
+
+            return results;
         }
 
         private static int Index(int x, int y, int z, int width, int height)

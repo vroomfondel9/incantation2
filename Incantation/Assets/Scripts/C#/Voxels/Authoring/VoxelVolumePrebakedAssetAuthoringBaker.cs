@@ -24,7 +24,13 @@ namespace Incantation.Engine.Voxels.Baking
             {
                 Hash = hash
             });
+
             AddComponent(entity, new GridDimensions((uint)dims.x, (uint)dims.y, (uint)dims.z));
+
+            AddComponent(entity, new InitializationTopologyMetadata { 
+                cornerCount = authoring.voxelVolumePrebakedAsset.cornerVoxelCount,
+                edgeCount = authoring.voxelVolumePrebakedAsset.edgeVoxelCount
+            });
 
             // Physics
             if (authoring.isDynamic)

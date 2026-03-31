@@ -114,8 +114,8 @@ public class VoxelVolumeAutoBake : AssetPostprocessor
         //Debug.Log(logPrefix + "Derived grid dimensions: " + width + "x" + totalHeight + "x" + rows);
 
         // STEP 3 - Extract Voxel and Topology Data from MagicaVoxel Png
-        MagicaVoxelImportUtils.TopologyAnalysisResults topologyCounts = new MagicaVoxelImportUtils.TopologyAnalysisResults();
-        uint[] packedVoxels = MagicaVoxelImportUtils.GetPackedValuesFromMagicaVoxelPng(tex3D, out topologyCounts);
+        MagicaVoxelImportUtils.TopologyAnalysisResults topologyResults = 
+            MagicaVoxelImportUtils.GetPackedValuesFromMagicaVoxelPng(tex3D);
 
         // LAST STEP - WRITE FILES TO SCRIPTABLE OBJECT ASSET
 
@@ -131,18 +131,18 @@ public class VoxelVolumeAutoBake : AssetPostprocessor
         // Create ScriptableObject
         var voxelVolume = ScriptableObject.CreateInstance<VoxelVolumePrebakedAsset>();
         voxelVolume.sourcePng = pngAssetPath;
-        voxelVolume.hash = topologyCounts.hash;
+        voxelVolume.hash = topologyResults.hash;
         voxelVolume.dimensions = dims;
-        voxelVolume.packedValues = packedVoxels;
-        voxelVolume.cornerVoxelCount = topologyCounts.corners;
-        voxelVolume.edgeVoxelCount = topologyCounts.edges;
-        voxelVolume.faceVoxelCount = topologyCounts.faces;
-        voxelVolume.interiorVoxelCount = topologyCounts.interiors;
-        voxelVolume.emptyVoxelCount = topologyCounts.empties;
-        voxelVolume.totalVoxelCount = topologyCounts.total;
-        voxelVolume.centerOfMass = topologyCounts.centerOfMass;
-        voxelVolume.mass = topologyCounts.mass;
-        voxelVolume.momentOfInertia = topologyCounts.momentOfInertia;
+        voxelVolume.packedValues = topologyResults.packedValues;
+        voxelVolume.cornerVoxelCount = topologyResults.corners;
+        voxelVolume.edgeVoxelCount = topologyResults.edges;
+        voxelVolume.faceVoxelCount = topologyResults.faces;
+        voxelVolume.interiorVoxelCount = topologyResults.interiors;
+        voxelVolume.emptyVoxelCount = topologyResults.empties;
+        voxelVolume.totalVoxelCount = topologyResults.total;
+        voxelVolume.centerOfMass = topologyResults.centerOfMass;
+        voxelVolume.mass = topologyResults.mass;
+        voxelVolume.momentOfInertia = topologyResults.momentOfInertia;
         voxelVolume.inverseMass = (voxelVolume.mass == 0) ? float.MaxValue : 1.0f / voxelVolume.mass;
         voxelVolume.inverseInertia = new Vector3(
             (voxelVolume.momentOfInertia.x == 0) ? float.MaxValue : 1.0f / voxelVolume.momentOfInertia.x,

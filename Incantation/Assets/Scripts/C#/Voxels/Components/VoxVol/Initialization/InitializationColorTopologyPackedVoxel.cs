@@ -209,6 +209,23 @@ namespace Incantation.Engine.Voxels.Components
         public static bool IsInterior(uint packed)
             => !IsEmpty(packed) && CountDimensionPairs(packed) == 3;
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static TopologyClassification ToTopologyClassification(uint packed)
+        {
+            if (IsEmpty(packed))
+                return TopologyClassification.EMPTY_OR_INTERIOR;
+
+            int dimensionPairsCount = CountDimensionPairs(packed);
+
+            switch (dimensionPairsCount)
+            {
+                case 0: return TopologyClassification.CORNER;
+                case 1: return TopologyClassification.EDGE;
+                case 2: return TopologyClassification.FACE;
+                default: return TopologyClassification.EMPTY_OR_INTERIOR;
+            }
+        }
+
         // ------------------------------------------------------------
         // COLOR (RGB24)
         // ------------------------------------------------------------

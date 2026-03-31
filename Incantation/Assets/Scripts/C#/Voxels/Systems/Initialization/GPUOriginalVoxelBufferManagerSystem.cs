@@ -1,4 +1,5 @@
 using Incantation.Engine.Voxels.Components;
+using Incantation.Engine.Voxels.Systems;
 using System;
 using System.Runtime.InteropServices;
 using Unity.Entities;
@@ -9,7 +10,7 @@ using UnityEngine.Rendering.Universal.Internal;
 namespace Incantation.Engine.Voxels.System
 {
     [UpdateInGroup(typeof(VoxelVolumeInitializationSystemGroup))]
-    [UpdateAfter(typeof(OriginalVoxelHeapAllocationSystem))]
+    [UpdateAfter(typeof(CPUOriginalVoxelBlobAssetManagerSystem))]
     public partial class GPUOriginalVoxelBufferManagerSystem : SystemBase
     {
         // GPU Buffers
@@ -75,8 +76,9 @@ namespace Incantation.Engine.Voxels.System
                 // Copy CPU buffer data to GPU voxel buffer asynchronously
                 cmd.SetBufferData(origVoxelBuffer, initBuffer.AsNativeArray(), 0, (int)offset.Value, (int) origDim.Size);
 
-                // Remove DynamicBuffer via ECB
+                // Remove initialization components via ECB
                 ecb.RemoveComponent<InitializationColorTopologyPackedVoxel>(entity);
+                ecb.RemoveComponent<InitializationTopologyMetadata>(entity);
             }
         }
     }
