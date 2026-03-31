@@ -80,7 +80,9 @@ namespace Incantation.Engine.Voxels.Components
             allocationsTail = 0;
 
             // Create singleton components
+#if STATS_ALLOCATOR_ORIGINAL
             state.EntityManager.CreateSingleton<OriginalVoxelHeapStats>();
+#endif
         }
 
         public void OnDestroy(ref SystemState state)
@@ -93,17 +95,32 @@ namespace Incantation.Engine.Voxels.Components
 
         public void OnUpdate(ref SystemState state)
         {
+#if STATS_ALLOCATOR_ORIGINAL
             // Heap status (for runtime monitoring / debugging)
             var statsRW = SystemAPI.GetSingletonRW<OriginalVoxelHeapStats>();
             ref var stats = ref statsRW.ValueRW;
+#endif
 
-            allocateNew(ref stats, ref state);
-            deallocateDespawning(ref stats, ref state);
-
+            allocateNew(
+#if STATS_ALLOCATOR_ORIGINAL
+                ref stats,
+#endif
+                ref state);
+            deallocateDespawning(
+#if STATS_ALLOCATOR_ORIGINAL
+                ref stats,
+#endif
+                ref state);
+#if STATS_ALLOCATOR_ORIGINAL
             updateHeapStats(ref stats);
+#endif
         }
 
-        private void allocateNew(ref OriginalVoxelHeapStats stats, ref SystemState state)
+        private void allocateNew(
+#if STATS_ALLOCATOR_ORIGINAL
+            ref OriginalVoxelHeapStats stats,
+#endif
+            ref SystemState state)
         {
             foreach (var (originalDimensions, originalOffset, volumeId, gridDimensions, entity)
                 in SystemAPI.Query<
@@ -119,9 +136,12 @@ namespace Incantation.Engine.Voxels.Components
                     gridDimensions.ValueRO.X *
                     gridDimensions.ValueRO.Y *
                     gridDimensions.ValueRO.Z;
-
-                stats.TotalVolumes++;
                 bool useSharedMemSpace = false;
+
+#if STATS_ALLOCATOR_ORIGINAL
+                stats.TotalVolumes++;
+#endif
+
 
                 Allocation newAlloc = new Allocation();
 
@@ -131,8 +151,11 @@ namespace Incantation.Engine.Voxels.Components
                     DynamicBuffer<InitializationCloneOffset> cloneOffsets = SystemAPI.GetBuffer<InitializationCloneOffset>(entity);
                     clones = (uint) cloneOffsets.Length;
                 }
+
+#if STATS_ALLOCATOR_ORIGINAL
                 stats.SharedMemoryVolumeRiders += clones;
                 stats.SharedAllocations += (clones > 0) ? 1 : 0;
+#endif
 
                 //Check if shared heap space already allocated that can be reused
                 if (allocations.TryGetValue(hash, out var allocation))
@@ -141,10 +164,12 @@ namespace Incantation.Engine.Voxels.Components
                     {
                         useSharedMemSpace = true;
 
+#if STATS_ALLOCATOR_ORIGINAL
                         // Update heap stats
                         stats.SharedMemoryVolumeRiders++;
                         stats.SharedAllocations += (allocation.consumers == 1) ? 1 : 0;
                         stats.SharedAllocations -= (clones > 0) ? 1 : 0;
+#endif
 
                         // Update shared consumer count
                         allocation.consumers += 1 + clones;
@@ -166,7 +191,10 @@ namespace Incantation.Engine.Voxels.Components
                     {
                         FreeRegion freeRegion = freeRegions.ElementAt(freeIndex);
                         uint remainder = freeRegion.size - requiredSize;
+
+#if STATS_ALLOCATOR_ORIGINAL
                         stats.FreeSum -= requiredSize;
+#endif
 
                         // Remove free region from offset maps
                         startingFreeOffsetsToSize.Remove(freeRegion.offset);
@@ -225,7 +253,11 @@ namespace Incantation.Engine.Voxels.Components
             }
         }
 
-        private void deallocateDespawning(ref OriginalVoxelHeapStats stats, ref SystemState state)
+        private void deallocateDespawning(
+#if STATS_ALLOCATOR_ORIGINAL
+            ref OriginalVoxelHeapStats stats,
+#endif
+            ref SystemState state)
         {
             foreach (var (originalOffset, volumeId, entity)
                 in SystemAPI.Query<
@@ -239,17 +271,24 @@ namespace Incantation.Engine.Voxels.Components
                 if (!allocations.TryGetValue(hash, out var alloc))
                     continue;
 
+#if STATS_ALLOCATOR_ORIGINAL
                 stats.TotalVolumes--;
+#endif
+
                 alloc.consumers--;
 
                 // Shared volumes we shouldn't release because others are using it
                 if (alloc.consumers > 0)
                 {
+
+#if STATS_ALLOCATOR_ORIGINAL
                     stats.SharedMemoryVolumeRiders--;
+
                     if (alloc.consumers == 1)
                     {
                         stats.SharedAllocations--;
                     }
+#endif
 
                     allocations[hash] = alloc;
                 }
@@ -261,7 +300,10 @@ namespace Incantation.Engine.Voxels.Components
                     // Determine new free region size
                     uint newOffset = alloc.offset;
                     uint newSize = alloc.size;
+
+#if STATS_ALLOCATOR_ORIGINAL
                     stats.FreeSum += newSize;
+#endif
 
                     uint endIndex = alloc.offset + alloc.size - 1;
 
@@ -288,7 +330,10 @@ namespace Incantation.Engine.Voxels.Components
                     if (newOffset + newSize == allocationsTail)
                     {
                         allocationsTail = newOffset;
+
+#if STATS_ALLOCATOR_ORIGINAL
                         stats.FreeSum -= newSize;
+#endif
 
                         if (merged)
                         {
@@ -365,6 +410,7 @@ namespace Incantation.Engine.Voxels.Components
             }
         }
 
+#if STATS_ALLOCATOR_ORIGINAL
         private void updateHeapStats(ref OriginalVoxelHeapStats stats)
         {
             stats.TotalAllocations = allocations.Count();
@@ -383,5 +429,6 @@ namespace Incantation.Engine.Voxels.Components
                 ? 0
                 : (float)stats.FreeSum / allocationsTail * 100f;
         }
+#endif
     }
 }

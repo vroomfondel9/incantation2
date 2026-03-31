@@ -2,7 +2,7 @@ DEBUG_DRAW_BROADPHASE - Draws broadphase pairs (editor only)
 DEBUG_DRAW_NARROWPHASE - Draws narrowphase bounding shapes (editor only)
 DEBUG_DRAW_CONTACT_POINTS - Draws resulting contact points (editor only)
 
-STATS_BROADPHASE - Gathers broadphase stats as a singleton.
-STATS_NARROWPHASE - Grathers narrowphase stats as a singleton.
-STATS_ALLOCATOR_ORIGINAL - Gathers original volume allocator stats as a singleton.
+STATS_BROADPHASE - Gathers broadphase stats as a singleton. Type: BroadphaseStats
+STATS_NARROWPHASE - Grathers narrowphase stats as a singleton. Type: NarrowphaseStats
+STATS_ALLOCATOR_ORIGINAL - Gathers original volume allocator stats as a singleton. Type: OriginalVoxelHeapStats
 STATS_ALLOCATOR_MODIFIED - Gathers modified volume allocator stats as a singleton.
