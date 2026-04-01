@@ -40,7 +40,8 @@ namespace Incantation.Engine.Voxels.Systems
         {
             var ecb = new EntityCommandBuffer(Unity.Collections.Allocator.Temp);
 
-            foreach (var (gridDimensions, matMeshInfo, isDynamic, entity) in SystemAPI.Query<
+            foreach (var (localTransform, gridDimensions, matMeshInfo, isDynamic, entity) in SystemAPI.Query<
+                RefRO<LocalTransform>,
                 RefRO<GridDimensions>,
                 RefRW<MaterialMeshInfo>,
                 EnabledRefRO<IsDynamic>>()
@@ -61,6 +62,12 @@ namespace Incantation.Engine.Voxels.Systems
                     {
                         Angular = new float3(UnityEngine.Random.Range(-1.0f, 1.0f), UnityEngine.Random.Range(-1.0f, 1.0f), UnityEngine.Random.Range(-1.0f, 1.0f)),
                         Linear = new float3(UnityEngine.Random.Range(-1.0f, 1.0f), UnityEngine.Random.Range(-1.0f, 1.0f), UnityEngine.Random.Range(-1.0f, 1.0f))
+                    });
+
+                    ecb.AddComponent(entity, new PrevTransform
+                    {
+                        position = localTransform.ValueRO.Position,
+                        rotation = localTransform.ValueRO.Rotation,
                     });
 
                     ecb.AddComponent(entity, new PrevBroadphaseCellIndices

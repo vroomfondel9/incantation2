@@ -1680,6 +1680,361 @@ namespace Incantation.Engine.Voxels.Systems.Physics
             #endregion
         }
         #endregion
+
+        #region Voxel-Level Narrowphase
+        [BurstCompile]
+        public struct NarrowphaseVoxelPairJob : IJobParallelFor
+        {
+            [ReadOnly] public NativeArray<PotentiallyCollidingPair> PairsToCheck;
+
+            [ReadOnly] public ComponentLookup<LocalTransform> LocalTransformLookup;
+            [ReadOnly] public ComponentLookup<PrevTransform> PrevTransformLookup;
+            [ReadOnly] public ComponentLookup<OriginalTopologyReference> TopologyRefLookup;
+            [ReadOnly] public ComponentLookup<OriginalDimensions> DimensionsLookup;
+            [ReadOnly] public ComponentLookup<IsVoxelVolume> IsVoxelVolumeLookup;
+            [ReadOnly] public ComponentLookup<IsDynamic> IsDynamicLookup;
+
+            public void Execute(int index)
+            {
+                var pair = PairsToCheck[index];
+
+                Entity A = pair.A;
+                Entity B = pair.B;
+
+                if (!IsVoxelVolumeLookup.IsComponentEnabled(A) ||
+                    !IsVoxelVolumeLookup.IsComponentEnabled(B))
+                    return;
+
+                LocalTransform localA = LocalTransformLookup[A];
+                LocalTransform localB = LocalTransformLookup[B];
+
+                PrevTransform prevA;
+                PrevTransform prevB;
+
+                bool dynamicA = IsDynamicLookup.IsComponentEnabled(A);
+                bool dynamicB = IsDynamicLookup.IsComponentEnabled(B);
+
+                if (dynamicA)
+                    prevA = PrevTransformLookup[A];
+                else
+                    prevA = new PrevTransform { position = localA.Position, rotation = localA.Rotation };
+
+                if (dynamicB)
+                    prevB = PrevTransformLookup[B];
+                else
+                    prevB = new PrevTransform { position = localB.Position, rotation = localB.Rotation };
+
+                var topoRefA = TopologyRefLookup[A];
+                var topoRefB = TopologyRefLookup[B];
+
+                ref var topoA = ref topoRefA.topologyReference.Value;
+                ref var topoB = ref topoRefB.topologyReference.Value;
+
+                var dimsA = DimensionsLookup[A];
+                var dimsB = DimensionsLookup[B];
+
+                float3 halfDimsA = new float3(dimsA.X, dimsA.Y, dimsA.Z) * 0.5f;
+                float3 halfDimsB = new float3(dimsB.X, dimsB.Y, dimsB.Z) * 0.5f;
+
+                int widthA = (int)dimsA.X;
+                int heightA = (int)dimsA.Y;
+
+                int widthB = (int)dimsB.X;
+                int heightB = (int)dimsB.Y;
+
+                float3 posA = localA.Position;
+                quaternion rotA = localA.Rotation;
+
+                float3 posB = localB.Position;
+                quaternion rotB = localB.Rotation;
+
+                float3 prevPosA = prevA.position;
+                quaternion prevRotA = prevA.rotation;
+
+                float3 prevPosB = prevB.position;
+                quaternion prevRotB = prevB.rotation;
+
+                quaternion invRotA = math.inverse(rotA);
+                quaternion invPrevRotA = math.inverse(prevRotA);
+
+                quaternion invRotB = math.inverse(rotB);
+                quaternion invPrevRotB = math.inverse(prevRotB);
+
+                float3x3 RA = new float3x3(rotA);
+                float3x3 RB = new float3x3(rotB);
+
+                float3x3 invRA = new float3x3(invRotA);
+                float3x3 invRB = new float3x3(invRotB);
+
+                float3x3 prevRA = new float3x3(prevRotA);
+                float3x3 prevRB = new float3x3(prevRotB);
+
+                float3x3 invPrevRA = new float3x3(invPrevRotA);
+                float3x3 invPrevRB = new float3x3(invPrevRotB);
+
+                // =========================
+                // PASS 1: A corners vs B
+                // =========================
+
+                ref var cornersA = ref topoA.cornerCoords;
+
+                for (int i = 0; i < cornersA.Length; i++)
+                {
+                    int packed = cornersA[i];
+                    int3 coord = OriginalTopology.UnpackCoords(packed);
+
+                    float3 pA_local = new float3(coord) + 0.5f - halfDimsA;
+
+                    float3 p1_world = math.mul(prevRA, pA_local) + prevPosA;
+                    float3 p2_world = math.mul(RA, pA_local) + posA;
+
+                    float3 p1_B = math.mul(invPrevRB, (p1_world - prevPosB)) + halfDimsB;
+                    float3 p2_B = math.mul(invRB, (p2_world - posB)) + halfDimsB;
+
+                    SweepAxisAlignedCubeDDA(
+                        p1_B,
+                        p2_B,
+                        ref dimsB,
+                        ref topoB,
+                        TopologyClassification.CORNER,
+                        true
+                    );
+                }
+
+                // =========================
+                // PASS 2: B corners vs A
+                // =========================
+
+                ref var cornersB = ref topoB.cornerCoords;
+
+                for (int i = 0; i < cornersB.Length; i++)
+                {
+                    int packed = cornersB[i];
+                    int3 coord = OriginalTopology.UnpackCoords(packed);
+
+                    float3 pB_local = new float3(coord) + 0.5f - halfDimsB;
+
+                    float3 p1_world = math.mul(prevRB, pB_local) + prevPosB;
+                    float3 p2_world = math.mul(RB, pB_local) + posB;
+
+                    float3 p1_A = math.mul(invPrevRA, (p1_world - prevPosA)) + halfDimsA;
+                    float3 p2_A = math.mul(invRA, (p2_world - posA)) + halfDimsA;
+
+                    SweepAxisAlignedCubeDDA(
+                        p1_A,
+                        p2_A,
+                        ref dimsA,
+                        ref topoA,
+                        TopologyClassification.CORNER,
+                        false
+                    );
+                }
+
+                // =========================
+                // PASS 3: A edges vs B
+                // =========================
+
+                ref var edgesA = ref topoA.edgeCoords;
+
+                for (int i = 0; i < edgesA.Length; i++)
+                {
+                    int packed = edgesA[i];
+                    int3 coord = OriginalTopology.UnpackCoords(packed);
+
+                    float3 pA_local = new float3(coord) + 0.5f - halfDimsA;
+
+                    float3 p1_world = math.mul(prevRA, pA_local) + prevPosA;
+                    float3 p2_world = math.mul(RA, pA_local) + posA;
+
+                    float3 p1_B = math.mul(invPrevRB, (p1_world - prevPosB)) + halfDimsB;
+                    float3 p2_B = math.mul(invRB, (p2_world - posB)) + halfDimsB;
+
+                    SweepAxisAlignedCubeDDA(
+                        p1_B,
+                        p2_B,
+                        ref dimsB,
+                        ref topoB,
+                        TopologyClassification.EDGE,
+                        true
+                    );
+                }
+            }
+
+            // ======================================================
+            // DDA traversal helpers
+            // ======================================================
+            private void SweepAxisAlignedCubeDDA(
+                float3 start,
+                float3 end,
+                ref OriginalDimensions dims,
+                ref OriginalTopology topology,
+                TopologyClassification baseForComparison,
+                bool equalityAllowed)
+            {
+                const float halfCellSize = 0.5f;
+
+                int width = (int)dims.X;
+                int height = (int)dims.Y;
+                int depth = (int)dims.Z;
+
+                float3 dir = end - start;
+
+                // Shift the grid by half the cube size so that we can just use DDA on the center point
+                // and treat it as a normal ray cast DDA except we must check 4 neighbors each time we cross
+                // a boundary.
+                float3 startOffset = start - halfCellSize;
+                float3 endOffset = end - halfCellSize;
+
+                int3 cell = (int3)math.floor(startOffset);
+                int3 endCell = (int3)math.floor(endOffset);
+
+                int3 step = math.select(-1, 1, dir >= 0f);
+
+                float3 startFrac = math.frac(start);
+                int3 diagonalOffsets = new int3(0, 0, 0);
+                diagonalOffsets.x = (startFrac.x < 0.5f) ? -1 : (startFrac.x > 0.5f ? 1 : step.x);
+                diagonalOffsets.y = (startFrac.y < 0.5f) ? -1 : (startFrac.y > 0.5f ? 1 : step.y);
+
+                float3 invDir = math.rcp(math.select(dir, 1e-8f, dir == 0));
+
+                float3 nextBoundary;
+                nextBoundary.x = cell.x + (step.x > 0 ? 1 : 0);
+                nextBoundary.y = cell.y + (step.y > 0 ? 1 : 0);
+                nextBoundary.z = cell.z + (step.z > 0 ? 1 : 0);
+
+                float3 tMax = (nextBoundary - startOffset) * invDir;
+                float3 tDelta = math.abs(invDir);
+
+                float3 crossPoint;
+
+                checkNewlyCrossedAxisNeighbors(cell, diagonalOffsets, width, height, depth, ref topology, baseForComparison, equalityAllowed);
+                diagonalOffsets.z = (startFrac.z < 0.5f) ? -1 : (startFrac.z > 0.5f ? 1 : step.z);
+                diagonalOffsets.x = 0;
+
+                int maxSteps = width + height + depth + 3;
+
+                for (int i = 0; i < maxSteps; i++)
+                {
+                    checkNewlyCrossedAxisNeighbors(cell, diagonalOffsets, width, height, depth, ref topology, baseForComparison, equalityAllowed);
+
+                    if (math.all(cell == endCell))
+                        return;
+
+                    if (tMax.x < tMax.y)
+                    {
+                        if (tMax.x < tMax.z)
+                        {
+                            crossPoint = start + dir * tMax.x;
+                            crossPoint = math.frac(crossPoint);
+
+                            diagonalOffsets.x = 0;
+                            diagonalOffsets.y = crossPoint.y < 0.5 ? -1 :
+                                (crossPoint.y > 0.5 ? 1 : step.y);
+                            diagonalOffsets.z = crossPoint.z < 0.5 ? -1 :
+                                (crossPoint.z > 0.5 ? 1 : step.z);
+
+                            cell.x += step.x;
+                            tMax.x += tDelta.x;
+                        }
+                        else
+                        {
+                            crossPoint = start + dir * tMax.z;
+                            crossPoint = math.frac(crossPoint);
+
+                            diagonalOffsets.z = 0;
+                            diagonalOffsets.x = crossPoint.x < 0.5 ? -1 :
+                                (crossPoint.x > 0.5 ? 1 : step.x);
+                            diagonalOffsets.y = crossPoint.y < 0.5 ? -1 :
+                                (crossPoint.y > 0.5 ? 1 : step.y);
+
+                            cell.z += step.z;
+                            tMax.z += tDelta.z;
+                        }
+                    }
+                    else
+                    {
+                        if (tMax.y < tMax.z)
+                        {
+                            crossPoint = start + dir * tMax.y;
+                            crossPoint = math.frac(crossPoint);
+
+                            diagonalOffsets.y = 0;
+                            diagonalOffsets.x = crossPoint.x < 0.5 ? -1 :
+                                (crossPoint.x > 0.5 ? 1 : step.x);
+                            diagonalOffsets.z = crossPoint.z < 0.5 ? -1 :
+                                (crossPoint.z > 0.5 ? 1 : step.z);
+
+                            cell.y += step.y;
+                            tMax.y += tDelta.y;
+                        }
+                        else
+                        {
+                            crossPoint = start + dir * tMax.z;
+                            crossPoint = math.frac(crossPoint);
+
+                            diagonalOffsets.z = 0;
+                            diagonalOffsets.x = crossPoint.x < 0.5 ? -1 :
+                                (crossPoint.x > 0.5 ? 1 : step.x);
+                            diagonalOffsets.y = crossPoint.y < 0.5 ? -1 :
+                                (crossPoint.y > 0.5 ? 1 : step.y);
+
+                            cell.z += step.z;
+                            tMax.z += tDelta.z;
+                        }
+                    }
+                }
+            }
+
+            private void checkNewlyCrossedAxisNeighbors(int3 cell,
+                int3 diagonalOffsets,
+                int width,
+                int height,
+                int depth,
+                ref OriginalTopology topology,
+                TopologyClassification baseForComparison,
+                bool equalityAllowed)
+            {
+                for (uint neighborIndex = 0; neighborIndex < 4; neighborIndex++)
+                {
+                    int3 neighborCell = cell;
+                    int mult1 = (int)(neighborIndex & 1u);
+                    int mult2 = (int)((neighborIndex & 2u) >> 1);
+
+                    if (diagonalOffsets.x == 0)
+                    {
+                        neighborCell.y += diagonalOffsets.y * mult1;
+                        neighborCell.z += diagonalOffsets.z * mult2;
+                    }
+                    else if (diagonalOffsets.y == 0)
+                    {
+                        neighborCell.x += diagonalOffsets.x * mult1;
+                        neighborCell.z += diagonalOffsets.z * mult2;
+                    }
+                    else
+                    {
+                        neighborCell.x += diagonalOffsets.x * mult1;
+                        neighborCell.y += diagonalOffsets.y * mult2;
+                    }
+
+                    if (neighborCell.x >= 0 && neighborCell.y >= 0 && neighborCell.z >= 0 &&
+                        neighborCell.x < width && neighborCell.y < height && neighborCell.z < depth)
+                    {
+                        var topo = topology.getTopologyAt(neighborCell, width, height);
+
+                        bool collision = equalityAllowed
+                            ? (baseForComparison <= topo)
+                            : (baseForComparison < topo);
+
+                        if (collision)
+                        {
+                            // TODO contact found. Return something so I can test this already!
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+        #endregion
         #endregion
 
         #region Stat Collection and Debug Visualization
