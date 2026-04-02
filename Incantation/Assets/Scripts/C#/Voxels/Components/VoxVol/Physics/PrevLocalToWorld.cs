@@ -7,12 +7,11 @@ using Unity.Mathematics;
 
 namespace Incantation.Engine.Voxels.Components.Physics.RigidBody
 {
-    // The LocalTransform from the previous physics step. Used to
+    // The LocalToWorld from the previous physics step. Used to
     // compute how far a Rigid Body has moved since the last simulation step
     // and whether continuous collision detection is needed
-    public struct PrevTransform : IComponentData
+    public struct PrevLocalToWorld : IComponentData
     {
-        public float3 position;
-        public quaternion rotation;
+        public float4x4 Value;
     }
 }

@@ -10,18 +10,18 @@ namespace Incantation.Engine.Voxels.Systems.Physics
     [BurstCompile]
     [UpdateInGroup(typeof(FixedStepSimulationSystemGroup))]
     [UpdateAfter(typeof(PhysicsSolverSystem))]
-    public partial struct UpdatePrevTransformSystem : ISystem
+    public partial struct UpdatePrevLocalToWorldSystem : ISystem
     {
         [BurstCompile]
         public void OnCreate(ref SystemState state)
         {
-            state.RequireForUpdate<PrevTransform>();
+            state.RequireForUpdate<PrevLocalToWorld>();
         }
 
         [BurstCompile]
         public void OnUpdate(ref SystemState state)
         {
-            var job = new UpdatePrevTransformJob();
+            var job = new UpdatePrevLocalToWorldJob();
 
             state.Dependency = job.ScheduleParallel(state.Dependency);
         }
@@ -29,12 +29,11 @@ namespace Incantation.Engine.Voxels.Systems.Physics
         [BurstCompile]
         [WithAll(typeof(IsVoxelVolume))]
         [WithAll(typeof(IsDynamic))]
-        public partial struct UpdatePrevTransformJob : IJobEntity
+        public partial struct UpdatePrevLocalToWorldJob : IJobEntity
         {
-            public void Execute(ref PrevTransform prevTransform, in LocalTransform localTransform)
+            public void Execute(ref PrevLocalToWorld prevLocalToWorld, in LocalToWorld localToWorld)
             {
-                prevTransform.position = localTransform.Position;
-                prevTransform.rotation = localTransform.Rotation;
+                prevLocalToWorld.Value = localToWorld.Value;
             }
         }
     }
