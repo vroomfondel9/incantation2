@@ -19,9 +19,15 @@ public class GlobalConstants
     // Simulation and Scene Constraints
     public static readonly int MAX_GLOBAL_ORIGINAL_VOXELS = 100000000;
 
+    public static readonly int MAX_VOX_VOLS_MODIFIABLE_PER_FRAME = 1000;
+
     public static readonly int MAX_UNIQUE_ORIG_VOX_VOLS_PER_SCENE = 300000;
 
-    public static readonly int MAX_VOX_VOLS_MODIFIABLE_PER_FRAME = 1000;
+    public static readonly int AVG_PAIRS_PER_VOX_VOL = 32;
+
+    public static readonly float AVG_COLLISION_RATE_PER_PAIR = 0.1f;
+
+    public static readonly int MAX_CONTACTS_PER_COLLIDING_PAIR = 8;
 
     public static readonly uint PER_VOXEL_BUFFER_UPDATE_SWAP_DELAY_FRAMES = 1;
 
