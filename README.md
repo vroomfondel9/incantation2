@@ -25,9 +25,14 @@ Game engine prototype that should support destructable, voxel-based environments
   <img src="https://i.giphy.com/Rj2siRK3zlxC0bKSaB.gif" width="45%" />
 </p>
 
-### Collision Detection
+### Collision Detection - Broad and Near Phases
 <p align="center">
   <img src="https://i.giphy.com/U3GuGz8ZPoOfAyRzCS.gif" width="80%" />
+</p>
+
+### Continuous Collision Detection - Voxel Feature Based
+<p align="center">
+  <img src="https://i.imgur.com/Gea86BH.gif" width="80%" />
 </p>
 
 ### Fluid Simulation Optimizations
