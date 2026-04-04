@@ -1,5 +1,7 @@
 DEBUG_DRAW_BROADPHASE - Draws broadphase pairs (editor only)
 DEBUG_DRAW_NARROWPHASE - Draws narrowphase bounding shapes (editor only)
+DEBUG_DRAW_CORNER_PROJECTIONS - Draws voxel check projections - corner only though (editor only)
+DEBUG_DRAW_CORNER_PROJECTION_CHECKED_CELLS - Draws voxel DDA searched cells prior to finding a contact point - corner only though (editor only)
 DEBUG_DRAW_CONTACT_POINTS - Draws resulting contact points (editor only)
 
 STATS_BROADPHASE - Gathers broadphase stats as a singleton. Type: BroadphaseStats
