@@ -35,15 +35,18 @@ public static class VoxelVolumeInstanceCreator
             voxelVolume.dimensions.z * GlobalConstants.VOXEL_SCALE
         );
 
-        // Remove BoxCollider if present
-        BoxCollider collider = cube.GetComponent<BoxCollider>();
-        if (collider != null)
-            Object.DestroyImmediate(collider);
-
         // Add Entity authoring script
         VoxelVolumePrebakedAssetAuthoring authoring =
             cube.AddComponent<VoxelVolumePrebakedAssetAuthoring>();
         authoring.voxelVolumePrebakedAsset = voxelVolume;
+
+        // Move authoring component to top
+        while (UnityEditorInternal.ComponentUtility.MoveComponentUp(authoring)) { }
+
+        // Remove BoxCollider if present
+        BoxCollider collider = cube.GetComponent<BoxCollider>();
+        if (collider != null)
+            Object.DestroyImmediate(collider);
 
         // --- Load Shader ---
         Shader shader = AssetDatabase.LoadAssetAtPath<Shader>(ShaderPath);

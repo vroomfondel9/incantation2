@@ -1770,6 +1770,9 @@ namespace Incantation.Engine.Voxels.Systems.Physics
             private static readonly Color COL_COLLISION_STRIKER = new Color(1.0f, 0.0f, 1.0f, 1f);
             private static readonly Color COL_COLLISION_CONNECTING_LINE = new Color(1.0f, 0.0f, 0.0f, 1f);
 
+            private static readonly Color COL_COLLISION_REFLECTION = new Color(0.0f, 1.0f, 0.0f, 1f);
+            private static readonly Color COL_COLLISION_NORMAL_LINE = new Color(0.0f, 1.0f, 0.0f, 1f);
+
             private static readonly Color COL_CONTINUOUS_SWEEP_DIRECT_CELL_COLOR = new Color(0.75f, 0.75f, 0.75f, 0.5f);
             #endregion
 
@@ -1918,6 +1921,7 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                         ref topoB,
                         TopologyClassification.CORNER,
                         true,
+                        false,
                         coord,
                         true,
                         rltwB_cur,
@@ -1950,6 +1954,7 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                         ref topoA,
                         TopologyClassification.CORNER,
                         false, 
+                        true,
                         coord,
                         false,
                         rltwA_cur,
@@ -1982,6 +1987,7 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                         ref topoB,
                         TopologyClassification.EDGE,
                         true,
+                        false,
                         coord,
                         true,
                         rltwB_cur,
@@ -2003,6 +2009,7 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                 ref OriginalTopology topologiesStruck,
                 TopologyClassification topologyStriker,
                 bool equalityAllowed,
+                bool flipNormals,
                 int3 strikerCoords,
                 bool strikerIsA,
                 RigidTransform ltwStruck,
@@ -2015,13 +2022,14 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                 float contactTime = 0;
                 float penetration = 0;
 
-#if DEBUG_DRAW_CORNER_PROJECTIONS
-                drawCornerProjection(start, end, topologyStriker, FixedDeltaTime, ltwStruck, strikerIsA,
+#if DEBUG_DRAW_MOTION_PROJECTIONS
+                drawVoxelProjection(start, end, topologyStriker, FixedDeltaTime, ltwStruck, strikerIsA,
                     COL_START_A, COL_START_B, COL_END_A, COL_END_B, COL_MOTION_LINE_A, COL_MOTION_LINE_B);
 #endif
 
                 foundContact = continuousCollisionDetectionSweep(start, end, dimsStruck, halfDimsStruck, ref topologiesStruck, 
-                    topologyStriker, equalityAllowed, ltwStruck, out contactCoords, out contactNormal, out penetration, out contactTime);
+                    topologyStriker, equalityAllowed, flipNormals, ltwStruck, out contactCoords, out contactNormal, out penetration, 
+                        out contactTime);
 
                 if (foundContact)
                 {
@@ -2036,8 +2044,9 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                     contactPoint.time = contactTime;
 
 #if DEBUG_DRAW_CONTACT_POINTS
-                    drawContactPoint(contactPoint, strikerIsA, FixedDeltaTime, halfDimsStruck, halfDimsStriker, ltwStruck, ltwStriker,
-                        COL_COLLISION_STRUCK, COL_COLLISION_STRIKER, COL_COLLISION_CONNECTING_LINE);
+                    drawContactPoint(contactPoint, strikerIsA, FixedDeltaTime, topologyStriker, halfDimsStruck, halfDimsStriker, 
+                        ltwStruck, ltwStriker, COL_COLLISION_STRUCK, COL_COLLISION_STRIKER, COL_COLLISION_CONNECTING_LINE, 
+                        COL_COLLISION_NORMAL_LINE, COL_COLLISION_REFLECTION);
 #endif
 
                     ContactPoints.AddNoResize(contactPoint);
@@ -2058,6 +2067,7 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                 ref OriginalTopology topology,
                 TopologyClassification topologyType,
                 bool equalityAllowed,
+                bool flipNormals,
                 RigidTransform ltw,
                 out int3 contactCoords,
                 out float3 contactNormal,
@@ -2116,14 +2126,14 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                 float3 tMax = tStart + (nextBoundary - startGridClipped) * invGridDir;
                 float3 tDelta = math.abs(invGridDir);
 
-                bool xlty = (tMax.x < tMax.y);
-                bool xltz = (tMax.x < tMax.z);
-                bool yltz = (tMax.y < tMax.z);
+                bool xlty = (tmin3.x < tmin3.y);
+                bool xltz = (tmin3.x < tmin3.z);
+                bool yltz = (tmin3.y < tmin3.z);
 
                 bool3 axisStepped = new bool3(
-                    xlty && xltz,
-                    yltz && !xlty,
-                    !yltz && !xltz
+                    !xlty && !xltz,
+                    !yltz && xlty,
+                    yltz && xltz
                 );
 
                 int3 axisMask = math.select(int3.zero, 1, axisStepped);
@@ -2149,19 +2159,22 @@ namespace Incantation.Engine.Voxels.Systems.Physics
                         contactCoords = cell;
                         contactTime = tCross;
 
-                        float3 contactNormalLocal = -1 * step * axisMask;
-                        contactNormal = math.mul(ltw.rot, contactNormalLocal);
+                        int normalMultiple = flipNormals ? -1 : 1;
+                        float3 contactNormalGrid = -1 * step * axisMask;
+                        // Conversion not needed as lengths already normalized and axis-aligned. Just being explicit here.
+                        float3 contactNormalLocal = contactNormalGrid;
+                        contactNormal = normalMultiple * math.mul(ltw.rot, contactNormalLocal);
 
                         float remainingT = 1f - tCross;
                         penetration = remainingT * math.length(dir);
                         penetration *= math.dot(unitDir, contactNormalLocal);
-                        penetration = math.max(0f, penetration);
+                        penetration = math.max(0f, math.abs(penetration));
 
                         return true;
                     }
 
-#if DEBUG_DRAW_CORNER_PROJECTION_CHECKED_CELLS
-                    drawCCDCornerCheckedCell(cell, halfDims, ltw, FixedDeltaTime, topologyType,
+#if DEBUG_DRAW_MOTION_PROJECTION_CHECKED_CELLS
+                    drawCCDCheckedCell(cell, halfDims, ltw, FixedDeltaTime, topologyType,
                         COL_CONTINUOUS_SWEEP_DIRECT_CELL_COLOR);
 #endif
                     #endregion
@@ -2198,12 +2211,22 @@ namespace Incantation.Engine.Voxels.Systems.Physics
         #region Stat Collection and Debug Visualization
 
         #region Voxel-Level Debug Visualizations
-#if DEBUG_DRAW_CORNER_PROJECTIONS
-        private static void drawCornerProjection(float3 start, float3 end, TopologyClassification topologyStriker, 
+#if DEBUG_DRAW_MOTION_PROJECTIONS
+        private static void drawVoxelProjection(float3 start, float3 end, TopologyClassification topologyStriker, 
             float deltaTime, RigidTransform ltwStruck, bool strikerIsA, Color startAColor, Color startBColor, 
                 Color endAColor, Color endBColor, Color lineAColor, Color lineBColor)
         {
-            if (topologyStriker == TopologyClassification.CORNER)
+            bool drawFeature = false;
+
+#if DEBUG_DRAW_CORNERS
+            drawFeature = topologyStriker == TopologyClassification.CORNER;
+#endif
+
+#if DEBUG_DRAW_EDGES
+            drawFeature = topologyStriker == TopologyClassification.EDGE;
+#endif
+
+            if (drawFeature)
             {
                 Color col_start = strikerIsA ? startAColor : startBColor;
                 Color col_end = strikerIsA ? endAColor : endBColor;
@@ -2215,40 +2238,80 @@ namespace Incantation.Engine.Voxels.Systems.Physics
 
                 float3 start_W = math.transform(ltwStruck, start);
                 float3 end_W = math.transform(ltwStruck, end);
-                UnityEngine.Debug.DrawLine(new Vector3(start_W.x, start_W.y, start_W.z),
-                    new Vector3(end_W.x, end_W.y, end_W.z), col_motion, deltaTime, false);
+                UnityEngine.Debug.DrawLine(new float3(start_W.x, start_W.y, start_W.z),
+                    new float3(end_W.x, end_W.y, end_W.z), col_motion, deltaTime, false);
             }
         }
 #endif
 
 #if DEBUG_DRAW_CONTACT_POINTS
         private static void drawContactPoint(Support.ContactPoint contactPoint, bool strikerIsA, float deltaTime, 
-            float3 halfDimsStruck, float3 halfDimsStriker, RigidTransform ltwStruck, RigidTransform ltwStriker,
-                Color struckCol, Color strikerCol, Color lineCol)
+            TopologyClassification topologyStriker, float3 halfDimsStruck, float3 halfDimsStriker, RigidTransform ltwStruck, 
+            RigidTransform ltwStriker, Color struckCol, Color strikerCol, Color collisionLineColor, Color normalLineColor, 
+                    Color reflectionPtColor)
         {
-            int3 contactCoords = strikerIsA ? contactPoint.coordsB : contactPoint.coordsA;
-            int3 strikerCoords = strikerIsA ? contactPoint.coordsA : contactPoint.coordsB;
+            bool drawFeature = false;
 
-            float3 contactPointLocalStruck = (new float3(contactCoords) + 0.5f - halfDimsStruck) * GlobalConstants.VOXEL_SCALE;
-            DebugShapeVizualizationUtil.DrawBoxWithXFaces(contactPointLocalStruck - GlobalConstants.HALF_VOXEL_SCALE,
-                contactPointLocalStruck + GlobalConstants.HALF_VOXEL_SCALE, struckCol, ltwStruck, deltaTime, false);
+#if DEBUG_DRAW_CORNERS
+            drawFeature = topologyStriker == TopologyClassification.CORNER;
+#endif
 
-            float3 contactPointLocalStriker = (new float3(strikerCoords) + 0.5f - halfDimsStriker) * GlobalConstants.VOXEL_SCALE;
-            DebugShapeVizualizationUtil.DrawBoxWithXFaces(contactPointLocalStriker - GlobalConstants.HALF_VOXEL_SCALE,
-                contactPointLocalStriker + GlobalConstants.HALF_VOXEL_SCALE, strikerCol, ltwStriker, deltaTime, false);
+#if DEBUG_DRAW_EDGES
+            drawFeature = topologyStriker == TopologyClassification.EDGE;
+#endif
 
-            float3 contactPointWorldStruck = math.transform(ltwStruck, contactPointLocalStruck);
-            float3 contactPointWorldStriker = math.transform(ltwStriker, contactPointLocalStriker);
-            UnityEngine.Debug.DrawLine(new Vector3(contactPointWorldStruck.x, contactPointWorldStruck.y, contactPointWorldStruck.z),
-                new Vector3(contactPointWorldStriker.x, contactPointWorldStriker.y, contactPointWorldStriker.z),
-                    lineCol, deltaTime, false);
+            if (drawFeature)
+            {
+                int3 contactCoords = strikerIsA ? contactPoint.coordsB : contactPoint.coordsA;
+                int3 strikerCoords = strikerIsA ? contactPoint.coordsA : contactPoint.coordsB;
+
+                Color struckColorNorm = strikerIsA ? struckCol : strikerCol;
+                Color strikerColorNorm = strikerIsA ? strikerCol : struckCol;
+
+                float3 contactPointLocalStruck = (new float3(contactCoords) + 0.5f - halfDimsStruck) * GlobalConstants.VOXEL_SCALE;
+                DebugShapeVizualizationUtil.DrawBoxWithXFaces(contactPointLocalStruck - GlobalConstants.HALF_VOXEL_SCALE,
+                    contactPointLocalStruck + GlobalConstants.HALF_VOXEL_SCALE, struckColorNorm, ltwStruck, deltaTime, false);
+
+                float3 contactPointLocalStriker = (new float3(strikerCoords) + 0.5f - halfDimsStriker) * GlobalConstants.VOXEL_SCALE;
+                DebugShapeVizualizationUtil.DrawBoxWithXFaces(contactPointLocalStriker - GlobalConstants.HALF_VOXEL_SCALE,
+                    contactPointLocalStriker + GlobalConstants.HALF_VOXEL_SCALE, strikerColorNorm, ltwStriker, deltaTime, false);
+
+                float3 contactPointWorldStruck = math.transform(ltwStruck, contactPointLocalStruck);
+                float3 contactPointWorldStriker = math.transform(ltwStriker, contactPointLocalStriker);
+                UnityEngine.Debug.DrawLine(new float3(contactPointWorldStruck.x, contactPointWorldStruck.y, contactPointWorldStruck.z),
+                    new float3(contactPointWorldStriker.x, contactPointWorldStriker.y, contactPointWorldStriker.z),
+                        collisionLineColor, deltaTime, false);
+
+#if DEBUG_DRAW_CONTACT_NORMALS
+                float3 normalStart = strikerIsA ? contactPointWorldStriker : contactPointWorldStruck;
+
+                float3 contactNormal = contactPoint.normal * contactPoint.penetration;
+                float3 contactReflectionPointWorld = normalStart + contactNormal;
+                UnityEngine.Debug.DrawLine(new float3(normalStart.x, normalStart.y, normalStart.z),
+                    new float3(contactReflectionPointWorld.x, contactReflectionPointWorld.y, contactReflectionPointWorld.z),
+                        normalLineColor, deltaTime, false);
+
+                DebugShapeVizualizationUtil.DrawWireSphere(contactReflectionPointWorld, GlobalConstants.HALF_VOXEL_SCALE, 
+                    reflectionPtColor, deltaTime);
+#endif
+            }
         }
 #endif
 
-#if DEBUG_DRAW_CORNER_PROJECTION_CHECKED_CELLS
-        private static void drawCCDCornerCheckedCell(int3 cell, float3 halfDims, RigidTransform ltw, float deltaTime, TopologyClassification topologyType, Color color)
+#if DEBUG_DRAW_MOTION_PROJECTION_CHECKED_CELLS
+        private static void drawCCDCheckedCell(int3 cell, float3 halfDims, RigidTransform ltw, float deltaTime, TopologyClassification topologyType, Color color)
         {
-            if (topologyType == TopologyClassification.CORNER)
+            bool drawFeature = false;
+
+#if DEBUG_DRAW_CORNERS
+            drawFeature = topologyType == TopologyClassification.CORNER;
+#endif
+
+#if DEBUG_DRAW_EDGES
+            drawFeature = topologyType == TopologyClassification.EDGE;
+#endif
+
+            if (drawFeature)
             {
                 float3 curPoint = (new float3(cell) + 0.5f - halfDims) * GlobalConstants.VOXEL_SCALE;
                 DebugShapeVizualizationUtil.DrawBox(curPoint - GlobalConstants.HALF_VOXEL_SCALE,
@@ -2256,7 +2319,7 @@ namespace Incantation.Engine.Voxels.Systems.Physics
             }
         }
 #endif
-        #endregion
+#endregion
 
         #region Volume-Level Debug Visualizations
 

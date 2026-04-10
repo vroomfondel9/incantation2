@@ -64,11 +64,17 @@ namespace Incantation.Engine.Voxels.Systems
                     //    Linear = new float3(UnityEngine.Random.Range(-1.0f, 1.0f), UnityEngine.Random.Range(-1.0f, 1.0f), UnityEngine.Random.Range(-1.0f, 1.0f))
                     //});
 
-                    ecb.AddComponent(entity, new PhysicsVelocity
-                    {
-                        Angular = new float3(0.0f, 0.0f, 0.0f),
-                        Linear = new float3(50.0f, -50.0f, 0.0f)
-                    });
+                    //ecb.AddComponent(entity, new PhysicsVelocity
+                    //{
+                    //    Angular = new float3(0.0f, 0.0f, 0.0f),
+                    //    Linear = new float3(50.0f, -50.0f, 0.0f)
+                    //});
+
+                    //ecb.AddComponent(entity, new PhysicsVelocity
+                    //{
+                    //    Angular = new float3(0.0f, 0.0f, 0.0f),
+                    //    Linear = new float3(0.0f, 0.0f, 0.0f)
+                    //});
 
                     ecb.AddComponent(entity, new PrevTransform
                     {

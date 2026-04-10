@@ -9,11 +9,11 @@ namespace Incantation.Engine.Voxels.Utils.Debug
     {
         private DebugShapeVizualizationUtil() { }
 
-        public static void DrawWireSphere(Vector3 center, float radius, Color color, float duration = 0f, int segments = 24)
+        public static void DrawWireSphere(Vector3 center, float radius, Color color, float duration = 0f, int segments = 24, bool depthTest = false)
         {
-            DrawCircle(center, Vector3.right, Vector3.up, radius, color, duration, segments);   // XY
-            DrawCircle(center, Vector3.right, Vector3.forward, radius, color, duration, segments); // XZ
-            DrawCircle(center, Vector3.up, Vector3.forward, radius, color, duration, segments);    // YZ
+            DrawCircle(center, Vector3.right, Vector3.up, radius, color, duration, segments, depthTest);   // XY
+            DrawCircle(center, Vector3.right, Vector3.forward, radius, color, duration, segments, depthTest); // XZ
+            DrawCircle(center, Vector3.up, Vector3.forward, radius, color, duration, segments, depthTest);    // YZ
         }
 
         public static void DrawCircle(
@@ -23,7 +23,8 @@ namespace Incantation.Engine.Voxels.Utils.Debug
             float radius,
             Color color,
             float duration,
-            int segments)
+            int segments,
+            bool depthTest)
         {
             float step = Mathf.PI * 2f / segments;
 
@@ -33,7 +34,7 @@ namespace Incantation.Engine.Voxels.Utils.Debug
             {
                 float angle = i * step;
                 Vector3 next = center + (axisA * Mathf.Cos(angle) + axisB * Mathf.Sin(angle)) * radius;
-                UnityEngine.Debug.DrawLine(prev, next, color, duration);
+                UnityEngine.Debug.DrawLine(prev, next, color, duration, depthTest);
                 prev = next;
             }
         }

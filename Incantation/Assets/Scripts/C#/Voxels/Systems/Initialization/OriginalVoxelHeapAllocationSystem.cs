@@ -146,9 +146,9 @@ namespace Incantation.Engine.Voxels.Components
                 Allocation newAlloc = new Allocation();
 
                 uint clones = 0;
-                if (SystemAPI.HasBuffer<InitializationCloneOffset>(entity))
+                if (SystemAPI.HasBuffer<InitializationCloneOffsets>(entity))
                 {
-                    DynamicBuffer<InitializationCloneOffset> cloneOffsets = SystemAPI.GetBuffer<InitializationCloneOffset>(entity);
+                    DynamicBuffer<InitializationCloneOffsets> cloneOffsets = SystemAPI.GetBuffer<InitializationCloneOffsets>(entity);
                     clones = (uint) cloneOffsets.Length;
                 }
 

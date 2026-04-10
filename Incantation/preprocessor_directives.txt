@@ -1,9 +1,19 @@
+Volume-Level Physics Debug Visualizations:
+=========================================
 DEBUG_DRAW_BROADPHASE - Draws broadphase pairs (editor only)
 DEBUG_DRAW_NARROWPHASE - Draws narrowphase bounding shapes (editor only)
-DEBUG_DRAW_CORNER_PROJECTIONS - Draws voxel check projections - corner only though (editor only)
-DEBUG_DRAW_CORNER_PROJECTION_CHECKED_CELLS - Draws voxel DDA searched cells prior to finding a contact point - corner only though (editor only)
-DEBUG_DRAW_CONTACT_POINTS - Draws resulting contact points (editor only)
 
+Voxel-Level Physics Debug Visualizations:
+=========================================
+DEBUG_DRAW_EDGES - Draws motions projections and contact points for edges.
+DEBUG_DRAW_CORNERS - Draws motions projections and contact points for corners.
+DEBUG_DRAW_MOTION_PROJECTIONS - Draws voxel check projections - corner only though (editor only). Depends on DEBUG_DRAW_EDGES & DEBUG_DRAW_CORNERS.
+DEBUG_DRAW_MOTION_PROJECTION_CHECKED_CELLS - Draws voxel DDA searched cells prior to finding a contact point - corner only though (editor only). Depends on DEBUG_DRAW_EDGES & DEBUG_DRAW_CORNERS.
+DEBUG_DRAW_CONTACT_POINTS - Draws contact collision points (editor only). Depends on DEBUG_DRAW_EDGES & DEBUG_DRAW_CORNERS.
+DEBUG_DRAW_CONTACT_NORMALS - Draws contact collision point normals (editor only). Depends on DEBUG_DRAW_CONTACT_POINTS, DEBUG_DRAW_EDGES & DEBUG_DRAW_CORNERS.
+
+System or Subsystem-Wide Statistics:
+=========================================
 STATS_BROADPHASE - Gathers broadphase stats as a singleton. Type: BroadphaseStats
 STATS_NARROWPHASE - Grathers narrowphase stats as a singleton. Type: NarrowphaseStats
 STATS_ALLOCATOR_ORIGINAL - Gathers original volume allocator stats as a singleton. Type: OriginalVoxelHeapStats

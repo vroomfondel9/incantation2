@@ -1,4 +1,5 @@
 using Incantation.Engine.Voxels.Components;
+using Incantation.Engine.Voxels.Components.Physics.RigidBody;
 using Incantation.Engine.Voxels.System;
 using Unity.Burst;
 using Unity.Collections;
@@ -15,33 +16,41 @@ namespace Incantation.Engine.Voxels.Systems
     {
         public void OnCreate(ref SystemState state)
         {
-            state.RequireForUpdate<InitializationCloneOffset>();
+            state.RequireForUpdate<InitializationCloneOffsets>();
         }
 
         public void OnUpdate(ref SystemState state)
         {
             var ecb = new EntityCommandBuffer(Allocator.Temp);
 
-            foreach (var (cloneOffsets, transform, entity)
+            foreach (var (cloneOffsets, transform, velocities, entity)
                 in SystemAPI.Query<
-                        DynamicBuffer<InitializationCloneOffset>,
-                        RefRO<LocalTransform>>()
+                        DynamicBuffer<InitializationCloneOffsets>,
+                        RefRO<LocalTransform>,
+                        RefRO<PhysicsVelocity>>()
                     .WithEntityAccess())
             {
                 float3 basePosition = transform.ValueRO.Position;
                 quaternion baseRotation = transform.ValueRO.Rotation;
                 float baseScale = transform.ValueRO.Scale;
 
-                ecb.RemoveComponent<InitializationCloneOffset>(entity);
+                float3 baseLinearVelocity = velocities.ValueRO.Linear;
+                float3 baseAngularVelocity = velocities.ValueRO.Angular;
+
+                ecb.RemoveComponent<InitializationCloneOffsets>(entity);
 
                 // Create clones
                 for (int i = 0; i < cloneOffsets.Length; i++)
                 {
-                    float3 offset = cloneOffsets[i].Offset;
+                    float3 posOffset = cloneOffsets[i].Position;
+                    float3 linearVelocityOffset = cloneOffsets[i].VelocityLinear;
+                    float3 angularVelocityOffset = cloneOffsets[i].VelocityAngular;
 
                     Entity clone = ecb.Instantiate(entity);
 
-                    float3 newPosition = basePosition + offset;
+                    float3 newPosition = basePosition + posOffset;
+                    float3 newLinearVelocity = baseLinearVelocity + linearVelocityOffset;
+                    float3 newAngularVelocity = baseAngularVelocity + angularVelocityOffset;
 
                     ecb.SetComponent(clone,
                         LocalTransform.FromPositionRotationScale(
@@ -49,6 +58,12 @@ namespace Incantation.Engine.Voxels.Systems
                             baseRotation,
                             baseScale
                         ));
+
+                    ecb.SetComponent(clone,
+                        new PhysicsVelocity { 
+                            Linear = newLinearVelocity,
+                            Angular = newAngularVelocity
+                        });
 
                 }
 
